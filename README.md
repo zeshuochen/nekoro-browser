@@ -4,14 +4,14 @@
 
 ## 与其他方案的区别
 
-| 方案 | 原理 | 保留登录态？ | 需重启 Chrome？ |
-|------|------|:--:|:--:|
-| CDP WebSocket | `--remote-debugging-port` | ❌ 独立实例 | ✅ |
-| playwright-cli `--extension` | Playwright 扩展 | ✅ | ❌ |
-| opencli | OpenCLI 扩展 | ✅ | ❌ |
-| **nekoro-browser** | 自建扩展 + HTTP polling | ✅ | ❌ |
-
-Chrome 136+ 禁用了默认配置的远程调试端口。playwright-cli 和 opencli 也走了扩展路线，但它们依赖各自的专有扩展。nekoro-browser 把扩展源码一并给你，完全透明。
+| | playwright-cli | opencli | **nekoro-browser** |
+|------|:--:|:--:|:--:|
+| 原理 | Playwright 专有扩展 | OpenCLI 专有扩展 | 自建扩展 + HTTP polling |
+| 安装 | `npm i -g`（~200MB） | npm / 桌面应用 | `pip install -e .`（纯标准库） |
+| 可定制 | ❌ 闭源扩展 | ❌ 闭源扩展 | ✅ 扩展源码全开源 |
+| 自愈 | ❌ | ❌ | ✅ Agent 运行时编辑 helpers.py 即时生效 |
+| 流程沉淀 | ❌ | ❌ | ✅ 复合流程写成 helpers 函数，一条命令复用 |
+| 保留登录态 | ✅ | ✅ | ✅ |
 
 ## 安装
 
