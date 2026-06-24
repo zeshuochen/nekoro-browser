@@ -29,8 +29,8 @@ async function startPolling() {
     running = true;
     console.log('[nekoro-browser] polling started');
 
-    // Auto-attach first
-    await autoAttach();
+    // Auto-attach in background — don't block polling
+    autoAttach().catch(e => console.error('[nekoro-browser] autoAttach error:', e));
 
     let consecutiveErrors = 0;
     while (running) {
