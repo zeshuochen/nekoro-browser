@@ -1,8 +1,25 @@
-# nekoro-browser
+<p align="center">
+  <img src="extension/icons/icon-128.png" width="80" alt="nekoro-browser">
+</p>
 
-> 轻量浏览器自动化 CLI。通过 Chrome 扩展操控你的日常浏览器——保留登录态，零端口，零弹窗。
+<h1 align="center">nekoro-browser</h1>
 
-## 与其他方案的区别
+<p align="center">
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="Python 3.12+"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License"></a>
+  <a href="https://github.com/zeshuochen/nekoro-browser"><img src="https://img.shields.io/badge/repo-github-black" alt="GitHub"></a>
+</p>
+
+<p align="center">
+轻量浏览器自动化 CLI。通过 Chrome 扩展操控你的日常浏览器——<b>保留登录态</b>，<b>零端口</b>，<b>零弹窗</b>。<br>
+<sub>Lightweight browser automation CLI. Control your daily Chrome via extension — keep cookies, zero ports.</sub>
+</p>
+
+---
+
+## 为什么不用 CDP WebSocket？
+
+Chrome 136+ 禁用了默认配置的 `--remote-debugging-port`。nekoro-browser 用自建扩展 + HTTP polling 绕过去。
 
 | | CDP WebSocket | playwright-cli | opencli | **nekoro-browser** |
 |------|:--:|:--:|:--:|:--:|
@@ -28,13 +45,12 @@ pip install -e .       # 注册 nekoro-browser 命令
 
 ## 快速开始
 
-> ⚠️ **先加载扩展，再启动 daemon。**
+> ⚠️ **先加载扩展，再启动 daemon。** 顺序反了会等 60 秒超时。
 
 **终端 1** — 启动 daemon（保持打开）：
 
 ```bash
 nekoro-browser
-# 看到 "ready" 表示扩展已连接
 ```
 
 **终端 2** — 验证：
@@ -47,16 +63,16 @@ echo "page_info()" | nekoro-browser
 ## 实战：打开 B站，搜籽岷，给最新视频点赞
 
 ```bash
-# 1. 导航
+# 1. 搜索
 echo "navigate('https://search.bilibili.com/all?keyword=籽岷')" | nekoro-browser
 echo "sleep(3)" | nekoro-browser
 
-# 2. 找到第一个视频链接
+# 2. 找第一个视频链接
 echo "js(\"return document.querySelector('a[href*=\\\\"/video/BV\\\\\"]')?.href\")" | nekoro-browser
-# → {"ok": true, "result": "https://www.bilibili.com/video/BV1HdjX6YErC/"}
+# → {"ok": true, "result": "https://www.bilibili.com/video/BV..."}
 
 # 3. 打开视频
-echo "navigate('https://www.bilibili.com/video/BV1HdjX6YErC/')" | nekoro-browser
+echo "navigate('https://www.bilibili.com/video/...')" | nekoro-browser
 echo "sleep(4)" | nekoro-browser
 
 # 4. 点赞
@@ -94,9 +110,7 @@ echo "js(\"document.querySelector('[class*=like]:not([class*=dislike])')?.click(
 
 ## 致谢
 
-本项目为独立实现，未使用任何第三方浏览器自动化工具代码。
-
-受以下项目启发：
-- [browser-harness](https://github.com/yourusername/browser-harness) — 管道模式 `echo "code" | tool`
-- [playwright-cli](https://github.com/microsoft/playwright-cli) 和 [opencli](https://github.com/jackwener/opencli) — 验证了 Chrome 扩展 + daemon 架构的可行性
+受以下项目启发（未使用其代码）：
+- [browser-harness](https://github.com/nicholasgriffintn/browser-harness) — 管道模式
+- [playwright-cli](https://github.com/microsoft/playwright-cli) / [opencli](https://github.com/jackwener/opencli) — 扩展+daemon 架构验证
 - [Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/) — CDP 文档
