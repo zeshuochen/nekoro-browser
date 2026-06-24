@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "description": "nekoro-browser — HTTP polling bridge to daemon (chrome.debugger API)",
   "permissions": [
+    "alarms",
     "debugger",
     "tabs",
     "scripting"
