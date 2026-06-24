@@ -131,10 +131,13 @@ class ExtensionBridge:
             msg = self._outbox.get_nowait()
             tp = msg.get("type", "cdp")
             mid = msg.get("method", msg.get("id", "?"))
-            logger.info(f"POLL → sending [{tp}] {mid}")
+            logger.info(f"POLL → [{tp}] {mid}")
             await _resp(writer, 200, json.dumps(msg),
                         "Content-Type: application/json")
         except asyncio.QueueEmpty:
+            if not hasattr(self, '_first_poll'):
+                self._first_poll = True
+                logger.info("POLL ← extension connected!")
             await _resp(writer, 200, "")
 
     async def _handle_result(self, writer, body: str):
