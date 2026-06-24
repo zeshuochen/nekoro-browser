@@ -17,7 +17,7 @@ import urllib.error
 
 from . import __version__
 
-URL = "http://127.0.0.1:9230"
+URL = "http://127.0.0.1:19825"
 
 
 def _alive():

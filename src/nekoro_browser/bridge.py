@@ -11,7 +11,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-HTTP_PORT = 9230
+HTTP_PORT = 19825
 _cmd_counter = 0
 
 

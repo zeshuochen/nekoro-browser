@@ -1,5 +1,5 @@
 // nekoro-browser background.js — minimal reliable polling
-const PORT = 9230;
+const PORT = 19825;
 
 let tabId = null;
 let running = false;
