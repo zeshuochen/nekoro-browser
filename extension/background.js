@@ -43,24 +43,28 @@ async function start() {
 }
 
 async function autoAttach() {
+    console.log('[nekoro-browser] autoAttach: querying tabs...');
     const tabs = await chrome.tabs.query({});
-    const t = tabs.find(x => x.url && !x.url.startsWith('chrome://')) || tabs[0];
+    console.log('[nekoro-browser] autoAttach: found', tabs.length, 'tabs');
 
-    if (t && await tryAttach(t.id)) {
-        return;
+    for (const t of tabs) {
+        console.log('[nekoro-browser] autoAttach: trying tab', t.id, t.url?.slice(0,50));
+        if (await tryAttach(t.id)) return;
     }
 
-    // Try all tabs
-    for (const tab of tabs) {
-        if (await tryAttach(tab.id)) return;
+    // Create new window with fresh tab
+    console.log('[nekoro-browser] autoAttach: creating new window');
+    try {
+        const win = await chrome.windows.create({ url: 'about:blank' });
+        if (win.tabs && win.tabs[0]) {
+            await sleep(1000); // wait for tab to be ready
+            if (await tryAttach(win.tabs[0].id)) return;
+        }
+    } catch (e) {
+        console.error('[nekoro-browser] autoAttach: window create failed:', e);
     }
 
-    // Create fresh tab as last resort
-    console.log('[nekoro-browser] creating new tab for attach');
-    const nt = await chrome.tabs.create({ url: 'about:blank', active: false });
-    if (await tryAttach(nt.id)) return;
-
-    console.error('[nekoro-browser] all attach attempts failed');
+    console.error('[nekoro-browser] autoAttach: ALL attempts failed');
 }
 
 function tryAttach(id) {
