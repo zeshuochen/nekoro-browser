@@ -19,11 +19,18 @@ class Daemon:
         await self.bridge.start()
         logger.info("Waiting for extension...")
         try:
-            await asyncio.wait_for(self.bridge.attached.wait(), timeout=20)
+            await asyncio.wait_for(self.bridge.attached.wait(), timeout=10)
             self._tab_id = self.bridge.attached_tab_id
-            logger.info(f"Tab {self._tab_id} attached")
+            logger.info(f"Tab {self._tab_id} auto-attached")
         except asyncio.TimeoutError:
-            logger.warning("Tab attach timeout")
+            logger.warning("No auto-attach, sending auto_attach command")
+            await self.bridge.send_control("auto_attach")
+            try:
+                await asyncio.wait_for(self.bridge.attached.wait(), timeout=10)
+                self._tab_id = self.bridge.attached_tab_id
+                logger.info(f"Tab {self._tab_id} attached via command")
+            except asyncio.TimeoutError:
+                logger.error("Failed to attach tab after retry")
         return True
 
     async def _on_exec(self, code: str) -> dict:

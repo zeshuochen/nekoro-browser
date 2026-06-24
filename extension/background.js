@@ -18,7 +18,7 @@ async function start() {
 
     await autoAttach();
 
-    while (running) {
+        while (running) {
         try {
             const resp = await fetch(`http://127.0.0.1:${PORT}/poll`);
             if (resp.ok) {
@@ -26,7 +26,9 @@ async function start() {
                 if (text) {
                     const msg = JSON.parse(text);
                     if (msg.type === 'attach') {
-                        await doAttachAsync(msg.tabId);
+                        await tryAttach(msg.tabId);
+                    } else if (msg.type === 'auto_attach') {
+                        await autoAttach();
                     } else if (msg.method) {
                         const result = await executeCdp(msg);
                         await postResult({ id: msg.id, result: result });
