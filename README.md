@@ -1,59 +1,70 @@
 # nekoro-browser
 
-> 从零构建的轻量浏览器自动化 CLI 工具，通过 Chrome 扩展的 `chrome.debugger` API 操控浏览器。
+> 轻量浏览器自动化 CLI，通过 Chrome 扩展的 `chrome.debugger` API 操控浏览器。
 
 ## 为什么不用 CDP WebSocket？
 
-Chrome 136+ 对默认用户配置禁用了 `--remote-debugging-port`。nekoro-browser 改走 Chrome 扩展的 `chrome.debugger` API：
+Chrome 136+ 禁用默认用户配置的 `--remote-debugging-port`。nekoro-browser 通过 Chrome 扩展 + HTTP 轮询绕开限制：
 
 - **零端口**：不需要开远程调试端口
 - **零弹窗**：没有 "DevTools is controlling this browser" 横幅
-- **保留登录态**：操作的是你的正常 Chrome，Cookie 和扩展全在
-- **无需重启**：不需要关掉 Chrome 再加 `--remote-debugging-port` 参数
+- **保留登录态**：操作你正常使用的 Chrome，Cookie 和扩展全在
+- **无需重启**：不用关 Chrome 重新加参数
 
 ## 架构
 
 ```
 nekoro-browser CLI (Python)
-    │
+    │  HTTP POST /exec
     ▼
-daemon ── 本地 WebSocket ── 扩展 (background.js)
-    │                            │
-    │                    chrome.debugger API
-    │                            │
-    └──────── CDP 响应 ──────── Chrome 浏览器
+daemon ── HTTP polling (GET /poll, POST /result) ── 扩展 (background.js)
+    │                                                    │
+    │                                            chrome.debugger API
+    │                                                    │
+    └────────────── CDP 响应 ────────────────────── Chrome 浏览器
 ```
 
-- **daemon**：Python asyncio 进程，在 `127.0.0.1:9230-9245` 范围内开 WebSocket 服务端
-- **扩展**：Chrome Manifest V3 Service Worker，扫描端口连接 daemon
-- **通信**：daemon 发送 CDP 命令 → 扩展调用 `chrome.debugger.sendCommand()` → 结果返回
+- **daemon**：Python asyncio HTTP 服务端（固定端口 9230）+ 命令队列
+- **扩展**：Chrome Manifest V3 Service Worker，HTTP 轮询获取命令，`chrome.debugger` 执行
+- **通信**：daemon 将 CDP 命令入队 → 扩展轮询获取 → 执行 → 结果回传
 
 ## 安装
 
 ```powershell
-.\install.ps1
+pip install -e .
 ```
 
-脚本会：
-1. 检查 Python 3.12+ 和 websockets 库
-2. `pip install -e .`
-3. 引导你加载 Chrome 扩展
+然后手动加载 Chrome 扩展：
+1. 打开 `chrome://extensions/`
+2. 开启「开发者模式」
+3. 「加载已解压的扩展程序」→ 选择 `extension/` 目录
 
 ## 使用
 
 ```bash
-# 交互模式
+# 启动 daemon（前台）
 nekoro-browser
 
-# 管道模式 — 直接执行 Python 代码
+# 新终端：管道执行
 echo "page_info()" | nekoro-browser
 echo "js('document.title')" | nekoro-browser
 echo "capture_screenshot()" | nekoro-browser
-
-# 诊断
-nekoro-browser --doctor
 ```
+
+## 可用函数（20 个 helpers）
+
+| 类别 | 函数 |
+|------|------|
+| Tab | `new_tab(url)`, `navigate(url)` |
+| 页面 | `page_info()`, `page_html()`, `page_text()` |
+| 截图 | `capture_screenshot()`, `capture_screenshot("jpeg", 90)` |
+| JS | `js(code)` |
+| 交互 | `click_at_xy(x,y)`, `click_selector(sel)`, `type_text(text)`, `press_key(key)` |
+| 滚动 | `scroll_to(x,y)`, `scroll_bottom()` |
+| 等待 | `wait_for_load()`, `wait_for_selector(sel)`, `sleep(seconds)` |
+| Cookie | `get_cookies()`, `set_cookie(name,val)` |
+| 网络 | `enable_network_monitoring()`, `get_response_body(id)` |
 
 ## 自愈机制
 
-`helpers.py` 运行时随时可修改。Agent 操作失败时可以编辑此文件添加缺失的函数，重新执行即可使用——无需重启。
+`helpers.py` 运行时随时可修改。Agent 操作失败时编辑此文件添加缺失函数，重新执行即生效——无需重启 daemon。
