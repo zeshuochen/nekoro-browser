@@ -31,17 +31,20 @@ daemon ── HTTP polling (GET /poll, POST /result) ── 扩展 (background.j
 ## 安装
 
 ```powershell
+git clone https://github.com/zeshuochen/nekoro-browser
+cd nekoro-browser
 pip install -e .
 ```
 
-然后手动加载 Chrome 扩展：
+然后加载 Chrome 扩展（**先做这一步，再启动 daemon**）：
 1. 打开 `chrome://extensions/`
 2. 开启「开发者模式」
 3. 「加载已解压的扩展程序」→ 选择 `extension/` 目录
+4. 确认扩展已加载、无报错
 
 ## 使用
 
-daemon 需要**独立终端**保持前台运行。另开终端执行命令：
+**先加载扩展，再开两个终端**：
 
 ```bash
 # 终端 1：启动 daemon（保持打开）
@@ -52,6 +55,8 @@ echo "page_info()" | nekoro-browser
 echo "js('document.title')" | nekoro-browser
 echo "capture_screenshot()" | nekoro-browser
 ```
+
+> ⚠️ 如果 daemon 先启动、扩展后加载，daemon 会等 60 秒超时后打印 "Waiting for extension..."。正确顺序：扩展先加载，再启动 daemon。
 
 ## 故障排查
 
