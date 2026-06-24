@@ -1,135 +1,129 @@
-// nekoro-browser background.js — HTTP polling bridge
-// GET /poll for commands, POST /result for responses
-
+// nekoro-browser background.js — minimal reliable polling
 const PORT = 9230;
-const POLL_MS = 1000;
 
 let tabId = null;
 let running = false;
 
-console.log('[nekoro-browser] loaded');
+console.log('[nekoro-browser] v2 loaded');
 
-self.addEventListener('activate', () => { start(); });
-setTimeout(start, 200);
+// ─── Lifecycle ──────────────────────────────────────────────────────────
 
-// Keep Service Worker alive — Chrome MV3 kills idle SW after ~30s
-chrome.alarms.create('keepalive', { periodInMinutes: 0.5 });
-chrome.alarms.onAlarm.addListener(() => {
-    if (!running) {
-        console.log('[nekoro-browser] alarm: restarting polling');
-        start();
-    }
+self.addEventListener('activate', () => {
+    console.log('[nekoro-browser] activate → starting');
+    startPolling();
 });
 
-async function start() {
+// Keep alive via alarms
+try { chrome.alarms.create('k', {periodInMinutes: 0.5}); } catch(_) {}
+try { chrome.alarms.onAlarm.addListener(() => { if(!running) startPolling(); }); } catch(_) {}
+
+// Also try immediately
+setTimeout(() => { if(!running) startPolling(); }, 500);
+setTimeout(() => { if(!running) startPolling(); }, 2000);
+setTimeout(() => { if(!running) startPolling(); }, 5000);
+
+// ─── Polling Loop ───────────────────────────────────────────────────────
+
+async function startPolling() {
     if (running) return;
     running = true;
+    console.log('[nekoro-browser] polling started');
 
+    // Auto-attach first
     await autoAttach();
 
-        while (running) {
+    let consecutiveErrors = 0;
+    while (running) {
         try {
             const resp = await fetch(`http://127.0.0.1:${PORT}/poll`);
+            consecutiveErrors = 0;
             if (resp.ok) {
                 const text = await resp.text();
                 if (text) {
                     const msg = JSON.parse(text);
-                    if (msg.type === 'attach') {
-                        await tryAttach(msg.tabId);
-                    } else if (msg.type === 'auto_attach') {
-                        await autoAttach();
-                    } else if (msg.method) {
-                        const result = await executeCdp(msg);
-                        await postResult({ id: msg.id, result: result });
-                    }
+                    await handleCmd(msg);
                 }
             }
-        } catch (_) {
-            // Daemon disconnected — detach debugger so next start works
-            if (tabId !== null) {
-                console.log('[nekoro-browser] daemon gone, detaching tab', tabId);
-                chrome.debugger.detach({ tabId: tabId });
-                tabId = null;
+        } catch (e) {
+            consecutiveErrors++;
+            if (consecutiveErrors > 10) {
+                // Detach after too many consecutive failures
+                if (tabId !== null) {
+                    try { chrome.debugger.detach({tabId}); } catch(_) {}
+                    tabId = null;
+                }
             }
-            await sleep(2000);
+            await sleep(consecutiveErrors > 5 ? 5000 : 2000);
+            continue;
         }
-        await sleep(POLL_MS);
+        await sleep(1000);
     }
 }
 
-async function autoAttach() {
-    console.log('[nekoro-browser] autoAttach: querying tabs...');
-    const tabs = await chrome.tabs.query({});
-    console.log('[nekoro-browser] autoAttach: found', tabs.length, 'tabs');
+async function handleCmd(msg) {
+    if (msg.type === 'attach') {
+        await tryAttach(msg.tabId);
+    } else if (msg.type === 'auto_attach') {
+        await autoAttach();
+    } else if (msg.method) {
+        chrome.debugger.sendCommand(
+            {tabId}, msg.method, msg.params || {},
+            (result) => {
+                if (chrome.runtime.lastError) {
+                    post({id:msg.id, error:{message:chrome.runtime.lastError.message, code:-32000}});
+                } else {
+                    post({id:msg.id, result});
+                }
+            }
+        );
+    }
+}
 
+// ─── Attach ─────────────────────────────────────────────────────────────
+
+async function autoAttach() {
+    const tabs = await chrome.tabs.query({});
     for (const t of tabs) {
-        console.log('[nekoro-browser] autoAttach: trying tab', t.id, t.url?.slice(0,50));
         if (await tryAttach(t.id)) return;
     }
-
-    // Create new window with fresh tab
-    console.log('[nekoro-browser] autoAttach: creating new window');
-    try {
-        const win = await chrome.windows.create({ url: 'about:blank' });
-        if (win.tabs && win.tabs[0]) {
-            await sleep(1000); // wait for tab to be ready
-            if (await tryAttach(win.tabs[0].id)) return;
-        }
-    } catch (e) {
-        console.error('[nekoro-browser] autoAttach: window create failed:', e);
-    }
-
-    console.error('[nekoro-browser] autoAttach: ALL attempts failed');
+    const nt = await chrome.tabs.create({url:'about:blank', active:false});
+    await tryAttach(nt.id);
 }
 
 function tryAttach(id) {
     return new Promise(resolve => {
-        chrome.debugger.attach({ tabId: id }, '1.3', () => {
+        chrome.debugger.attach({tabId:id}, '1.3', () => {
             if (chrome.runtime.lastError) {
-                console.warn('[nekoro-browser] attach failed on tab', id, ':', chrome.runtime.lastError.message);
-                resolve(false);
-                return;
+                console.warn('[nekoro-browser] attach fail tab',id,':',chrome.runtime.lastError.message);
+                resolve(false); return;
             }
             tabId = id;
             console.log('[nekoro-browser] attached tab', id);
-            postResult({ type: 'attached', tabId: id });
+            post({type:'attached', tabId});
             resolve(true);
         });
     });
 }
 
-function executeCdp(msg) {
-    return new Promise(resolve => {
-        chrome.debugger.sendCommand(
-            { tabId: tabId }, msg.method, msg.params || {},
-            (result) => {
-                if (chrome.runtime.lastError) {
-                    resolve({ error: { message: chrome.runtime.lastError.message, code: -32000 } });
-                } else {
-                    resolve(result);
-                }
-            }
-        );
-    });
-}
+// ─── Events ─────────────────────────────────────────────────────────────
 
-async function postResult(data) {
-    try {
-        await fetch(`http://127.0.0.1:${PORT}/result`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
-        });
-    } catch (_) {}
-}
-
-chrome.debugger.onEvent.addListener((src, method, params) => {
-    postResult({ type: 'event', method, params, sessionId: src.sessionId });
+chrome.debugger.onEvent.addListener((src,method,params) => {
+    post({type:'event', method, params, sessionId:src.sessionId});
 });
-
 chrome.debugger.onDetach.addListener((src) => {
     if (tabId === src.tabId) tabId = null;
-    postResult({ type: 'detached', tabId: src.tabId, reason: 'external' });
+    post({type:'detached', tabId:src.tabId});
 });
+
+// ─── Helpers ────────────────────────────────────────────────────────────
+
+async function post(data) {
+    try {
+        await fetch(`http://127.0.0.1:${PORT}/result`, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify(data)
+        });
+    } catch(_) {}
+}
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
