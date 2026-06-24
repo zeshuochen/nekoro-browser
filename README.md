@@ -41,15 +41,26 @@ pip install -e .
 
 ## 使用
 
+daemon 需要**独立终端**保持前台运行。另开终端执行命令：
+
 ```bash
-# 启动 daemon（前台）
+# 终端 1：启动 daemon（保持打开）
 nekoro-browser
 
-# 新终端：管道执行
+# 终端 2：执行命令
 echo "page_info()" | nekoro-browser
 echo "js('document.title')" | nekoro-browser
 echo "capture_screenshot()" | nekoro-browser
 ```
+
+## 故障排查
+
+| 现象 | 原因 | 解决 |
+|------|------|------|
+| `Daemon not running` | daemon 没启动 | 终端 1 运行 `nekoro-browser` |
+| CDP 命令超时 | 扩展未连接 | 检查 `chrome://extensions`，确认扩展已加载且未报错 |
+| 页面没变化 | 扩展未 attach 到 tab | 打开一个普通网页（非 chrome://），重启 daemon |
+| `address already in use` | 旧 daemon 占用端口 | `netstat -ano \| findstr 9230` 查 PID 杀掉 |
 
 ## 可用函数（20 个 helpers）
 
