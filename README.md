@@ -92,4 +92,11 @@ echo "js(\"document.querySelector('[class*=like]:not([class*=dislike])')?.click(
 
 ---
 
-本项目为独立实现，不包含任何第三方浏览器自动化工具的代码。
+## 致谢
+
+本项目为独立实现，未使用任何第三方浏览器自动化工具代码。
+
+受以下项目启发：
+- [browser-harness](https://github.com/yourusername/browser-harness) — 管道模式 `echo "code" | tool`
+- [playwright-cli](https://github.com/microsoft/playwright-cli) 和 [opencli](https://github.com/jackwener/opencli) — 验证了 Chrome 扩展 + daemon 架构的可行性
+- [Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/) — CDP 文档
