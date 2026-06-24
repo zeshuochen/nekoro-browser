@@ -89,3 +89,7 @@ echo "js(\"document.querySelector('[class*=like]:not([class*=dislike])')?.click(
 | CDP 命令超时 | 扩展未连接 | 检查 `chrome://extensions` |
 | 页面没变化 | 扩展未 attach | 打开普通网页（非 chrome://），重启 daemon |
 | 端口占用 | 旧进程残留 | 杀掉占用 9230 的进程 |
+
+---
+
+本项目为独立实现，不包含任何第三方浏览器自动化工具的代码。
