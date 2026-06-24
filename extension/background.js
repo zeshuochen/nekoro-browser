@@ -12,6 +12,15 @@ console.log('[nekoro-browser] loaded');
 self.addEventListener('activate', () => { start(); });
 setTimeout(start, 200);
 
+// Keep Service Worker alive — Chrome MV3 kills idle SW after ~30s
+chrome.alarms.create('keepalive', { periodInMinutes: 0.5 });
+chrome.alarms.onAlarm.addListener(() => {
+    if (!running) {
+        console.log('[nekoro-browser] alarm: restarting polling');
+        start();
+    }
+});
+
 async function start() {
     if (running) return;
     running = true;
