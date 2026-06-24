@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- 背景圆 -->
+  <circle cx="256" cy="256" r="256" fill="#1a1a2e"/>
+
+  <!-- 左猫耳 - 三角形 -->
+  <polygon points="80,180 160,40 200,160" fill="#3b82f6" opacity="0.9"/>
+
+  <!-- 右猫耳 -->
+  <polygon points="312,160 352,40 432,180" fill="#3b82f6" opacity="0.9"/>
+
+  <!-- 左耳内侧 -->
+  <polygon points="110,170 160,80 185,165" fill="#1a1a2e"/>
+
+  <!-- 右耳内侧 -->
+  <polygon points="327,165 352,80 402,170" fill="#1a1a2e"/>
+
+  <!-- 头部/终端窗口 - 圆角矩形 -->
+  <rect x="120" y="140" width="272" height="260" rx="20" fill="#16213e" stroke="#3b82f6" stroke-width="6"/>
+
+  <!-- 工具栏 - 三个圆点 -->
+  <circle cx="150" cy="175" r="10" fill="#ef4444"/>
+  <circle cx="180" cy="175" r="10" fill="#f59e0b"/>
+  <circle cx="210" cy="175" r="10" fill="#22c55e"/>
+
+  <!-- 终端提示符 -->
+  <text x="150" y="230" font-family="monospace" font-size="36" fill="#3b82f6" font-weight="bold">&gt;_</text>
+
+  <!-- 代码行 -->
+  <text x="150" y="280" font-family="monospace" font-size="22" fill="#94a3b8">echo "page_info()"</text>
+  <text x="150" y="315" font-family="monospace" font-size="22" fill="#64748b">| nekoro-browser</text>
+
+  <!-- 底部光标 -->
+  <rect x="150" y="350" width="8" height="28" fill="#3b82f6">
+    <animate attributeName="opacity" values="1;0;1" dur="1s" repeatCount="indefinite"/>
+  </rect>
+
+  <!-- 鼻子 - 小三角形 -->
+  <polygon points="245,378 256,395 267,378" fill="#f472b6"/>
+</svg>
