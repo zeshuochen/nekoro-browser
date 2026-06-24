@@ -43,23 +43,36 @@ async function start() {
 async function autoAttach() {
     const tabs = await chrome.tabs.query({});
     const t = tabs.find(x => x.url && !x.url.startsWith('chrome://')) || tabs[0];
-    if (t) {
-        await doAttachAsync(t.id);
-    } else {
-        // No usable tab — create one
-        console.log('[nekoro-browser] creating new tab');
-        const nt = await chrome.tabs.create({ url: 'about:blank', active: false });
-        await doAttachAsync(nt.id);
+
+    if (t && await tryAttach(t.id)) {
+        return;
     }
+
+    // Try all tabs
+    for (const tab of tabs) {
+        if (await tryAttach(tab.id)) return;
+    }
+
+    // Create fresh tab as last resort
+    console.log('[nekoro-browser] creating new tab for attach');
+    const nt = await chrome.tabs.create({ url: 'about:blank', active: false });
+    if (await tryAttach(nt.id)) return;
+
+    console.error('[nekoro-browser] all attach attempts failed');
 }
 
-function doAttachAsync(id) {
+function tryAttach(id) {
     return new Promise(resolve => {
         chrome.debugger.attach({ tabId: id }, '1.3', () => {
-            if (chrome.runtime.lastError) { resolve(); return; }
+            if (chrome.runtime.lastError) {
+                console.warn('[nekoro-browser] attach failed on tab', id, ':', chrome.runtime.lastError.message);
+                resolve(false);
+                return;
+            }
             tabId = id;
             console.log('[nekoro-browser] attached tab', id);
-            postResult({ type: 'attached', tabId: id }).then(resolve);
+            postResult({ type: 'attached', tabId: id });
+            resolve(true);
         });
     });
 }
