@@ -18,6 +18,8 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Temp
-*.tmp
-*.log
+# Local automation scripts (do not commit)
+scripts/*.ps1
+scripts/*.py
+scripts/*.sh
+!scripts/.gitkeep
