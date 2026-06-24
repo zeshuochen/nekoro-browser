@@ -11,15 +11,13 @@
 </p>
 
 <p align="center">
-轻量浏览器自动化 CLI。通过 Chrome 扩展操控你的日常浏览器——<b>保留登录态</b>，<b>零端口</b>，<b>零弹窗</b>。<br>
-<sub>Lightweight browser automation CLI. Control your daily Chrome via extension — keep cookies, zero ports.</sub>
+轻量浏览器自动化 CLI。通过 Chrome 扩展操控日常浏览器 — <b>保留登录态</b>，<b>零端口</b>，<b>零弹窗</b>。<br>
+<sub><a href="README_EN.md">English</a></sub>
 </p>
 
 ---
 
-## 为什么不用 CDP WebSocket？
-
-Chrome 136+ 禁用了默认配置的 `--remote-debugging-port`。nekoro-browser 用自建扩展 + HTTP polling 绕过去。
+## 与其他方案的区别
 
 | | CDP WebSocket | playwright-cli | opencli | **nekoro-browser** |
 |------|:--:|:--:|:--:|:--:|
@@ -112,5 +110,5 @@ echo "js(\"document.querySelector('[class*=like]:not([class*=dislike])')?.click(
 
 受以下项目启发（未使用其代码）：
 - [browser-harness](https://github.com/nicholasgriffintn/browser-harness) — 管道模式
-- [playwright-cli](https://github.com/microsoft/playwright-cli) / [opencli](https://github.com/jackwener/opencli) — 扩展+daemon 架构验证
+- [playwright-cli](https://github.com/microsoft/playwright-cli) / [opencli](https://github.com/jackwener/opencli) — 扩展+daemon 架构
 - [Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/) — CDP 文档
