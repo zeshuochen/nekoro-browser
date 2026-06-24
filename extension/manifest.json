@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "nekoro-browser",
+  "version": "0.1.0",
+  "description": "nekoro-browser — WebSocket bridge to daemon (chrome.debugger API)",
+  "permissions": [
+    "debugger",
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "minimum_chrome_version": "120",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjuQamX99OeYy6Qpe9/z8xtyxXGY6njT55SdIl2Y7or13SLWvjaFoox1eGi16i88Tgff7SODBdYceJVUNwRXgbyM4StkbqxCLkFpcb6T7i1LFHaaTA6Ty6cx5UlcXzWNynYUIquIpeKpzpKS3dGcDvY5vKrHOAtOUfHA45MxyjRH8OorumwuWkHldjC9WZefEjzZx52RpWJMtRKC5DBc3e3ZW+drJCAxS8jwE1lsZu5U0kecRrxtuuLYjfDBovfrD7GX0Tdcphfmo6vEmRNvxQfgd9ZDi/RDkXJRODclt9Asfvnk5nyy2f4MtsRDKr++c2Mwq7Nx/1uZm2EJZzpJmFwIDAQAB"
+}
