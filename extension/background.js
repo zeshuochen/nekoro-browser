@@ -36,6 +36,12 @@ async function start() {
                 }
             }
         } catch (_) {
+            // Daemon disconnected — detach debugger so next start works
+            if (tabId !== null) {
+                console.log('[nekoro-browser] daemon gone, detaching tab', tabId);
+                chrome.debugger.detach({ tabId: tabId });
+                tabId = null;
+            }
             await sleep(2000);
         }
         await sleep(POLL_MS);

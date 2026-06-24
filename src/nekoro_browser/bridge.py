@@ -129,6 +129,9 @@ class ExtensionBridge:
     async def _handle_poll(self, writer):
         try:
             msg = self._outbox.get_nowait()
+            tp = msg.get("type", "cdp")
+            mid = msg.get("method", msg.get("id", "?"))
+            logger.info(f"POLL → sending [{tp}] {mid}")
             await _resp(writer, 200, json.dumps(msg),
                         "Content-Type: application/json")
         except asyncio.QueueEmpty:
