@@ -33,7 +33,7 @@ daemon ── HTTP polling (GET /poll, POST /result) ── 扩展 (background.j
 ```powershell
 git clone https://github.com/zeshuochen/nekoro-browser
 cd nekoro-browser
-pip install -e .
+pip install -e .    # 注册 nekoro-browser 命令，-e 表示代码修改立即生效
 ```
 
 然后加载 Chrome 扩展（**先做这一步，再启动 daemon**）：
