@@ -91,6 +91,25 @@ async function runOp(op, sel, arg) {
             if (el) { el.click(); return 'clicked'; }
             return 'not-found';
         }
+        case 'typeText': {
+            // arg = JSON: {sel, text, pressEnter}
+            const cfg = typeof arg === 'string' ? JSON.parse(arg) : (arg || {});
+            const input = document.querySelector(cfg.sel || 'input[type="text"], input:not([type])');
+            if (!input) return 'no-input';
+            // Set value natively
+            const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+            setter.call(input, cfg.text || '');
+            input.dispatchEvent(new Event('input', {bubbles:true}));
+            input.dispatchEvent(new Event('change', {bubbles:true}));
+            if (cfg.pressEnter) {
+                input.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter',code:'Enter',keyCode:13,bubbles:true}));
+                input.dispatchEvent(new KeyboardEvent('keyup', {key:'Enter',code:'Enter',keyCode:13,bubbles:true}));
+                // Also try submitting the form
+                const form = input.closest('form');
+                if (form) form.dispatchEvent(new Event('submit', {bubbles:true}));
+            }
+            return 'typed:' + (cfg.text || '');
+        }
         case 'html': return document.documentElement.outerHTML.slice(0, arg || 500);
         case 'text': return document.body?.innerText?.slice(0, arg || 500) || '';
         case 'ready': return document.readyState;
