@@ -60,11 +60,16 @@ async function startPolling() {
     }
 }
 
+// ─── Handle Commands ──────────────────────────────────────────────────
+
 async function handleCmd(msg) {
     if (msg.type === 'attach') {
         await tryAttach(msg.tabId);
     } else if (msg.type === 'auto_attach') {
         await autoAttach();
+    } else if (msg.type === 'scripting') {
+        // Fallback: use chrome.scripting.executeScript (no CDP needed)
+        await handleScripting(msg);
     } else if (msg.method) {
         chrome.debugger.sendCommand(
             {tabId}, msg.method, msg.params || {},
@@ -76,6 +81,41 @@ async function handleCmd(msg) {
                 }
             }
         );
+    }
+}
+
+async function handleScripting(msg) {
+    const {action, target, expression, func, args, url} = msg.params || {};
+    try {
+        if (action === 'navigate') {
+            // Navigate existing tab preserving session
+            await chrome.tabs.update(target, {url});
+            await sleep(3000);
+            post({id:msg.id, result:{navigated:url}});
+        } else if (action === 'evaluate') {
+            // Run script in existing tab
+            const results = await chrome.scripting.executeScript({
+                target: {tabId: target},
+                func: new Function(`return (${func})(...arguments)`),
+                args: args || []
+            });
+            post({id:msg.id, result:{value:results[0]?.result}});
+        } else if (action === 'find_tab') {
+            // Find a tab with douyin logged in
+            const tabs = await chrome.tabs.query({});
+            const found = tabs.find(t => 
+                (url && t.url && t.url.includes(url)) || 
+                (!url && t.url && t.url.includes('douyin.com'))
+            );
+            if (found) {
+                // Try to focus it to bring it to front
+                await chrome.tabs.update(found.id, {active: true});
+                await chrome.windows.update(found.windowId, {focused: true});
+            }
+            post({id:msg.id, result:{tabId: found?.id, url: found?.url, windowId: found?.windowId}});
+        }
+    } catch(e) {
+        post({id:msg.id, error:{message:e.message, code:-32000}});
     }
 }
 
