@@ -73,6 +73,18 @@ class ExtensionBridge:
     async def send_control(self, msg_type: str, **kwargs):
         await self._outbox.put({"type": msg_type, **kwargs})
 
+    async def send_scripting(self, params: dict, timeout: float = 30.0) -> dict:
+        """Send a scripting command to the extension (no CDP needed). Waits for response."""
+        cmd_id = _next_id()
+        f = asyncio.get_event_loop().create_future()
+        self._pending[cmd_id] = f
+        await self._outbox.put({"id": cmd_id, "type": "scripting", "params": params})
+        try:
+            return await asyncio.wait_for(f, timeout=timeout)
+        except asyncio.TimeoutError:
+            self._pending.pop(cmd_id, None)
+            raise TimeoutError(f"Scripting '{params.get('action','?')}' timed out")
+
     # ── HTTP ─────────────────────────────────────────────────────────────
 
     async def _handle(self, reader, writer):

@@ -88,27 +88,27 @@ async function handleScripting(msg) {
     const {action, target, expression, func, args, url} = msg.params || {};
     try {
         if (action === 'navigate') {
-            // Navigate existing tab preserving session
-            await chrome.tabs.update(target, {url});
+            // If no target, create new tab (shares cookies)
+            const tabId = target || (await chrome.tabs.create({url, active:true})).id;
+            await chrome.tabs.update(tabId, {url, active:true});
             await sleep(3000);
-            post({id:msg.id, result:{navigated:url}});
+            post({id:msg.id, result:{navigated:url, tabId}});
         } else if (action === 'evaluate') {
-            // Run script in existing tab
             const results = await chrome.scripting.executeScript({
                 target: {tabId: target},
                 func: new Function(`return (${func})(...arguments)`),
                 args: args || []
             });
             post({id:msg.id, result:{value:results[0]?.result}});
+        } else if (action === 'list_tabs') {
+            const tabs = await chrome.tabs.query({});
+            post({id:msg.id, result:{tabs: tabs.map(t => ({id:t.id, url:t.url, title:t.title, active:t.active}))}});
         } else if (action === 'find_tab') {
-            // Find a tab with douyin logged in
             const tabs = await chrome.tabs.query({});
             const found = tabs.find(t => 
-                (url && t.url && t.url.includes(url)) || 
-                (!url && t.url && t.url.includes('douyin.com'))
+                t.url && t.url.toLowerCase().includes((url || 'douyin.com').toLowerCase())
             );
             if (found) {
-                // Try to focus it to bring it to front
                 await chrome.tabs.update(found.id, {active: true});
                 await chrome.windows.update(found.windowId, {focused: true});
             }
