@@ -100,13 +100,13 @@ async function handleScripting(msg) {
             await sleep(3000);
             post({id:msg.id, result:{navigated:url, tabId}});
         } else if (action === 'evaluate') {
-            // Execute script — func is a string of JS code to eval
+            // Create function in extension context (bypasses page CSP)
+            // func string is JS expression to execute in page
+            const injectedFn = new Function(`return (function(){ ${func} })()`);
             const results = await chrome.scripting.executeScript({
                 target: {tabId: target},
-                func: (code) => {
-                    try { return eval(code); } catch(e) { return 'eval_err:' + e.message; }
-                },
-                args: [func]
+                func: injectedFn,
+                args: []
             });
             post({id:msg.id, result:{value:results[0]?.result}});
         } else if (action === 'list_tabs') {
