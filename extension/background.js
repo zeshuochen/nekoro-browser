@@ -60,6 +60,44 @@ async function startPolling() {
     }
 }
 
+// ─── Pre-defined operations (no eval, no CSP issues) ──────────────────
+
+async function runOp(op, sel, arg) {
+    switch(op) {
+        case 'title': return document.title;
+        case 'url': return location.href;
+        case 'q': return document.querySelector(sel)?.textContent || null;
+        case 'qa': {
+            const els = document.querySelectorAll(sel);
+            return Array.from(els).map(e => e.textContent?.trim()).slice(0, 50);
+        }
+        case 'links': {
+            const as = document.querySelectorAll('a');
+            return Array.from(as).map(a => a.href).filter(h => h).slice(0, 50);
+        }
+        case 'findLink': {
+            const as = document.querySelectorAll('a');
+            for (let i = 0; i < as.length; i++) {
+                if (as[i].href && as[i].href.includes(arg)) return as[i].href;
+            }
+            return null;
+        }
+        case 'scroll': {
+            window.scrollBy(0, arg || 500);
+            return 'scrolled';
+        }
+        case 'click': {
+            const el = document.querySelector(sel);
+            if (el) { el.click(); return 'clicked'; }
+            return 'not-found';
+        }
+        case 'html': return document.documentElement.outerHTML.slice(0, arg || 500);
+        case 'text': return document.body?.innerText?.slice(0, arg || 500) || '';
+        case 'ready': return document.readyState;
+        default: return 'unknown op: ' + op;
+    }
+}
+
 // ─── Handle Commands ──────────────────────────────────────────────────
 
 async function handleCmd(msg) {
@@ -100,13 +138,12 @@ async function handleScripting(msg) {
             await sleep(3000);
             post({id:msg.id, result:{navigated:url, tabId}});
         } else if (action === 'evaluate') {
-            // Create function in extension context (bypasses page CSP)
-            // func string is JS expression to execute in page
-            const injectedFn = new Function(`return (function(){ ${func} })()`);
+            // Pre-defined ops — no eval, bypasses all CSP
+            const {op, sel, arg} = msg.params || {};
             const results = await chrome.scripting.executeScript({
                 target: {tabId: target},
-                func: injectedFn,
-                args: []
+                func: runOp,
+                args: [op, sel, arg]
             });
             post({id:msg.id, result:{value:results[0]?.result}});
         } else if (action === 'list_tabs') {
