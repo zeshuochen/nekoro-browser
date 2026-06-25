@@ -91,10 +91,12 @@ async function handleScripting(msg) {
             let tabId = target;
             if (!tabId) {
                 const tab = await chrome.tabs.create({url, active:true});
-                tabId = tab.id;
+                console.log('[nekoro-browser] tabs.create returned:', JSON.stringify({id:tab?.id, url:tab?.url, pendingUrl:tab?.pendingUrl}));
+                tabId = tab?.id;
             } else {
                 await chrome.tabs.update(tabId, {url, active:true});
             }
+            console.log('[nekoro-browser] navigate tabId=', tabId);
             await sleep(3000);
             post({id:msg.id, result:{navigated:url, tabId}});
         } else if (action === 'evaluate') {
