@@ -166,6 +166,9 @@ class ExtensionBridge:
         elif tp == "detached":
             logger.info(f"Tab {data.get('tabId')} detached")
 
+        elif tp == "attach_error":
+            logger.error(f"ATTACH FAILED: tab={data.get('tabId')} detail={data.get('detail','?')}")
+
         elif "id" in data:
             f = self._pending.get(data["id"])
             if f and not f.done():

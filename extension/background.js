@@ -82,19 +82,28 @@ async function handleCmd(msg) {
 // ─── Attach ─────────────────────────────────────────────────────────────
 
 async function autoAttach() {
+    // Try existing tabs first
     const tabs = await chrome.tabs.query({});
     for (const t of tabs) {
         if (await tryAttach(t.id)) return;
     }
-    const nt = await chrome.tabs.create({url:'about:blank', active:false});
-    await tryAttach(nt.id);
+
+    // Create NEW window — fresh context, no other debugger attached
+    try {
+        const win = await chrome.windows.create({url:'about:blank'});
+        if (win.tabs?.[0] && await tryAttach(win.tabs[0].id)) return;
+    } catch(e) {
+        console.error('[nekoro-browser] window create failed:', e);
+    }
 }
 
 function tryAttach(id) {
     return new Promise(resolve => {
         chrome.debugger.attach({tabId:id}, '1.3', () => {
             if (chrome.runtime.lastError) {
-                console.warn('[nekoro-browser] attach fail tab',id,':',chrome.runtime.lastError.message);
+                const msg = chrome.runtime.lastError.message;
+                console.warn('[nekoro-browser] attach fail tab',id,':',msg);
+                post({type:'attach_error', tabId:id, detail:msg});
                 resolve(false); return;
             }
             tabId = id;
