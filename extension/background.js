@@ -145,6 +145,14 @@ async function runOp(op, sel, arg) {
         case 'html': return document.documentElement.outerHTML.slice(0, arg || 500);
         case 'text': return document.body?.innerText?.slice(0, arg || 500) || '';
         case 'ready': return document.readyState;
+        case 'has': {
+            const el = document.querySelector(sel);
+            if (!el) return 'no';
+            const tag = el.tagName.toLowerCase();
+            const cls = el.className && typeof el.className === 'string' ? el.className.slice(0, 50) : '';
+            const txt = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 50);
+            return `YES: <${tag} class="${cls}"> "${txt}"`;
+        }
         default: return 'unknown op: ' + op;
     }
 }
