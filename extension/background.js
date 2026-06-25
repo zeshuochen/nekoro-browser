@@ -110,6 +110,38 @@ async function runOp(op, sel, arg) {
             }
             return 'typed:' + (cfg.text || '');
         }
+        case 'dump': {
+            // Walk DOM under sel, return interactive elements with selectors
+            const root = sel ? document.querySelector(sel) : document.body;
+            if (!root) return 'not-found';
+            const result = [];
+            const MAX_DEPTH = arg || 4;
+            const MAX_ITEMS = 120;
+            function walk(el, depth, prefix) {
+                if (!el || el.nodeType !== 1 || result.length >= MAX_ITEMS || depth > MAX_DEPTH) return;
+                const tag = el.tagName.toLowerCase();
+                const id = el.id ? '#' + el.id : '';
+                const cls = el.className && typeof el.className === 'string'
+                    ? '.' + el.className.trim().split(/\s+/).slice(0,3).join('.') : '';
+                const label = tag + id + cls;
+                const text = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60);
+                const interactive = ['A','BUTTON','INPUT','SELECT','TEXTAREA','VIDEO','IMG','SVG'].includes(el.tagName);
+                const hasText = text && el.children.length === 0;
+                if (interactive || hasText) {
+                    let line = prefix + label;
+                    if (el.tagName === 'A') line += ' -> ' + (el.href || '').slice(0, 70);
+                    else if (el.tagName === 'INPUT') line += '[type=' + (el.type||'text') + ']';
+                    else if (el.tagName === 'IMG') line += '[src=' + (el.src||'').slice(0, 40) + ']';
+                    else line += ' "' + text + '"';
+                    result.push(line);
+                }
+                for (const child of el.children) {
+                    walk(child, depth + 1, prefix + '  ');
+                }
+            }
+            walk(root, 0, '');
+            return result.join('\n');
+        }
         case 'html': return document.documentElement.outerHTML.slice(0, arg || 500);
         case 'text': return document.body?.innerText?.slice(0, arg || 500) || '';
         case 'ready': return document.readyState;
