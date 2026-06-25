@@ -100,10 +100,13 @@ async function handleScripting(msg) {
             await sleep(3000);
             post({id:msg.id, result:{navigated:url, tabId}});
         } else if (action === 'evaluate') {
+            // Execute script — func is a string of JS code to eval
             const results = await chrome.scripting.executeScript({
                 target: {tabId: target},
-                func: new Function(`return (${func})(...arguments)`),
-                args: args || []
+                func: (code) => {
+                    try { return eval(code); } catch(e) { return 'eval_err:' + e.message; }
+                },
+                args: [func]
             });
             post({id:msg.id, result:{value:results[0]?.result}});
         } else if (action === 'list_tabs') {
