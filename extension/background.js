@@ -88,9 +88,13 @@ async function handleScripting(msg) {
     const {action, target, expression, func, args, url} = msg.params || {};
     try {
         if (action === 'navigate') {
-            // If no target, create new tab (shares cookies)
-            const tabId = target || (await chrome.tabs.create({url, active:true})).id;
-            await chrome.tabs.update(tabId, {url, active:true});
+            let tabId = target;
+            if (!tabId) {
+                const tab = await chrome.tabs.create({url, active:true});
+                tabId = tab.id;
+            } else {
+                await chrome.tabs.update(tabId, {url, active:true});
+            }
             await sleep(3000);
             post({id:msg.id, result:{navigated:url, tabId}});
         } else if (action === 'evaluate') {
@@ -115,6 +119,7 @@ async function handleScripting(msg) {
             post({id:msg.id, result:{tabId: found?.id, url: found?.url, windowId: found?.windowId}});
         }
     } catch(e) {
+        console.error('[nekoro-browser] scripting error:', e);
         post({id:msg.id, error:{message:e.message, code:-32000}});
     }
 }
