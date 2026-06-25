@@ -88,12 +88,13 @@ async function autoAttach() {
         if (await tryAttach(t.id)) return;
     }
 
-    // Create NEW window — fresh context, no other debugger attached
+    // Create NEW TAB in current window — shares cookies
     try {
-        const win = await chrome.windows.create({url:'about:blank'});
-        if (win.tabs?.[0] && await tryAttach(win.tabs[0].id)) return;
+        const tab = await chrome.tabs.create({url:'about:blank', active:false});
+        await sleep(500);
+        if (await tryAttach(tab.id)) return;
     } catch(e) {
-        console.error('[nekoro-browser] window create failed:', e);
+        console.error('[nekoro-browser] tab create failed:', e);
     }
 }
 
