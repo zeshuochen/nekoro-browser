@@ -241,20 +241,23 @@ async function handleScripting(msg) {
 // ─── Attach ─────────────────────────────────────────────────────────────
 
 async function autoAttach() {
-    // Try existing tabs first
-    const tabs = await chrome.tabs.query({});
-    for (const t of tabs) {
-        if (await tryAttach(t.id)) return;
-    }
-
-    // Create NEW TAB in current window — shares cookies
+    // Strategy: DON'T fight for existing tabs. Create our own.
+    // Other extensions attach to existing tabs — a fresh tab is always free.
     try {
         const tab = await chrome.tabs.create({url:'about:blank', active:false});
-        await sleep(500);
         if (await tryAttach(tab.id)) return;
     } catch(e) {
         console.error('[nekoro-browser] tab create failed:', e);
     }
+
+    // Fallback: try existing tabs (some might have been freed)
+    const tabs = await chrome.tabs.query({});
+    for (const t of tabs) {
+        if (t.url && t.url.startsWith('chrome://')) continue;
+        if (await tryAttach(t.id)) return;
+    }
+
+    console.error('[nekoro-browser] autoAttach: all tabs occupied');
 }
 
 function tryAttach(id) {
