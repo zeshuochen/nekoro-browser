@@ -217,7 +217,7 @@ async function handleScripting(msg) {
             const results = await chrome.scripting.executeScript({
                 target: {tabId: target},
                 func: runOp,
-                args: [op, sel, arg]
+                args: [op || 'title', sel || null, arg ?? null]
             });
             post({id:msg.id, result:{value:results[0]?.result}});
         } else if (action === 'list_tabs') {
@@ -265,12 +265,14 @@ async function autoAttach() {
         if (chrome.tabs.group) {
             managedGroupId = await chrome.tabs.group({tabIds: [tab.id]});
         }
-        if (managedGroupId != null) {
-            await chrome.tabGroups.update(managedGroupId, {
-                title: 'nekoro',
-                color: 'blue',
-                collapsed: true
-            });
+        if (managedGroupId != null && chrome.tabGroups) {
+            try {
+                await chrome.tabGroups.update(managedGroupId, {
+                    title: 'nekoro',
+                    color: 'blue',
+                    collapsed: true
+                });
+            } catch(_) {}
         }
         if (await tryAttach(tab.id)) {
             managedTabIds.add(tab.id);
