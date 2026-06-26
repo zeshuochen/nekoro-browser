@@ -201,12 +201,14 @@ async function handleScripting(msg) {
             let tabId = target;
             if (!tabId) {
                 const tab = await chrome.tabs.create({url, active:true});
-                console.log('[nekoro-browser] tabs.create returned:', JSON.stringify({id:tab?.id, url:tab?.url, pendingUrl:tab?.pendingUrl}));
                 tabId = tab?.id;
+                // Add to our managed group if we have one
+                if (tabId && managedGroupId != null && chrome.tabs.group) {
+                    try { await chrome.tabs.group({groupId: managedGroupId, tabIds: [tabId]}); } catch(_) {}
+                }
             } else {
                 await chrome.tabs.update(tabId, {url, active:true});
             }
-            console.log('[nekoro-browser] navigate tabId=', tabId);
             await sleep(3000);
             post({id:msg.id, result:{navigated:url, tabId}});
         } else if (action === 'evaluate') {
@@ -240,21 +242,25 @@ async function handleScripting(msg) {
 
 // ─── Attach ─────────────────────────────────────────────────────────────
 
-let managedWindowId = null;
+let managedGroupId = null;
 let managedTabIds = new Set();
 
 async function autoAttach() {
-    // Strategy: create our OWN window — no other extension is watching it.
-    // All tabs in this window are exclusively ours. No fighting for debugger.
+    // Strategy: create our own tab group — visual isolation, no window clutter.
+    // Other extensions rarely attach to freshly created tabs in a new group.
     try {
-        const win = await chrome.windows.create({url:'about:blank', focused:false, state:'normal'});
-        managedWindowId = win.id;
-        if (win.tabs?.[0] && await tryAttach(win.tabs[0].id)) {
-            managedTabIds.add(win.tabs[0].id);
+        const tab = await chrome.tabs.create({url:'about:blank', active:false});
+        // Group it immediately
+        if (chrome.tabs.group) {
+            managedGroupId = await chrome.tabs.group({tabIds: [tab.id]});
+            await chrome.tabGroups.update(managedGroupId, {title:'🐺 nekoro', collapsed:true});
+        }
+        if (await tryAttach(tab.id)) {
+            managedTabIds.add(tab.id);
             return;
         }
     } catch(e) {
-        console.error('[nekoro-browser] window create failed:', e);
+        console.error('[nekoro-browser] group create failed:', e);
     }
 
     // Fallback: try existing untouched tabs
@@ -268,15 +274,6 @@ async function autoAttach() {
             return;
         }
     }
-
-    // Last resort: new tab in existing window
-    try {
-        const tab = await chrome.tabs.create({url:'about:blank', active:false});
-        if (await tryAttach(tab.id)) {
-            managedTabIds.add(tab.id);
-            return;
-        }
-    } catch(e) {}
 
     console.error('[nekoro-browser] autoAttach: all attempts failed');
 }
