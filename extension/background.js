@@ -241,23 +241,22 @@ async function handleScripting(msg) {
 // ─── Attach ─────────────────────────────────────────────────────────────
 
 async function autoAttach() {
-    // Strategy: DON'T fight for existing tabs. Create our own.
-    // Other extensions attach to existing tabs — a fresh tab is always free.
+    // Strategy: create our own tab — no one else has touched it.
+    // Open douyin.com so cookies/session initialize immediately.
     try {
-        const tab = await chrome.tabs.create({url:'about:blank', active:false});
+        const tab = await chrome.tabs.create({url:'https://www.douyin.com', active:false});
         if (await tryAttach(tab.id)) return;
     } catch(e) {
         console.error('[nekoro-browser] tab create failed:', e);
     }
 
-    // Fallback: try existing tabs (some might have been freed)
-    const tabs = await chrome.tabs.query({});
-    for (const t of tabs) {
-        if (t.url && t.url.startsWith('chrome://')) continue;
-        if (await tryAttach(t.id)) return;
-    }
+    // Fallback: blank tab
+    try {
+        const tab = await chrome.tabs.create({url:'about:blank', active:false});
+        if (await tryAttach(tab.id)) return;
+    } catch(e) {}
 
-    console.error('[nekoro-browser] autoAttach: all tabs occupied');
+    console.error('[nekoro-browser] autoAttach: all attempts failed');
 }
 
 function tryAttach(id) {
