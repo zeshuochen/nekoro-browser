@@ -153,6 +153,19 @@ async function runOp(op, sel, arg) {
             const txt = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 50);
             return `YES: <${tag} class="${cls}"> "${txt}"`;
         }
+        case 'box': {
+            const el = document.querySelector(sel);
+            if (!el) return 'no';
+            const r = el.getBoundingClientRect();
+            const style = getComputedStyle(el);
+            return JSON.stringify({
+                x: Math.round(r.x), y: Math.round(r.y),
+                w: Math.round(r.width), h: Math.round(r.height),
+                visible: r.width > 0 && r.height > 0 && style.display !== 'none' && style.visibility !== 'hidden',
+                tag: el.tagName.toLowerCase(),
+                text: (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40)
+            });
+        }
         default: return 'unknown op: ' + op;
     }
 }
