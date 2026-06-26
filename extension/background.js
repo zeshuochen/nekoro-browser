@@ -244,7 +244,9 @@ async function handleScripting(msg) {
                 await chrome.windows.update(found.windowId, {focused: true});
             }
             post({id:msg.id, result:{tabId: found?.id, url: found?.url, windowId: found?.windowId}});
-        }
+        } else if (action === 'close_tab') {
+            await chrome.tabs.remove(target);
+            post({id:msg.id, result:{closed: target}});
     } catch(e) {
         console.error('[nekoro-browser] scripting error:', e);
         post({id:msg.id, error:{message:e.message, code:-32000}});
