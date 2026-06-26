@@ -240,23 +240,58 @@ async function handleScripting(msg) {
 
 // ─── Attach ─────────────────────────────────────────────────────────────
 
+let managedWindowId = null;
+let managedTabIds = new Set();
+
 async function autoAttach() {
-    // Strategy: create our own tab — no one else has touched it.
-    // Open douyin.com so cookies/session initialize immediately.
+    // Strategy: create our OWN window — no other extension is watching it.
+    // All tabs in this window are exclusively ours. No fighting for debugger.
     try {
-        const tab = await chrome.tabs.create({url:'https://www.douyin.com', active:false});
-        if (await tryAttach(tab.id)) return;
+        const win = await chrome.windows.create({url:'about:blank', focused:false, state:'normal'});
+        managedWindowId = win.id;
+        if (win.tabs?.[0] && await tryAttach(win.tabs[0].id)) {
+            managedTabIds.add(win.tabs[0].id);
+            return;
+        }
     } catch(e) {
-        console.error('[nekoro-browser] tab create failed:', e);
+        console.error('[nekoro-browser] window create failed:', e);
     }
 
-    // Fallback: blank tab
+    // Fallback: try existing untouched tabs
+    const occupied = await getOccupiedTabs();
+    const tabs = await chrome.tabs.query({});
+    for (const t of tabs) {
+        if (t.url && t.url.startsWith('chrome://')) continue;
+        if (occupied.has(t.id)) continue;
+        if (await tryAttach(t.id)) {
+            managedTabIds.add(t.id);
+            return;
+        }
+    }
+
+    // Last resort: new tab in existing window
     try {
         const tab = await chrome.tabs.create({url:'about:blank', active:false});
-        if (await tryAttach(tab.id)) return;
+        if (await tryAttach(tab.id)) {
+            managedTabIds.add(tab.id);
+            return;
+        }
     } catch(e) {}
 
     console.error('[nekoro-browser] autoAttach: all attempts failed');
+}
+
+// Helper: get set of tab IDs that already have debugger attached
+async function getOccupiedTabs() {
+    const occupied = new Set();
+    try {
+        const targets = await new Promise(resolve =>
+            chrome.debugger.getTargets(resolve));
+        for (const t of (targets || [])) {
+            if (t.attached) occupied.add(t.tabId);
+        }
+    } catch(_) {}
+    return occupied;
 }
 
 function tryAttach(id) {
