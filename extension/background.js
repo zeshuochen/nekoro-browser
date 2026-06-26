@@ -246,14 +246,31 @@ let managedGroupId = null;
 let managedTabIds = new Set();
 
 async function autoAttach() {
-    // Strategy: create our own tab group — visual isolation, no window clutter.
-    // Other extensions rarely attach to freshly created tabs in a new group.
+    // Reuse existing group if we have one
+    if (managedGroupId != null) {
+        try {
+            const tabs = await chrome.tabs.query({groupId: managedGroupId});
+            for (const t of tabs) {
+                if (await tryAttach(t.id)) {
+                    managedTabIds.add(t.id);
+                    return;
+                }
+            }
+        } catch(_) {}
+    }
+
+    // Create a new tab in our own group — visual isolation, no debugger conflict
     try {
         const tab = await chrome.tabs.create({url:'about:blank', active:false});
-        // Group it immediately
         if (chrome.tabs.group) {
             managedGroupId = await chrome.tabs.group({tabIds: [tab.id]});
-            await chrome.tabGroups.update(managedGroupId, {title:'🐺 nekoro', collapsed:true});
+        }
+        if (managedGroupId != null) {
+            await chrome.tabGroups.update(managedGroupId, {
+                title: 'nekoro',
+                color: 'blue',
+                collapsed: true
+            });
         }
         if (await tryAttach(tab.id)) {
             managedTabIds.add(tab.id);
@@ -263,7 +280,7 @@ async function autoAttach() {
         console.error('[nekoro-browser] group create failed:', e);
     }
 
-    // Fallback: try existing untouched tabs
+    // Fallback: try any untouched tab
     const occupied = await getOccupiedTabs();
     const tabs = await chrome.tabs.query({});
     for (const t of tabs) {
