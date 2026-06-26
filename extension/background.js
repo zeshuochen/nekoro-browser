@@ -202,9 +202,20 @@ async function handleScripting(msg) {
             if (!tabId) {
                 const tab = await chrome.tabs.create({url, active:true});
                 tabId = tab?.id;
-                // Add to our managed group if we have one
-                if (tabId && managedGroupId != null && chrome.tabs.group) {
-                    try { await chrome.tabs.group({groupId: managedGroupId, tabIds: [tabId]}); } catch(_) {}
+                // Ensure tab is in our group (create group if needed)
+                if (tabId && chrome.tabs.group) {
+                    try {
+                        if (managedGroupId == null) {
+                            managedGroupId = await chrome.tabs.group({tabIds: [tabId]});
+                            if (chrome.tabGroups) {
+                                await chrome.tabGroups.update(managedGroupId, {
+                                    title: 'nekoro', color: 'blue', collapsed: true
+                                });
+                            }
+                        } else {
+                            await chrome.tabs.group({groupId: managedGroupId, tabIds: [tabId]});
+                        }
+                    } catch(_) {}
                 }
             } else {
                 await chrome.tabs.update(tabId, {url, active:true});
@@ -246,6 +257,24 @@ let managedGroupId = null;
 let managedTabIds = new Set();
 
 async function autoAttach() {
+    // Find existing nekoro group first
+    if (managedGroupId == null && chrome.tabGroups) {
+        try {
+            const allTabs = await chrome.tabs.query({});
+            for (const t of allTabs) {
+                if (t.groupId > 0) {
+                    try {
+                        const g = await chrome.tabGroups.get(t.groupId);
+                        if (g && g.title === 'nekoro') {
+                            managedGroupId = t.groupId;
+                            break;
+                        }
+                    } catch(_) {}
+                }
+            }
+        } catch(_) {}
+    }
+
     // Reuse existing group if we have one
     if (managedGroupId != null) {
         try {
@@ -259,7 +288,7 @@ async function autoAttach() {
         } catch(_) {}
     }
 
-    // Create a new tab in our own group — visual isolation, no debugger conflict
+    // Create a new tab in our own group
     try {
         const tab = await chrome.tabs.create({url:'about:blank', active:false});
         if (chrome.tabs.group) {
