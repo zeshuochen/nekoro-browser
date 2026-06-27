@@ -91,6 +91,19 @@ async function runOp(op, sel, arg) {
             if (el) { el.click(); return 'clicked'; }
             return 'not-found';
         }
+        case 'clickText': {
+            // Find element by text content and click it
+            const text = arg;
+            if (!text) return 'no-text';
+            const all = document.querySelectorAll('*');
+            for (const el of all) {
+                if ((el.textContent || '').trim() === text && el.children.length === 0) {
+                    el.click();
+                    return 'clicked:' + text;
+                }
+            }
+            return 'not-found';
+        }
         case 'typeText': {
             // arg = JSON: {sel, text, pressEnter}
             const cfg = typeof arg === 'string' ? JSON.parse(arg) : (arg || {});
