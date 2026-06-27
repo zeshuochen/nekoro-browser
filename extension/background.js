@@ -165,37 +165,48 @@ async function runOp(op, sel, arg) {
         }
         case 'click': {
             const el = document.querySelector(sel);
-            if (el) { el.click(); return 'clicked'; }
-            return 'not-found';
+            if (!el) return 'not-found';
+            // Dispatch proper mouse event sequence (Playwright-style)
+            // React event delegation needs real mouse events with coordinates
+            const r = el.getBoundingClientRect();
+            const cx = r.left + r.width / 2;
+            const cy = r.top + r.height / 2;
+            const opts = {bubbles: true, cancelable: true, clientX: cx, clientY: cy, button: 0, view: window};
+            el.dispatchEvent(new MouseEvent('pointerdown', opts));
+            el.dispatchEvent(new MouseEvent('mousedown', opts));
+            el.dispatchEvent(new MouseEvent('pointerup', opts));
+            el.dispatchEvent(new MouseEvent('mouseup', opts));
+            el.dispatchEvent(new MouseEvent('click', opts));
+            return 'clicked';
         }
         case 'clickAt': {
-            // Click at viewport coordinates. Climb up to find clickable ancestor.
             const pt = typeof arg === 'string' ? JSON.parse(arg) : (arg || {});
             const ex = pt.x, ey = pt.y;
             if (ex == null || ey == null) return 'no-coords';
             let el = document.elementFromPoint(ex, ey);
             if (!el) return 'no-element';
-            // Climb up to nearest clickable ancestor (button, a, or direct child of action bar)
+            // Climb to action bar child
             let tag = el.tagName, climbed = 0;
             while (el && el !== document.body && climbed < 8) {
                 tag = el.tagName;
                 const parent = el.parentElement;
-                // Direct child of action bar → click it
                 if (parent && parent.matches && parent.matches('[class*=action]')) {
-                    el.click(); return 'clicked-action:' + ex + ',' + ey + ' <' + tag + '>';
+                    break; // Found action bar child
                 }
-                // Interactive element
-                if (tag === 'A' || tag === 'BUTTON' || tag === 'LABEL' ||
-                    (tag === 'DIV' && el.getAttribute('role') === 'button')) {
-                    el.click(); return 'clicked:' + ex + ',' + ey + ' <' + tag + '>';
-                }
+                if (tag === 'A' || tag === 'BUTTON' || tag === 'LABEL') break;
                 el = parent;
                 climbed++;
             }
-            // Fallback: click whatever elementFromPoint returned
-            el = document.elementFromPoint(ex, ey);
-            if (el) { el.click(); return 'clicked-fb:' + ex + ',' + ey; }
-            return 'not-found';
+            if (!el || el === document.body) el = document.elementFromPoint(ex, ey);
+            if (!el) return 'no-element';
+            // Dispatch full mouse event sequence
+            const opts = {bubbles: true, cancelable: true, clientX: ex, clientY: ey, button: 0, view: window};
+            el.dispatchEvent(new MouseEvent('pointerdown', opts));
+            el.dispatchEvent(new MouseEvent('mousedown', opts));
+            el.dispatchEvent(new MouseEvent('pointerup', opts));
+            el.dispatchEvent(new MouseEvent('mouseup', opts));
+            el.dispatchEvent(new MouseEvent('click', opts));
+            return 'clicked:' + ex + ',' + ey + ' <' + tag + '>';
         }
         case 'clickText': {
             // Find by visible text using TreeWalker + direct-text matching
