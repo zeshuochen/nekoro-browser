@@ -169,17 +169,32 @@ async function runOp(op, sel, arg) {
             return 'not-found';
         }
         case 'clickAt': {
-            // Click at viewport coordinates. arg = JSON: {x, y}
+            // Click at viewport coordinates. Climb up to find clickable ancestor.
             const pt = typeof arg === 'string' ? JSON.parse(arg) : (arg || {});
             const ex = pt.x, ey = pt.y;
-            if (ex == null || ey == null) {
-                // Try sel as fallback for coordinate-based finding
-                const el2 = document.querySelector(sel);
-                if (el2) { el2.click(); return 'clicked-sel'; }
-                return 'no-coords';
+            if (ex == null || ey == null) return 'no-coords';
+            let el = document.elementFromPoint(ex, ey);
+            if (!el) return 'no-element';
+            // Climb up to nearest clickable ancestor (button, a, or direct child of action bar)
+            let tag = el.tagName, climbed = 0;
+            while (el && el !== document.body && climbed < 8) {
+                tag = el.tagName;
+                const parent = el.parentElement;
+                // Direct child of action bar → click it
+                if (parent && parent.matches && parent.matches('[class*=action]')) {
+                    el.click(); return 'clicked-action:' + ex + ',' + ey + ' <' + tag + '>';
+                }
+                // Interactive element
+                if (tag === 'A' || tag === 'BUTTON' || tag === 'LABEL' ||
+                    (tag === 'DIV' && el.getAttribute('role') === 'button')) {
+                    el.click(); return 'clicked:' + ex + ',' + ey + ' <' + tag + '>';
+                }
+                el = parent;
+                climbed++;
             }
-            const el = document.elementFromPoint(ex, ey);
-            if (el) { el.click(); return 'clicked-at:' + ex + ',' + ey; }
+            // Fallback: click whatever elementFromPoint returned
+            el = document.elementFromPoint(ex, ey);
+            if (el) { el.click(); return 'clicked-fb:' + ex + ',' + ey; }
             return 'not-found';
         }
         case 'clickText': {
