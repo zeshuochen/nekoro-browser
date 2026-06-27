@@ -634,18 +634,11 @@ async function handleScripting(msg) {
             await chrome.tabs.remove(target);
             post({id:msg.id, result:{closed: target}});
         } else if (action === 'reload_extension') {
-            // Reload via management API: disable → enable (always picks up new code)
-            const extId = chrome.runtime.id;
+            // chrome.runtime.reload() restarts the service worker from disk.
+            // Note: may occasionally fail to restart — if so, toggle manually in chrome://extensions.
             post({id:msg.id, result:{reloading: true}});
-            await sleep(300);
-            try {
-                await chrome.management.setEnabled(extId, false);
-                await sleep(500);
-                await chrome.management.setEnabled(extId, true);
-            } catch(e) {
-                // Fallback: chrome.runtime.reload()
-                chrome.runtime.reload();
-            }
+            await sleep(200);
+            chrome.runtime.reload();
         }
     } catch(e) {
         console.error('[nekoro-browser] scripting error:', e);
