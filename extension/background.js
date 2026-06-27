@@ -92,14 +92,22 @@ async function runOp(op, sel, arg) {
             return 'not-found';
         }
         case 'clickText': {
-            // Find element by text content and click it
+            // Find element whose text content matches and click it
             const text = arg;
             if (!text) return 'no-text';
+            // First try exact match on leaf elements
             const all = document.querySelectorAll('*');
             for (const el of all) {
-                if ((el.textContent || '').trim() === text && el.children.length === 0) {
-                    el.click();
-                    return 'clicked:' + text;
+                const txt = (el.textContent || '').trim();
+                if (txt === text && el.children.length === 0) {
+                    el.click(); return 'clicked:' + text;
+                }
+            }
+            // Fallback: partial match on any element
+            for (const el of all) {
+                const txt = (el.textContent || '').trim();
+                if (txt === text || txt.startsWith(text)) {
+                    el.click(); return 'clicked-fuzzy:' + text;
                 }
             }
             return 'not-found';
