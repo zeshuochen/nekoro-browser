@@ -455,3 +455,18 @@ async def box_of(daemon, sel: str, tab: int = None) -> dict:
     Usage: box_of(".like-btn")
     """
     return await script_op(daemon, "box", sel=sel, tab=tab)
+
+
+async def reload_extension(daemon) -> dict:
+    """Force-reload the Chrome extension to pick up new code changes.
+    After this call, the extension restarts automatically.
+
+    Usage: reload_extension()
+    """
+    try:
+        r = await daemon.bridge.send_scripting(
+            {"action": "reload_extension"}, 5)
+        return {"ok": True, "result": r}
+    except Exception:
+        # reload kills the connection, so timeout is expected
+        return {"ok": True, "result": "reloading (connection lost as expected)"}

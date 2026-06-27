@@ -358,6 +358,12 @@ async function handleScripting(msg) {
         } else if (action === 'close_tab') {
             await chrome.tabs.remove(target);
             post({id:msg.id, result:{closed: target}});
+        } else if (action === 'reload_extension') {
+            // Self-reload: triggers chrome.runtime.reload() in service worker
+            // After this, the extension restarts and picks up new code automatically
+            post({id:msg.id, result:{reloading: true}});
+            await sleep(500);
+            chrome.runtime.reload();
         }
     } catch(e) {
         console.error('[nekoro-browser] scripting error:', e);
