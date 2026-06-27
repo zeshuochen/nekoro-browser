@@ -279,16 +279,16 @@ async function runOp(op, sel, arg) {
         }
         case 'box': {
             const el = document.querySelector(sel);
-            if (!el) return 'no';
+            if (!el) return {found: false};
             const r = el.getBoundingClientRect();
             const style = getComputedStyle(el);
-            return JSON.stringify({
+            return {
                 x: Math.round(r.x), y: Math.round(r.y),
                 w: Math.round(r.width), h: Math.round(r.height),
                 visible: r.width > 0 && r.height > 0 && style.display !== 'none' && style.visibility !== 'hidden',
                 tag: el.tagName.toLowerCase(),
                 text: (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40)
-            });
+            };
         }
         default: return 'unknown op: ' + op;
     }
