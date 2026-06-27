@@ -64,6 +64,50 @@ echo "code" | nekoro-browser   # 执行 Python 代码并返回 JSON 结果
 | `press_key(key)` | `press_key("Enter")` | 按键 |
 | `press_key("c", 2)` | 同上 | Ctrl+C（2=Ctrl, 1=Alt, 8=Shift, 4=Meta） |
 
+### 索引元素树（browser-act 风格）
+
+| 函数 | 用法 | 说明 |
+|------|------|------|
+| `state()` | `state()` | 返回索引元素列表 `[{index, changed, tag, text, box}]` |
+| `state(max_items=50)` | 同上 | 限制数量 |
+| `state(sel=".sidebar")` | 同上 | 限定范围 |
+| `click_index(idx)` | `click_index(3)` | 点击第 N 个元素 |
+| `input_index(idx, text)` | `input_index(5, "hello")` | 在第 N 个输入框打字 |
+
+### 文本查找与提取
+
+| 函数 | 用法 | 说明 |
+|------|------|------|
+| `find_text("关键词")` | `find_text("喜欢")` | 搜索可见文本元素 |
+| `click_text("喜欢")` | `click_text("喜欢")` | 按文本点击 |
+| `wait_for_text("喜欢")` | `wait_for_text("喜欢", timeout=30)` | 等待文本出现 |
+| `get_markdown()` | `get_markdown()` | 提取页面为 Markdown |
+| `get_markdown(sel="article")` | 同上 | 限定区域提取 |
+
+### 等待与状态
+
+| 函数 | 用法 | 说明 |
+|------|------|------|
+| `wait_selector(sel, "visible")` | `wait_selector(".modal", "visible", 15)` | 等待元素可见 |
+| `wait_selector(sel, "hidden")` | `wait_selector(".spinner", "hidden")` | 等待元素隐藏 |
+| `wait_selector(sel, "attached")` | `wait_selector("#form", "attached")` | 等待元素挂载 |
+| `wait_selector(sel, "detached")` | `wait_selector(".overlay", "detached")` | 等待元素移除 |
+
+### CDP 真实鼠标事件（React 兼容）
+
+| 函数 | 用法 | 说明 |
+|------|------|------|
+| `cdp_click_at(x, y)` | `cdp_click_at(1249, 310)` | CDP 坐标点击（isTrusted:true） |
+| `cdp_click_sel(sel)` | `cdp_click_sel(".like-btn")` | CDP 选择器点击 |
+| `douyin_like("用户名")` | `douyin_like("籽岷")` | 抖音点赞完整流程 |
+
+### 网络监控
+
+| 函数 | 用法 | 说明 |
+|------|------|------|
+| `network_start()` | `network_start()` | 启用网络请求捕获 |
+| `network_requests()` | `network_requests()` | 获取已捕获的请求列表 |
+
 ### 滚动
 
 | 函数 | 用法 | 说明 |

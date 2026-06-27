@@ -139,6 +139,23 @@ async function runOp(op, sel, arg) {
         return results.length > 0 ? results[0].el : null;
     }
 
+    /** Get the Nth visible interactive element (same ordering as state() op). */
+    function _getElementByIndex(targetIdx) {
+        const MAX = 200;
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+        let el, idx = 0;
+        while ((el = walker.nextNode()) && idx < MAX) {
+            if (!isVisible(el)) continue;
+            const tag = el.tagName;
+            const interactive = ['A','BUTTON','INPUT','SELECT','TEXTAREA','VIDEO'].includes(tag);
+            const hasText = getDirectText(el) && el.children.length === 0;
+            if (!interactive && !hasText) continue;
+            if (idx === targetIdx) return el;
+            idx++;
+        }
+        return null;
+    }
+
     // ── Ops ──────────────────────────────────────────────────────────────
     switch(op) {
         case 'title': return document.title;
@@ -213,7 +230,42 @@ async function runOp(op, sel, arg) {
             el.dispatchEvent(new MouseEvent('click', opts));
             return 'clicked:' + ex + ',' + ey + ' <' + tag + '>';
         }
-        case 'clickText': {
+        case 'clickIndex': {
+            // Click the Nth interactive element (same ordering as state() op)
+            const _tgt = arg != null ? parseInt(arg) : -1;
+            if (_tgt < 0) return 'invalid-index';
+            const _el = _getElementByIndex(_tgt);
+            if (!_el) return 'no-element';
+            const _r = _el.getBoundingClientRect();
+            const _cx = _r.left + _r.width / 2;
+            const _cy = _r.top + _r.height / 2;
+            const _opts = {bubbles: true, cancelable: true, view: window,
+                clientX: _cx, clientY: _cy, screenX: _cx, screenY: _cy + 80,
+                button: 0, buttons: 1, pointerId: 1, pointerType: 'mouse',
+                isPrimary: true, pressure: 0.5, detail: 1};
+            _el.dispatchEvent(new PointerEvent('pointerdown', _opts));
+            _el.dispatchEvent(new MouseEvent('mousedown', _opts));
+            _el.dispatchEvent(new PointerEvent('pointerup', _opts));
+            _el.dispatchEvent(new MouseEvent('mouseup', _opts));
+            _el.dispatchEvent(new MouseEvent('click', _opts));
+            return 'clicked:' + _tgt;
+        }
+        case 'inputIndex': {
+            // Type text into the Nth input element (same ordering as state() op)
+            const _icfg = typeof arg === 'string' ? JSON.parse(arg) : (arg || {});
+            const _itgt = _icfg.index != null ? parseInt(_icfg.index) : (typeof arg === 'number' ? arg : -1);
+            const _itext = _icfg.text || '';
+            if (_itgt < 0) return 'invalid-index';
+            const _iel = _getElementByIndex(_itgt);
+            if (!_iel) return 'no-element';
+            const _isetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+                || Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+            if (_isetter) _isetter.call(_iel, _itext);
+            else _iel.value = _itext;
+            _iel.dispatchEvent(new Event('input', {bubbles: true}));
+            _iel.dispatchEvent(new Event('change', {bubbles: true}));
+            return 'typed:' + _tgt;
+        }
             // Find by visible text using TreeWalker + direct-text matching
             const el = findFirstText(arg);
             if (el) { el.click(); return 'clicked:' + (el.textContent||'').trim().slice(0,30); }
@@ -266,7 +318,7 @@ async function runOp(op, sel, arg) {
             return 'typed:' + (cfg.text || '');
         }
         case 'dump': {
-            // Walk DOM under sel, return interactive elements with selectors
+            // Legacy dump — use 'state' for new code. Kept for backward compat.
             const root = sel ? document.querySelector(sel) : document.body;
             if (!root) return 'not-found';
             const result = [];
@@ -296,6 +348,128 @@ async function runOp(op, sel, arg) {
             }
             walk(root, 0, '');
             return result.join('\n');
+        }
+        case 'state': {
+            // Indexed element tree — like browser-act's `state`.
+            // Returns [{index, changed, tag, text, role, placeholder, href, box:{x,y,w,h}}]
+            // `changed: true` (or first call `*` ) for elements new/modified since last state().
+            const MAX = (typeof arg === 'number' ? arg : 80);
+            const scopeSel = sel || null;
+            const root = scopeSel ? document.querySelector(scopeSel) : document.body;
+            if (!root) return {error: 'not-found'};
+
+            const prev = window.__nekoro_state_map;
+            const curr = {};
+            const results = [];
+
+            const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+            let el, idx = 0;
+            while ((el = walker.nextNode()) && idx < MAX) {
+                if (!isVisible(el)) continue;
+                const tag = el.tagName;
+                const interactive = ['A','BUTTON','INPUT','SELECT','TEXTAREA','VIDEO'].includes(tag);
+                const hasText = getDirectText(el) && el.children.length === 0;
+                if (!interactive && !hasText) continue;
+
+                const rect = el.getBoundingClientRect();
+                const sig = tag + '|' + getDirectText(el).slice(0,30) + '|' +
+                    Math.round(rect.x/20) + ',' + Math.round(rect.y/20);
+                const changed = !prev || !prev[sig];
+                curr[sig] = idx;
+
+                results.push({
+                    index: idx,
+                    changed: changed,
+                    tag: tag.toLowerCase(),
+                    text: getDirectText(el).slice(0, 50),
+                    role: el.getAttribute('role') || '',
+                    placeholder: el.getAttribute('placeholder') || '',
+                    href: tag === 'A' ? (el.getAttribute('href')||'').slice(0, 60) : '',
+                    type: tag === 'INPUT' ? (el.type||'text') : '',
+                    box: {x: Math.round(rect.x), y: Math.round(rect.y),
+                          w: Math.round(rect.width), h: Math.round(rect.height)}
+                });
+                idx++;
+            }
+
+            window.__nekoro_state_map = curr;
+            return results;
+        }
+        case 'waitSelector': {
+            // Poll until element matches desired state (visible|hidden|attached|detached)
+            const cfg = typeof arg === 'string' ? JSON.parse(arg) : (arg || {});
+            const s = cfg.sel || cfg.selector || sel;
+            const want = cfg.state || 'visible';
+            const _timeout = cfg.timeout || 10000;
+            const _interval = cfg.interval || 300;
+            if (!s) return 'no-selector';
+            const _deadline = Date.now() + _timeout;
+            while (Date.now() < _deadline) {
+                const el = document.querySelector(s);
+                if (want === 'attached' && el) return 'attached';
+                if (want === 'detached' && !el) return 'detached';
+                if (el) {
+                    const vis = isVisible(el);
+                    if (want === 'visible' && vis) return 'visible';
+                    if (want === 'hidden' && !vis) return 'hidden';
+                }
+                await new Promise(function(r) { setTimeout(r, _interval); });
+            }
+            return 'timeout:' + s;
+        }
+        case 'getMarkdown': {
+            // Extract page content as clean markdown (browser-act style)
+            function toMd(node, depth) {
+                if (!node) return '';
+                const tag = (node.tagName || '').toLowerCase();
+                const txt = (node.textContent || '').trim();
+                // Skip hidden/style/script
+                if (['STYLE','SCRIPT','NOSCRIPT','SVG','PATH'].includes(node.tagName)) return '';
+                // Headings
+                if (/^H[1-6]$/.test(tag)) return '#'.repeat(parseInt(tag[1])) + ' ' + txt + '\n\n';
+                // Links
+                if (tag === 'A') {
+                    const href = node.getAttribute('href') || '';
+                    const label = txt || href;
+                    return href && !href.startsWith('javascript:') ? '[' + label + '](' + href + ')' : label;
+                }
+                // Lists
+                if (tag === 'LI') return '- ' + txt + '\n';
+                if (tag === 'P') return txt + '\n\n';
+                if (tag === 'BR') return '\n';
+                if (tag === 'HR') return '---\n';
+                if (tag === 'BLOCKQUOTE') return '> ' + txt + '\n\n';
+                if (tag === 'CODE' || tag === 'PRE') return '`' + txt + '`';
+                if (tag === 'IMG') {
+                    const alt = node.getAttribute('alt') || '';
+                    const src = node.getAttribute('src') || '';
+                    return src ? '![' + alt + '](' + src + ')' : '';
+                }
+                if (tag === 'BUTTON') return '**[Button: ' + txt + ']**\n';
+                if (tag === 'INPUT') return '**[Input' + (node.type ? ' ' + node.type : '') + ': ' + (node.getAttribute('placeholder')||txt) + ']**\n';
+                if (tag === 'TEXTAREA') return '**[Textarea: ' + (node.getAttribute('placeholder')||'') + ']**\n';
+                if (tag === 'SELECT') return '**[Select: ' + txt.slice(0,30) + ']**\n';
+                // Recurse children
+                let out = '';
+                for (const child of node.childNodes) {
+                    if (child.nodeType === Node.TEXT_NODE) {
+                        const t = (child.textContent || '').replace(/\s+/g, ' ');
+                        if (t.trim()) out += t;
+                    } else if (child.nodeType === Node.ELEMENT_NODE) {
+                        out += toMd(child, depth + 1);
+                    }
+                }
+                // Block elements get newlines
+                if (['DIV','SECTION','ARTICLE','MAIN','HEADER','FOOTER','NAV','ASIDE','UL','OL','TABLE','FORM','FIELDSET'].includes(tag)) {
+                    out = '\n' + out + '\n';
+                }
+                return out;
+            }
+            const root = sel ? document.querySelector(sel) : document.body;
+            if (!root) return '';
+            const md = toMd(root, 0);
+            // Clean up: collapse 3+ newlines to 2
+            return md.replace(/\n{3,}/g, '\n\n').slice(0, arg || 8000);
         }
         case 'html': return document.documentElement.outerHTML.slice(0, arg || 500);
         case 'text': return document.body?.innerText?.slice(0, arg || 500) || '';

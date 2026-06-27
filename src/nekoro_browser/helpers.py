@@ -457,6 +457,98 @@ async def box_of(daemon, sel: str, tab: int = None) -> dict:
     return await script_op(daemon, "box", sel=sel, tab=tab)
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Indexed Element Tree (browser-act style)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def state(daemon, max_items: int = 80, sel: str = None,
+                tab: int = None) -> dict:
+    """Indexed interactive element tree — like browser-act's `state`.
+    Returns [{index, changed(* on first call), tag, text, role, placeholder, href, type, box}]
+    `changed: true` marks elements new/modified since last state() call.
+
+    Usage: state()
+    Usage: state(max_items=50, sel=".sidebar")
+    """
+    return await script_op(daemon, "state", sel=sel, arg=max_items, tab=tab)
+
+
+async def click_index(daemon, index: int, tab: int = None) -> dict:
+    """Click the Nth interactive element from the state() list.
+
+    Usage: click_index(3)
+    """
+    return await script_op(daemon, "clickIndex", arg=index, tab=tab)
+
+
+async def input_index(daemon, index: int, text: str, tab: int = None) -> dict:
+    """Type text into the Nth input element from the state() list.
+
+    Usage: input_index(5, "search query")
+    """
+    return await script_op(daemon, "inputIndex",
+                           arg={"index": index, "text": text}, tab=tab)
+
+
+async def wait_selector(daemon, sel: str, state: str = "visible",
+                        timeout: float = 10.0, tab: int = None) -> dict:
+    """Poll until element matches desired state (visible|hidden|attached|detached).
+
+    Usage: wait_selector(".modal", "visible", timeout=15)
+    Usage: wait_selector(".spinner", "hidden")
+    """
+    return await script_op(daemon, "waitSelector",
+                           arg={"sel": sel, "state": state,
+                                "timeout": int(timeout * 1000)},
+                           tab=tab, timeout=timeout + 5)
+
+
+async def get_markdown(daemon, sel: str = None, max_chars: int = 8000,
+                       tab: int = None) -> dict:
+    """Extract page content as clean markdown.
+
+    Usage: get_markdown()
+    Usage: get_markdown(sel="article", max_chars=4000)
+    """
+    return await script_op(daemon, "getMarkdown", sel=sel, arg=max_chars, tab=tab)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Network Monitoring
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def network_start(daemon) -> dict:
+    """Start capturing network requests. Returns captured data via events.
+
+    Usage: network_start()
+    """
+    try:
+        await daemon.bridge.send("Network.enable", {
+            "maxTotalBufferSize": 10000000,
+            "maxResourceBufferSize": 5000000,
+        })
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+async def network_requests(daemon) -> dict:
+    """Get captured network requests (requires network_start() first).
+
+    Usage: network_requests()
+    """
+    try:
+        r = await daemon.evaluate(
+            "JSON.stringify(performance.getEntriesByType('resource').map(r=>({name:r.name,duration:Math.round(r.duration),type:r.initiatorType})))"
+        )
+        import json
+        val = r.get("result", {}).get("value", "[]")
+        entries = json.loads(val) if isinstance(val, str) else []
+        return {"ok": True, "requests": entries[:50]}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 async def reload_extension(daemon) -> dict:
     """Force-reload the Chrome extension to pick up new code changes.
     After this call, the extension restarts automatically.
