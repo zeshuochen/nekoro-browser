@@ -168,6 +168,20 @@ async function runOp(op, sel, arg) {
             if (el) { el.click(); return 'clicked'; }
             return 'not-found';
         }
+        case 'clickAt': {
+            // Click at viewport coordinates. arg = JSON: {x, y}
+            const pt = typeof arg === 'string' ? JSON.parse(arg) : (arg || {});
+            const ex = pt.x, ey = pt.y;
+            if (ex == null || ey == null) {
+                // Try sel as fallback for coordinate-based finding
+                const el2 = document.querySelector(sel);
+                if (el2) { el2.click(); return 'clicked-sel'; }
+                return 'no-coords';
+            }
+            const el = document.elementFromPoint(ex, ey);
+            if (el) { el.click(); return 'clicked-at:' + ex + ',' + ey; }
+            return 'not-found';
+        }
         case 'clickText': {
             // Find by visible text using TreeWalker + direct-text matching
             const el = findFirstText(arg);
