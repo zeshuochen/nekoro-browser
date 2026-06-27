@@ -266,6 +266,7 @@ async function runOp(op, sel, arg) {
             _iel.dispatchEvent(new Event('change', {bubbles: true}));
             return 'typed:' + _tgt;
         }
+        case 'clickText': {
             // Find by visible text using TreeWalker + direct-text matching
             const el = findFirstText(arg);
             if (el) { el.click(); return 'clicked:' + (el.textContent||'').trim().slice(0,30); }
