@@ -481,6 +481,46 @@ async def click_index(daemon, index: int, tab: int = None) -> dict:
     return await script_op(daemon, "clickIndex", arg=index, tab=tab)
 
 
+async def hover(daemon, sel: str, tab: int = None) -> dict:
+    """Hover over element matching CSS selector.
+
+    Usage: hover(".menu-item")
+    """
+    return await script_op(daemon, "hover", sel=sel, tab=tab)
+
+
+async def hover_index(daemon, index: int, tab: int = None) -> dict:
+    """Hover the Nth interactive element from the state() list.
+
+    Usage: hover_index(3)
+    """
+    return await script_op(daemon, "hoverIndex", arg=index, tab=tab)
+
+
+async def scroll_into_view(daemon, sel: str = None, tab: int = None) -> dict:
+    """Scroll element into viewport center. Falls back to element at screen center.
+
+    Usage: scroll_into_view("#target")
+    """
+    return await script_op(daemon, "scrollIntoView", sel=sel, tab=tab)
+
+
+async def scroll_into_view_index(daemon, index: int, tab: int = None) -> dict:
+    """Scroll the Nth interactive element into view.
+
+    Usage: scroll_into_view_index(5)
+    """
+    return await script_op(daemon, "scrollIntoViewIndex", arg=index, tab=tab)
+
+
+async def dialog_off(daemon, tab: int = None) -> dict:
+    """Auto-dismiss all native dialogs (alert/confirm/prompt).
+
+    Usage: dialog_off()
+    """
+    return await script_op(daemon, "dialogOff", tab=tab)
+
+
 async def input_index(daemon, index: int, text: str, tab: int = None) -> dict:
     """Type text into the Nth input element from the state() list.
 

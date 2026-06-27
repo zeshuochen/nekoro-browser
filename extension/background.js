@@ -472,6 +472,61 @@ async function runOp(op, sel, arg) {
             // Clean up: collapse 3+ newlines to 2
             return md.replace(/\n{3,}/g, '\n\n').slice(0, arg || 8000);
         }
+        case 'hover': {
+            const el = document.querySelector(sel);
+            if (!el) return 'not-found';
+            const r = el.getBoundingClientRect();
+            const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+            el.dispatchEvent(new MouseEvent('mouseenter', {bubbles:true,cancelable:true,clientX:cx,clientY:cy}));
+            el.dispatchEvent(new MouseEvent('mouseover', {bubbles:true,cancelable:true,clientX:cx,clientY:cy}));
+            el.dispatchEvent(new PointerEvent('pointerenter', {bubbles:true,cancelable:true,clientX:cx,clientY:cy}));
+            return 'hovered';
+        }
+        case 'hoverIndex': {
+            const _htgt = arg != null ? parseInt(arg) : -1;
+            const _hel = _getElementByIndex(_htgt);
+            if (!_hel) return 'no-element';
+            const _hr = _hel.getBoundingClientRect();
+            const _hcx = _hr.left + _hr.width / 2, _hcy = _hr.top + _hr.height / 2;
+            _hel.dispatchEvent(new MouseEvent('mouseenter', {bubbles:true,cancelable:true,clientX:_hcx,clientY:_hcy}));
+            _hel.dispatchEvent(new MouseEvent('mouseover', {bubbles:true,cancelable:true,clientX:_hcx,clientY:_hcy}));
+            return 'hovered:' + _htgt;
+        }
+        case 'scrollIntoView': {
+            const el = sel ? document.querySelector(sel) : document.elementFromPoint(window.innerWidth/2, window.innerHeight/2);
+            if (!el) return 'not-found';
+            el.scrollIntoView({behavior: 'smooth', block: 'center'});
+            return 'scrolled';
+        }
+        case 'scrollIntoViewIndex': {
+            const _sid = arg != null ? parseInt(arg) : -1;
+            const _sel = _getElementByIndex(_sid);
+            if (!_sel) return 'no-element';
+            _sel.scrollIntoView({behavior: 'smooth', block: 'center'});
+            return 'scrolled:' + _sid;
+        }
+        case 'dialogOff': {
+            // Override native dialogs to auto-dismiss them
+            window.alert = function() {};
+            window.confirm = function() { return true; };
+            window.prompt = function() { return ''; };
+            return 'dialogs-off';
+        }
+        case 'waitNetworkIdle': {
+            // Poll until no in-flight requests for idle_ms
+            const _ncfg = typeof arg === 'string' ? JSON.parse(arg) : (arg || {});
+            const _idle = _ncfg.idle || 1000;
+            const _nmax = _ncfg.timeout || 15000;
+            const _ndeadline = Date.now() + _nmax;
+            // Use Performance API to check pending resource loads
+            while (Date.now() < _ndeadline) {
+                const entries = performance.getEntriesByType('resource');
+                const pending = entries.filter(function(e) { return e.duration === 0 && e.startTime > Date.now() - 5000; });
+                if (pending.length === 0) return 'idle';
+                await new Promise(function(r) { setTimeout(r, _idle / 2); });
+            }
+            return 'timeout';
+        }
         case 'html': return document.documentElement.outerHTML.slice(0, arg || 500);
         case 'text': return document.body?.innerText?.slice(0, arg || 500) || '';
         case 'ready': return document.readyState;
