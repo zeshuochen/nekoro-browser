@@ -108,7 +108,8 @@ echo "js(\"document.querySelector('[class*=like]:not([class*=dislike])')?.click(
 
 ## 致谢
 
-受以下项目启发（未使用其代码）：
-- [browser-harness](https://github.com/nicholasgriffintn/browser-harness) — 管道模式
-- [playwright-cli](https://github.com/microsoft/playwright-cli) / [opencli](https://github.com/jackwener/opencli) — 扩展+daemon 架构
-- [Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/) — CDP 文档
+架构核心来源于以下项目：
+
+- **[browser-harness](https://github.com/browser-use/browser-harness)** — helpers.py 的薄封装哲学（每个函数是 CDP 命令的别名，≤10 行）、管道模式、自愈 `agent_helpers.py`、domain-skills 目录结构、`cdp()` 原始访问接口
+- **[browser-act](https://github.com/browser-act/skills)** — `state()` 索引元素树、`*[N]` 增量标记、`waitSelector()` 状态等待、`getMarkdown()` 页面提取
+- **[Playwright](https://github.com/microsoft/playwright)** — CDP `Input.dispatchMouseEvent` 真实鼠标事件（`isTrusted:true`）、扩展+daemon 双路径架构
