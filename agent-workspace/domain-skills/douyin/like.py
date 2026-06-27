@@ -66,7 +66,9 @@ async def douyin_like(daemon, username: str = "籽岷",
             return {"ok": False, "error": "Action bar not found"}
         before = box.get("text", "")
 
-        # Step 5: CDP-click like button
+        # Step 5: CDP-click like button (ensure debugger is on this tab)
+        await daemon.bridge.send_control("attach", tabId=t)
+        await asyncio.sleep(1)
         cx = box["x"] + box["w"] // 2
         cy = box["y"] + 160  # Past avatar → like button
         await daemon.bridge.send("Input.dispatchMouseEvent",
