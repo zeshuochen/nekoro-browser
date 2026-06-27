@@ -128,18 +128,3 @@ async def douyin_press(daemon, key: str, tab: int = None) -> dict:
         return {"ok": True, "result": f"pressed {key}"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
-
-
-async def douyin_comment(daemon, tab: int = None) -> dict:
-    """x key — open/close comment panel."""
-    return await douyin_press(daemon, "x", tab)
-
-
-async def douyin_collect(daemon, tab: int = None) -> dict:
-    """c key — collect/favorite the video."""
-    return await douyin_press(daemon, "c", tab)
-
-
-async def douyin_follow(daemon, tab: int = None) -> dict:
-    """G key — follow the creator."""
-    return await douyin_press(daemon, "G", tab)
