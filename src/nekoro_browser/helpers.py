@@ -470,3 +470,170 @@ async def reload_extension(daemon) -> dict:
     except Exception:
         # reload kills the connection, so timeout is expected
         return {"ok": True, "result": "reloading (connection lost as expected)"}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CDP Real Mouse Events (isTrusted: true — React-compatible clicks)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def _cdp_attach(daemon, tab: int) -> bool:
+    """Attach CDP debugger to a specific tab. Returns True on success."""
+    if daemon.bridge.attached.is_set() and daemon.active_tab_id == tab:
+        return True
+    await daemon.bridge.send_control("attach", tabId=tab)
+    try:
+        await asyncio.wait_for(daemon.bridge.attached.wait(), timeout=5)
+        return True
+    except asyncio.TimeoutError:
+        return False
+
+
+async def cdp_click_at(daemon, x: float, y: float, tab: int = None,
+                       timeout: float = 10.0) -> dict:
+    """Click at viewport coordinates using CDP real mouse events (isTrusted: true).
+    This is required for React apps that reject synthetic events.
+
+    Usage: cdp_click_at(1249, 310)
+    """
+    try:
+        t = tab or await _get_tab(daemon)
+        if not t:
+            return {"ok": False, "error": "No tab"}
+        if not await _cdp_attach(daemon, t):
+            return {"ok": False, "error": f"CDP attach failed for tab {t}"}
+
+        await daemon.bridge.send("Input.dispatchMouseEvent", {
+            "type": "mousePressed", "x": x, "y": y,
+            "button": "left", "clickCount": 1
+        })
+        await asyncio.sleep(0.05)
+        await daemon.bridge.send("Input.dispatchMouseEvent", {
+            "type": "mouseReleased", "x": x, "y": y,
+            "button": "left", "clickCount": 1
+        })
+        return {"ok": True, "result": f"clicked at ({x}, {y})"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+async def cdp_click_sel(daemon, sel: str, tab: int = None,
+                        timeout: float = 10.0) -> dict:
+    """Find element by CSS selector, then CDP-click at its center.
+
+    Usage: cdp_click_sel("[class*=action] > div:nth-of-type(1)")
+    """
+    try:
+        t = tab or await _get_tab(daemon)
+        if not t:
+            return {"ok": False, "error": "No tab"}
+        # Get element position via scripting path
+        box = await script_op(daemon, "box", sel=sel, tab=t)
+        box_data = box.get("result", {})
+        if isinstance(box_data, str):
+            import json
+            try:
+                box_data = json.loads(box_data)
+            except Exception:
+                pass
+        if not isinstance(box_data, dict) or not box_data.get("visible"):
+            return {"ok": False, "error": f"Element not found or not visible: {sel}"}
+        cx = box_data["x"] + box_data["w"] // 2
+        cy = box_data["y"] + box_data["h"] // 2
+        return await cdp_click_at(daemon, cx, cy, tab=t, timeout=timeout)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Douyin-specific workflows
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def douyin_like(daemon, username: str = "籽岷",
+                      video_index: int = 0,
+                      tab: int = None) -> dict:
+    """Search a Douyin user and like their first video. End-to-end workflow.
+
+    Usage: douyin_like("籽岷")
+    Usage: douyin_like("籽岷", video_index=2)
+    """
+    try:
+        # Step 1: Navigate to search
+        t = tab or await _get_tab(daemon, "douyin.com")
+        if not t:
+            return {"ok": False, "error": "No douyin tab — open douyin.com first"}
+
+        await daemon.bridge.send_scripting(
+            {"action": "navigate", "target": t,
+             "url": f"https://www.douyin.com/search/{username}?type=video"}, 15)
+        await asyncio.sleep(4)
+
+        # Step 2: Scroll until we find the Nth video link
+        link = None
+        for i in range(15):
+            r = await daemon.bridge.send_scripting(
+                {"action": "evaluate", "target": t, "op": "findLink", "arg": "/video/"}, 10)
+            link = r.get("value")
+            if link:
+                # Skip to the Nth video if needed
+                if video_index <= 0:
+                    break
+                video_index -= 1
+            await daemon.bridge.send_scripting(
+                {"action": "evaluate", "target": t, "op": "scroll", "arg": 800}, 10)
+            await asyncio.sleep(1.5)
+        if not link:
+            return {"ok": False, "error": "Video link not found"}
+
+        # Step 3: Click the video link to open modal
+        vid = link.split("/video/")[1].split("?")[0].split("/")[0]
+        await daemon.bridge.send_scripting(
+            {"action": "evaluate", "target": t, "op": "click",
+             "sel": f'a[href*="{vid}"]'}, 10)
+        await asyncio.sleep(6)
+
+        # Step 4: Get action bar position via scripting
+        box_r = await script_op(daemon, "box", sel="[class*=action]", tab=t)
+        box_data = box_r.get("result", {})
+        if isinstance(box_data, str):
+            import json
+            try:
+                box_data = json.loads(box_data)
+            except Exception:
+                pass
+        if not isinstance(box_data, dict) or not box_data.get("visible"):
+            return {"ok": False, "error": "Action bar not found"}
+
+        # Step 5: CDP-click the like button (first div in action bar)
+        cx = box_data["x"] + box_data["w"] // 2
+        cy = box_data["y"] + 160  # Offset past avatar to like button
+        before = box_data.get("text", "")
+
+        click_r = await cdp_click_at(daemon, cx, cy, tab=t)
+        if not click_r.get("ok"):
+            return click_r
+
+        await asyncio.sleep(1.5)
+
+        # Step 6: Verify
+        box2_r = await script_op(daemon, "box", sel="[class*=action]", tab=t)
+        box2_data = box2_r.get("result", {})
+        if isinstance(box2_data, str):
+            import json
+            try:
+                box2_data = json.loads(box2_data)
+            except Exception:
+                pass
+        after = box2_data.get("text", "") if isinstance(box2_data, dict) else ""
+
+        changed = before != after
+        return {
+            "ok": True,
+            "result": {
+                "liked": changed,
+                "before": before[:30],
+                "after": after[:30],
+                "video": link[:80]
+            }
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
