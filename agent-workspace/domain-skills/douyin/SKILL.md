@@ -26,9 +26,10 @@ Always click video cards from search/user pages — they open as modals.
 - **Text matching fails** — must use coordinate or structural selector click
 
 ### Click Mechanism
-- **Synthetic events don't work** — React checks `event.isTrusted`
-- **CDP required**: `Input.dispatchMouseEvent` via `cdp_click_at(x, y)`
-- Like button offset from action bar: `y = action_box.y + 160`
+- **Preferred: keyboard shortcuts** — faster and more reliable than coordinate clicks
+- Shortcuts: `z`=like, `x`=comment, `c`=collect, `G`=follow, `f`=home page, `b`=toggle danmaku, `esc`=exit
+- CDP `Input.dispatchKeyEvent` with key `z` → `isTrusted:true` → React responds ✅
+- Fallback: CDP `Input.dispatchMouseEvent` if shortcuts don't cover the action
 
 ### Action Bar Layout
 ```

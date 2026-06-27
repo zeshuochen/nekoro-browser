@@ -66,18 +66,16 @@ async def douyin_like(daemon, username: str = "籽岷",
             return {"ok": False, "error": "Action bar not found"}
         before = box.get("text", "")
 
-        # Step 5: CDP-click like button (ensure debugger is on this tab)
+        # Step 5: Press 'z' key to like (Douyin keyboard shortcut)
+        # Shortcuts: z=like x=comment c=collect G=follow f=home b=danmaku esc=exit
         await daemon.bridge.send_control("attach", tabId=t)
         await asyncio.sleep(1)
-        cx = box["x"] + box["w"] // 2
-        cy = box["y"] + 160  # Past avatar → like button
-        await daemon.bridge.send("Input.dispatchMouseEvent",
-            {"type": "mousePressed", "x": cx, "y": cy,
-             "button": "left", "clickCount": 1})
-        await asyncio.sleep(0.05)
-        await daemon.bridge.send("Input.dispatchMouseEvent",
-            {"type": "mouseReleased", "x": cx, "y": cy,
-             "button": "left", "clickCount": 1})
+        await daemon.bridge.send("Input.dispatchKeyEvent",
+            {"type": "keyDown", "key": "z", "code": "KeyZ",
+             "windowsVirtualKeyCode": 90, "nativeVirtualKeyCode": 90})
+        await daemon.bridge.send("Input.dispatchKeyEvent",
+            {"type": "keyUp", "key": "z", "code": "KeyZ",
+             "windowsVirtualKeyCode": 90, "nativeVirtualKeyCode": 90})
         await asyncio.sleep(1.5)
 
         # Step 6: Verify
