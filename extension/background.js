@@ -244,12 +244,13 @@ async function handleScripting(msg) {
             await sleep(3000);
             post({id:msg.id, result:{navigated:url, tabId}});
         } else if (action === 'evaluate') {
-            // Pre-defined ops — no eval, bypasses all CSP
+            // Inject into MAIN world to see React-hydrated DOM
             const {op, sel, arg} = msg.params || {};
             const results = await chrome.scripting.executeScript({
                 target: {tabId: target},
                 func: runOp,
-                args: [op || 'title', sel || null, arg ?? null]
+                args: [op || 'title', sel || null, arg ?? null],
+                world: 'MAIN'
             });
             post({id:msg.id, result:{value:results[0]?.result}});
         } else if (action === 'list_tabs') {
