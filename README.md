@@ -58,38 +58,19 @@ echo "page_info()" | nekoro-browser
 # → {"ok": true, "result": {"title": "...", "url": "..."}}
 ```
 
-## 实战：打开 B站，搜籽岷，给最新视频点赞
+## 实战：抖音搜索籽岷，给第一个视频点赞
 
 ```bash
-# 1. 搜索
-echo "navigate('https://search.bilibili.com/all?keyword=籽岷')" | nekoro-browser
-echo "sleep(3)" | nekoro-browser
-
-# 2. 找第一个视频链接
-echo "js(\"return document.querySelector('a[href*=\\\\"/video/BV\\\\\"]')?.href\")" | nekoro-browser
-# → {"ok": true, "result": "https://www.bilibili.com/video/BV..."}
-
-# 3. 打开视频
-echo "navigate('https://www.bilibili.com/video/...')" | nekoro-browser
-echo "sleep(4)" | nekoro-browser
-
-# 4. 点赞
-echo "js(\"document.querySelector('[class*=like]:not([class*=dislike])')?.click(); 'done'\")" | nekoro-browser
-# → {"ok": true, "result": "done"}
+echo "douyin_like('籽岷')" | nekoro-browser
 ```
 
-## API
+抖音键盘快捷键：`z`=点赞 `x`=评论 `c`=收藏 `G`=关注
 
-全部 20 个 helpers 见 [SKILL.md](SKILL.md)。常用：
+全部 helpers 和 domain skills 见 [SKILL.md](SKILL.md)。
 
-| 类别 | 命令 |
-|------|------|
-| 导航 | `navigate(url)`, `new_tab(url)` |
-| 页面 | `page_info()`, `page_html()`, `page_text()` |
-| JS | `js(code)` |
-| 交互 | `click_selector(sel)`, `click_at_xy(x,y)`, `type_text(t)`, `press_key(k)` |
-| 等待 | `wait_for_load()`, `wait_for_selector(sel)`, `sleep(s)` |
-| 截图 | `capture_screenshot()`, `capture_screenshot("jpeg", 90)` |
+## 架构
+
+`helpers.py`（30 个）→ CDP 薄封装，每个 ≤10 行。厚逻辑在 `domain-skills/`。
 
 ## 自愈
 
