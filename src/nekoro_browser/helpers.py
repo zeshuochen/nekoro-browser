@@ -352,3 +352,106 @@ def list_helpers() -> list[str]:
         name for name, obj in globals().items()
         if inspect.iscoroutinefunction(obj) and not name.startswith("_")
     ]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Scripting Path Ops (chrome.scripting.executeScript — no CDP needed)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def _get_tab(daemon, url_hint: str = "") -> int | None:
+    """Auto-discover a tab: try CDP-attached tab first, then search by URL."""
+    tab = getattr(daemon, 'active_tab_id', None)
+    if tab:
+        return tab
+    # Fallback: search tabs via scripting
+    try:
+        pattern = url_hint or "http"
+        r = await daemon.bridge.send_scripting(
+            {"action": "find_tab", "url": pattern}, 10)
+        return r.get("tabId")
+    except Exception:
+        return None
+
+
+async def script_op(daemon, op: str, sel: str = None, arg=None,
+                    tab: int = None, timeout: float = 15.0) -> dict:
+    """Run a pre-defined op via chrome.scripting.executeScript (scripting path).
+
+    Usage: script_op("clickText", arg="喜欢")
+    Usage: script_op("findText", arg={"text":"喜欢", "limit":5})
+    Usage: script_op("dump")
+    """
+    try:
+        t = tab or await _get_tab(daemon)
+        if t is None:
+            return {"ok": False, "error": "No tab available"}
+        r = await daemon.bridge.send_scripting({
+            "action": "evaluate", "target": t,
+            "op": op, "sel": sel, "arg": arg
+        }, timeout)
+        val = r.get("value")
+        err = r.get("error")
+        if err:
+            return {"ok": False, "error": str(err)}
+        return {"ok": True, "result": val}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+async def click_text(daemon, text: str, tab: int = None) -> dict:
+    """Click visible element by its text content. Uses improved TreeWalker engine.
+
+    Usage: click_text("喜欢")
+    """
+    return await script_op(daemon, "clickText", arg=text, tab=tab)
+
+
+async def find_text(daemon, text: str, exact: bool = False,
+                    limit: int = 10, tab: int = None) -> dict:
+    """Search for visible elements containing text. Returns metadata for each match.
+
+    Usage: find_text("喜欢")
+    Usage: find_text("喜欢", exact=True)
+    """
+    return await script_op(daemon, "findText",
+                           arg={"text": text, "exact": exact, "limit": limit},
+                           tab=tab)
+
+
+async def wait_for_text(daemon, text: str, timeout: float = 15.0,
+                        interval: float = 0.5, tab: int = None) -> dict:
+    """Poll until visible text appears on the page. Great for React-hydrated UIs.
+
+    Usage: wait_for_text("喜欢")
+    Usage: wait_for_text("喜欢", timeout=30)
+    """
+    return await script_op(daemon, "waitForText",
+                           arg={"text": text, "timeout": int(timeout * 1000),
+                                "interval": int(interval * 1000)},
+                           tab=tab, timeout=timeout + 5)
+
+
+async def dump_dom(daemon, sel: str = None, depth: int = 4,
+                   tab: int = None) -> dict:
+    """Dump interactive DOM elements as a text tree. Useful for debugging.
+
+    Usage: dump_dom()
+    Usage: dump_dom(sel=".sidebar", depth=3)
+    """
+    return await script_op(daemon, "dump", sel=sel, arg=depth, tab=tab)
+
+
+async def has_sel(daemon, sel: str, tab: int = None) -> dict:
+    """Quick check if a CSS selector exists on the page.
+
+    Usage: has_sel("*[class*=like]")
+    """
+    return await script_op(daemon, "has", sel=sel, tab=tab)
+
+
+async def box_of(daemon, sel: str, tab: int = None) -> dict:
+    """Get bounding box and visibility info for a CSS selector.
+
+    Usage: box_of(".like-btn")
+    """
+    return await script_op(daemon, "box", sel=sel, tab=tab)

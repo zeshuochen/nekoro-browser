@@ -63,6 +63,83 @@ async function startPolling() {
 // ─── Pre-defined operations (no eval, no CSP issues) ──────────────────
 
 async function runOp(op, sel, arg) {
+    // ── Element Finding Engine (inline — must be inside runOp for executeScript serialization) ──
+
+    /** Only text from direct child text nodes, not descendant elements.
+     *  Avoids <div><span>喜欢</span></div> matching the div for "喜欢". */
+    function getDirectText(el) {
+        let text = '';
+        for (const child of el.childNodes) {
+            if (child.nodeType === Node.TEXT_NODE) {
+                text += child.textContent;
+            }
+        }
+        return text.replace(/\s+/g, ' ').trim();
+    }
+
+    /** Checks if element is actually visible. */
+    function isVisible(el) {
+        if (!el || el.nodeType !== 1) return false;
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) return false;
+        const s = getComputedStyle(el);
+        if (s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0') return false;
+        return true;
+    }
+
+    /** Walk DOM with TreeWalker, find elements by direct-text match.
+     *  Sorted: best matchType desc, then smallest area asc. */
+    function findTextElements(text, opts) {
+        const exact = !!(opts && opts.exact);
+        const limit = (opts && opts.limit) || 20;
+        const scopeSel = (opts && opts.scope) || null;
+        const searchText = (text || '').replace(/\s+/g, ' ').trim();
+        if (!searchText) return [];
+        const searchLower = searchText.toLowerCase();
+        const results = [];
+
+        const root = scopeSel ? document.querySelector(scopeSel) : document.body;
+        if (!root) return [];
+
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+        let el;
+        while ((el = walker.nextNode())) {
+            if (!isVisible(el)) continue;
+
+            const direct = getDirectText(el);
+            if (!direct) continue;
+            const directLower = direct.toLowerCase();
+            const rect = el.getBoundingClientRect();
+
+            let matchType = 0;
+            if (directLower === searchLower) {
+                matchType = el.children.length === 0 ? 100 : 80;
+            } else if (!exact && directLower.startsWith(searchLower)) {
+                matchType = el.children.length === 0 ? 60 : 40;
+            } else if (!exact && directLower.includes(searchLower)) {
+                matchType = el.children.length === 0 ? 30 : 15;
+            }
+
+            if (matchType > 0) {
+                results.push({
+                    el: el, matchType: matchType,
+                    area: rect.width * rect.height,
+                    text: direct, tag: el.tagName.toLowerCase(),
+                    w: rect.width, h: rect.height
+                });
+            }
+        }
+
+        results.sort(function(a, b) { return b.matchType - a.matchType || a.area - b.area; });
+        return results.slice(0, limit);
+    }
+
+    function findFirstText(text) {
+        var results = findTextElements(text, {limit: 1});
+        return results.length > 0 ? results[0].el : null;
+    }
+
+    // ── Ops ──────────────────────────────────────────────────────────────
     switch(op) {
         case 'title': return document.title;
         case 'url': return location.href;
@@ -92,25 +169,37 @@ async function runOp(op, sel, arg) {
             return 'not-found';
         }
         case 'clickText': {
-            // Find element whose text content matches and click it
-            const text = arg;
-            if (!text) return 'no-text';
-            // First try exact match on leaf elements
-            const all = document.querySelectorAll('*');
-            for (const el of all) {
-                const txt = (el.textContent || '').trim();
-                if (txt === text && el.children.length === 0) {
-                    el.click(); return 'clicked:' + text;
-                }
-            }
-            // Fallback: partial match on any element
-            for (const el of all) {
-                const txt = (el.textContent || '').trim();
-                if (txt === text || txt.startsWith(text)) {
-                    el.click(); return 'clicked-fuzzy:' + text;
-                }
-            }
+            // Find by visible text using TreeWalker + direct-text matching
+            const el = findFirstText(arg);
+            if (el) { el.click(); return 'clicked:' + (el.textContent||'').trim().slice(0,30); }
             return 'not-found';
+        }
+        case 'findText': {
+            // arg: text. sel: optional scope. Returns top matches with metadata
+            const _cfg = typeof arg === 'string' ? {text:arg} : (arg || {});
+            const _results = findTextElements(_cfg.text || _cfg.t, {
+                limit: _cfg.limit || 15,
+                scope: _cfg.sel || _cfg.scope || null,
+                exact: _cfg.exact || false
+            });
+            return _results.map(function(r) {
+                return {text:r.text.slice(0,40), tag:r.tag, match:r.matchType>=100?'exact':r.matchType>=60?'starts':'contains', w:Math.round(r.w), h:Math.round(r.h)};
+            });
+        }
+        case 'waitForText': {
+            // arg = JSON: {text, timeout:15000, interval:500}
+            const _wcfg = typeof arg === 'string' ? JSON.parse(arg) : (arg || {});
+            const _timeout = _wcfg.timeout || 15000;
+            const _interval = _wcfg.interval || 500;
+            const _text = _wcfg.text || _wcfg.t;
+            if (!_text) return 'no-text';
+            const _deadline = Date.now() + _timeout;
+            while (Date.now() < _deadline) {
+                const _el = findFirstText(_text);
+                if (_el) return 'found:' + _text;
+                await new Promise(function(r) { setTimeout(r, _interval); });
+            }
+            return 'timeout:' + _text;
         }
         case 'typeText': {
             // arg = JSON: {sel, text, pressEnter}
@@ -403,3 +492,5 @@ async function post(data) {
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+
