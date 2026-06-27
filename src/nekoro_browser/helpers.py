@@ -521,6 +521,20 @@ async def dialog_off(daemon, tab: int = None) -> dict:
     return await script_op(daemon, "dialogOff", tab=tab)
 
 
+async def wait_network_idle(daemon, timeout: float = 15.0,
+                            idle: float = 1.0, tab: int = None) -> dict:
+    """Wait until no in-flight network requests for idle seconds.
+    Uses Performance API — no CDP needed.
+
+    Usage: wait_network_idle()
+    Usage: wait_network_idle(timeout=30, idle=2)
+    """
+    return await script_op(daemon, "waitNetworkIdle",
+                           arg={"timeout": int(timeout * 1000),
+                                "idle": int(idle * 1000)},
+                           tab=tab, timeout=timeout + 5)
+
+
 async def input_index(daemon, index: int, text: str, tab: int = None) -> dict:
     """Type text into the Nth input element from the state() list.
 
