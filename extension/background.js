@@ -166,17 +166,22 @@ async function runOp(op, sel, arg) {
         case 'click': {
             const el = document.querySelector(sel);
             if (!el) return 'not-found';
-            // Dispatch proper mouse event sequence (Playwright-style)
-            // React event delegation needs real mouse events with coordinates
             const r = el.getBoundingClientRect();
             const cx = r.left + r.width / 2;
             const cy = r.top + r.height / 2;
-            const opts = {bubbles: true, cancelable: true, clientX: cx, clientY: cy, button: 0, view: window};
-            el.dispatchEvent(new MouseEvent('pointerdown', opts));
-            el.dispatchEvent(new MouseEvent('mousedown', opts));
-            el.dispatchEvent(new MouseEvent('pointerup', opts));
-            el.dispatchEvent(new MouseEvent('mouseup', opts));
-            el.dispatchEvent(new MouseEvent('click', opts));
+            // Find the actual leaf element at click position (handles nested SVG/spans)
+            const target = document.elementFromPoint(cx, cy) || el;
+            const opts = {
+                bubbles: true, cancelable: true, view: window,
+                clientX: cx, clientY: cy, screenX: cx, screenY: cy + 80,
+                button: 0, buttons: 1, pointerId: 1, pointerType: 'mouse',
+                isPrimary: true, pressure: 0.5, detail: 1
+            };
+            target.dispatchEvent(new PointerEvent('pointerdown', opts));
+            target.dispatchEvent(new MouseEvent('mousedown', opts));
+            target.dispatchEvent(new PointerEvent('pointerup', opts));
+            target.dispatchEvent(new MouseEvent('mouseup', opts));
+            target.dispatchEvent(new MouseEvent('click', opts));
             return 'clicked';
         }
         case 'clickAt': {
