@@ -95,3 +95,51 @@ async def douyin_like(daemon, username: str = "籽岷",
         }
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+async def douyin_press(daemon, key: str, tab: int = None) -> dict:
+    """Press a Douyin keyboard shortcut on the video modal.
+
+    Shortcuts: z=like x=comment c=collect G=follow f=home b=danmaku esc=exit
+
+    Usage: douyin_press("z")
+    """
+    try:
+        t = tab or getattr(daemon, 'active_tab_id', None)
+        if not t:
+            try:
+                r = await daemon.bridge.send_scripting(
+                    {"action": "find_tab", "url": "douyin.com"}, 10)
+                t = r.get("tabId")
+            except Exception:
+                pass
+        if not t:
+            return {"ok": False, "error": "No douyin tab"}
+
+        await daemon.bridge.send_control("attach", tabId=t)
+        await asyncio.sleep(0.3)
+        vk = ord(key.upper()) if len(key) == 1 else 0
+        await daemon.bridge.send("Input.dispatchKeyEvent",
+            {"type": "keyDown", "key": key, "code": f"Key{key.upper()}",
+             "windowsVirtualKeyCode": vk, "nativeVirtualKeyCode": vk})
+        await daemon.bridge.send("Input.dispatchKeyEvent",
+            {"type": "keyUp", "key": key, "code": f"Key{key.upper()}",
+             "windowsVirtualKeyCode": vk, "nativeVirtualKeyCode": vk})
+        return {"ok": True, "result": f"pressed {key}"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+async def douyin_comment(daemon, tab: int = None) -> dict:
+    """x key — open/close comment panel."""
+    return await douyin_press(daemon, "x", tab)
+
+
+async def douyin_collect(daemon, tab: int = None) -> dict:
+    """c key — collect/favorite the video."""
+    return await douyin_press(daemon, "c", tab)
+
+
+async def douyin_follow(daemon, tab: int = None) -> dict:
+    """G key — follow the creator."""
+    return await douyin_press(daemon, "G", tab)
