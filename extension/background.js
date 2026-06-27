@@ -681,9 +681,18 @@ async function autoAttach() {
                 }
             }
         } catch(_) {}
+        // All existing tabs busy — add a new tab to this group
+        try {
+            const tab = await chrome.tabs.create({url:'about:blank', active:false});
+            await chrome.tabs.group({groupId: managedGroupId, tabIds: [tab.id]});
+            if (await tryAttach(tab.id)) {
+                managedTabIds.add(tab.id);
+                return;
+            }
+        } catch(_) {}
     }
 
-    // Create a new tab in our own group
+    // No existing group — create first tab + group
     try {
         const tab = await chrome.tabs.create({url:'about:blank', active:false});
         if (chrome.tabs.group) {
