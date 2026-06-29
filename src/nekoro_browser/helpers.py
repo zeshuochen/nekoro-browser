@@ -149,14 +149,71 @@ async def press_key(daemon, key: str, modifiers: int = 0) -> dict:
 
 async def scroll_wheel(daemon, dx: float = 0, dy: float = 300,
                        x: float = 500, y: float = 300) -> dict:
-    """scroll_wheel(0, 500) — 派发 WheelEvent（CDP mouseWheel 类型无响应 → 用 JS 替代）。
-    不等价于 window.scrollTo——滚轮事件可能被目标元素拦截。滚动视口用 scroll_to()。"""
-    code = (f"(function(){{"
-            f"  var el = document.elementFromPoint({x}, {y}) || document.body;"
-            f"  el.dispatchEvent(new WheelEvent('wheel',"
-            f"    {{deltaX:{dx}, deltaY:{dy}, clientX:{x}, clientY:{y}, bubbles:true}}));"
-            f"}})()")
-    return await js(daemon, code)
+    """scroll_wheel(0, 500) — CDP compositor 级 mouseWheel（能穿透 iframe/shadow DOM）。
+    fire-and-forget 修复后 CDP Input.dispatchMouseEvent 不再超时。"""
+    try:
+        await daemon.bridge.send("Input.dispatchMouseEvent",
+            {"type": "mouseWheel", "x": x, "y": y, "deltaX": dx, "deltaY": dy})
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Tab safety & iframe
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def ensure_real_tab(daemon) -> dict:
+    """ensure_real_tab() — 当前 tab 是 chrome:// 等内部页时自动导航到 about:blank。
+    返回 {url, title}。"""
+    INTERNAL = ("chrome://", "chrome-untrusted://", "devtools://")
+    try:
+        cur = await daemon.get_page_info()
+        url = cur.get("url", "")
+        if url and not any(url.startswith(p) for p in INTERNAL):
+            return {"ok": True, "result": cur}
+        # 内部页 → 导航到 about:blank
+        await daemon.navigate("about:blank")
+        await asyncio.sleep(0.5)
+        return {"ok": True, "result": await daemon.get_page_info()}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+async def iframe_target(daemon, url_substr: str) -> dict:
+    """iframe_target("player") → 返回第一个 URL 含 url_substr 的 iframe targetId。"""
+    try:
+        r = await daemon.bridge.send("Target.getTargets", {})
+        targets = r.get("targetInfos", []) if r else []
+        for t in targets:
+            if t.get("type") == "iframe" and url_substr in t.get("url", ""):
+                return {"ok": True, "targetId": t["targetId"], "url": t["url"]}
+        return {"ok": False, "error": f"no iframe matching '{url_substr}'"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HTTP (no browser)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def http_get(daemon, url: str, timeout: float = 20.0) -> dict:
+    """http_get("https://example.com") → 纯 HTTP GET，不启浏览器。用于静态页/API。"""
+    import urllib.request
+    import gzip
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept-Encoding": "gzip",
+    }
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = r.read()
+            if r.headers.get("Content-Encoding") == "gzip":
+                data = gzip.decompress(data)
+            return {"ok": True, "body": data.decode("utf-8", errors="replace")}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 async def scroll_to(daemon, x: float = 0, y: float = 0) -> dict:

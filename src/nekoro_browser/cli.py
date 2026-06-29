@@ -43,7 +43,7 @@ def main():
     p = argparse.ArgumentParser(prog="nekoro-browser")
     p.add_argument("--version", action="version", version=f"nekoro-browser {__version__}")
     p.add_argument("--doctor", action="store_true")
-    p.add_argument("--exec", type=str, default=None)
+    p.add_argument("-c", "--exec", type=str, default=None)
     args = p.parse_args()
 
     if args.doctor:

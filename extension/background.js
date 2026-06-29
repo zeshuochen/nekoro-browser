@@ -593,6 +593,18 @@ async function handleCmd(msg) {
         // Fallback: use chrome.scripting.executeScript (no CDP needed)
         await handleScripting(msg);
     } else if (msg.method) {
+        // Fire-and-forget: Input events Chrome doesn't respond to — skip waiting for callback.
+        const FIRE_AND_FORGET = [
+            "Input.dispatchMouseEvent",
+            "Input.dispatchKeyEvent",
+            "Input.insertText",
+            "Input.dispatchTouchEvent",
+        ];
+        if (FIRE_AND_FORGET.includes(msg.method)) {
+            chrome.debugger.sendCommand({tabId}, msg.method, msg.params || {});
+            post({id: msg.id, result: {}});
+            return;
+        }
         chrome.debugger.sendCommand(
             {tabId}, msg.method, msg.params || {},
             (result) => {

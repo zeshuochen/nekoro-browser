@@ -18,7 +18,18 @@ nekoro-browser --verbose       # 调试模式
 ### 管道模式
 
 ```bash
-echo "code" | nekoro-browser   # 执行 Python 代码并返回 JSON 结果
+# 单行
+nekoro-browser -c "print(page_info())"
+
+# 多步 (heredoc)
+nekoro-browser <<'PY'
+new_tab("https://douyin.com")
+wait_for_load()
+print(page_info())
+PY
+
+# stdin 管道 (兼容旧用法)
+echo "page_info()" | nekoro-browser
 ```
 
 ## 可用函数 (helpers)
@@ -31,6 +42,8 @@ echo "code" | nekoro-browser   # 执行 Python 代码并返回 JSON 结果
 |------|------|------|
 | `new_tab(url)` | `new_tab("https://example.com")` | 新建标签页 |
 | `navigate(url)` | `navigate("https://example.com")` | 当前标签导航 |
+| `ensure_real_tab()` | `ensure_real_tab()` | 自动从 chrome:// 等内部页导航到 about:blank |
+| `iframe_target(url_substr)` | `iframe_target("player")` | 获取 iframe 的 CDP targetId |
 
 ### 页面信息
 
@@ -99,7 +112,7 @@ echo "code" | nekoro-browser   # 执行 Python 代码并返回 JSON 结果
 | 函数 | 用法 | 说明 |
 |------|------|------|
 | `scroll_to(x, y)` | `scroll_to(0, 500)` | 滚动视口到坐标（window.scrollTo） |
-| `scroll_wheel(dx, dy)` | `scroll_wheel(0, 500)` | CDP 鼠标滚轮事件 |
+| `scroll_wheel(dx, dy)` | `scroll_wheel(0, 500)` | CDP compositor 鼠标滚轮（穿透 iframe/shadow DOM） |
 | `scroll_into_view(sel)` | `scroll_into_view("#target")` | 滚动元素到可见区域 |
 
 ### 网络与 Cookie
@@ -112,6 +125,12 @@ echo "code" | nekoro-browser   # 执行 Python 代码并返回 JSON 结果
 | `network_enable()` | `network_enable()` | 启用 CDP 网络请求捕获 |
 | `get_response_body(id)` | `get_response_body("123.5")` | 获取 CDP 网络响应体 |
 
+### HTTP（不启浏览器）
+
+| 函数 | 用法 | 说明 |
+|------|------|------|
+| `http_get(url)` | `http_get("https://example.com")` | 纯 HTTP GET，适合静态页/API |
+
 ### 其他
 
 | 函数 | 用法 | 说明 |
@@ -121,9 +140,17 @@ echo "code" | nekoro-browser   # 执行 Python 代码并返回 JSON 结果
 
 ## 领域技能 (domain-skills)
 
-厚逻辑（站点工作流）放 `agent-workspace/domain-skills/` 目录。
+遇到特定网站先查 `domain-skills/<site>/`，不要重新发现已知规律。
 
-### 抖音 (douyin/actions.py)
+```bash
+ls domain-skills/
+cat domain-skills/douyin/creator-stats.md
+cat domain-skills/wechat-channels/post-list.md
+```
+
+厚逻辑（站点工作流）放 `domain-skills/` 目录。
+
+### 抖音 (douyin/creator-stats.md)
 
 | 函数 | 用法 | 说明 |
 |------|------|------|
@@ -131,6 +158,12 @@ echo "code" | nekoro-browser   # 执行 Python 代码并返回 JSON 结果
 | `douyin_press(key)` | `douyin_press("z")` | 按抖音键盘快捷键 |
 
 抖音键盘快捷键：`z`=点赞 `x`=评论 `c`=收藏 `G`=关注 `f`=首页 `b`=弹幕 `esc`=退出
+
+详细爬取指南见 `domain-skills/douyin/creator-stats.md`。
+
+### 视频号 (wechat-channels/post-list.md)
+
+作品列表和粉丝统计爬取指南见 `domain-skills/wechat-channels/post-list.md`。
 
 ## 自愈机制
 
