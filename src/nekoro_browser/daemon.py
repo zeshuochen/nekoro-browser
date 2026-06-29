@@ -3,6 +3,7 @@
 import asyncio
 import io
 import contextlib
+import ast
 import json
 import logging
 
@@ -43,20 +44,17 @@ class Daemon:
             v[name] = partial(getattr(h, name), self)
         stdout_buf = io.StringIO()
         try:
+            compiled = compile(code, "<nekoro-script>", "exec",
+                               flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
             with contextlib.redirect_stdout(stdout_buf):
-                r = eval(compile(code, "<stdin>", "eval"), {"__builtins__": __builtins__}, v)
-                if asyncio.iscoroutine(r):
-                    r = await r
-            return {"ok": True, "result": r, "stdout": stdout_buf.getvalue()}
-        except SyntaxError:
-            try:
-                with contextlib.redirect_stdout(stdout_buf):
-                    exec(compile(code, "<stdin>", "exec"), {"__builtins__": __builtins__}, v)
-                return {"ok": True, "stdout": stdout_buf.getvalue()}
-            except Exception as e:
-                return {"ok": False, "error": str(e), "stdout": stdout_buf.getvalue()}
-        except Exception as e:
-            return {"ok": False, "error": str(e), "stdout": stdout_buf.getvalue()}
+                coro = eval(compiled, {"__builtins__": __builtins__}, v)
+                if asyncio.iscoroutine(coro):
+                    await coro
+            return {"ok": True, "stdout": stdout_buf.getvalue()}
+        except Exception:
+            import traceback
+            return {"ok": False, "error": traceback.format_exc(),
+                    "stdout": stdout_buf.getvalue()}
 
     # ── API ───────────────────────────────────────────────────────────────
     async def navigate(self, url): return await self.bridge.send("Page.navigate", {"url": url})
