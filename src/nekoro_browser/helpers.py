@@ -199,18 +199,22 @@ async def iframe_target(daemon, url_substr: str) -> dict:
 
 def http_get(daemon, url: str, timeout: float = 20.0) -> str:
     """http_get("https://example.com") → 纯 HTTP GET 返回 HTML 字符串。用于静态页/API。"""
-    import urllib.request
-    import gzip
+    import urllib.request, urllib.error, gzip
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Accept-Encoding": "gzip",
     }
-    req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        data = r.read()
-        if r.headers.get("Content-Encoding") == "gzip":
-            data = gzip.decompress(data)
-        return data.decode("utf-8", errors="replace")
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = r.read()
+            if r.headers.get("Content-Encoding") == "gzip":
+                data = gzip.decompress(data)
+            return data.decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"HTTP {e.code}: {url}") from e
+    except Exception as e:
+        raise RuntimeError(f"http_get failed: {e}") from e
 
 
 async def scroll_to(daemon, x: float = 0, y: float = 0) -> dict:
@@ -226,10 +230,17 @@ async def scroll_to(daemon, x: float = 0, y: float = 0) -> dict:
 # Wait
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def wait_for_load(daemon, timeout: float = 30.0) -> dict:
-    """wait_for_load(30) — 等待页面加载完成"""
+async def wait_for_load(daemon, timeout: float = 15.0) -> dict:
+    """wait_for_load(15) — poll document.readyState (无 listener 泄漏)。"""
+    import time
     try:
-        return {"ok": await daemon.wait_for_load(timeout)}
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            r = await js(daemon, "document.readyState")
+            if r.get("result") == "complete":
+                return {"ok": True}
+            await asyncio.sleep(0.3)
+        return {"ok": False, "error": "timeout"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 

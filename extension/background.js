@@ -601,7 +601,12 @@ async function handleCmd(msg) {
             "Input.dispatchTouchEvent",
         ];
         if (FIRE_AND_FORGET.includes(msg.method)) {
-            chrome.debugger.sendCommand({tabId}, msg.method, msg.params || {});
+            chrome.debugger.sendCommand({tabId}, msg.method, msg.params || {}, (result) => {
+                if (chrome.runtime.lastError) {
+                    console.warn("[nekoro] CDP fire-and-forget error:", msg.method,
+                        chrome.runtime.lastError.message);
+                }
+            });
             post({id: msg.id, result: {}});
             return;
         }
