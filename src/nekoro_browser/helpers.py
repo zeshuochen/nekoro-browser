@@ -197,23 +197,20 @@ async def iframe_target(daemon, url_substr: str) -> dict:
 # HTTP (no browser)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def http_get(daemon, url: str, timeout: float = 20.0) -> dict:
-    """http_get("https://example.com") → 纯 HTTP GET，不启浏览器。用于静态页/API。"""
+def http_get(daemon, url: str, timeout: float = 20.0) -> str:
+    """http_get("https://example.com") → 纯 HTTP GET 返回 HTML 字符串。用于静态页/API。"""
     import urllib.request
     import gzip
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Accept-Encoding": "gzip",
     }
-    try:
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            data = r.read()
-            if r.headers.get("Content-Encoding") == "gzip":
-                data = gzip.decompress(data)
-            return {"ok": True, "body": data.decode("utf-8", errors="replace")}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        data = r.read()
+        if r.headers.get("Content-Encoding") == "gzip":
+            data = gzip.decompress(data)
+        return data.decode("utf-8", errors="replace")
 
 
 async def scroll_to(daemon, x: float = 0, y: float = 0) -> dict:
