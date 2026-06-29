@@ -180,6 +180,25 @@ async function runOp(op, sel, arg) {
             window.scrollBy(0, arg || 500);
             return 'scrolled';
         }
+        case 'getRect': {
+            const el = document.querySelector(sel);
+            if (!el) return null;
+            const r = el.getBoundingClientRect();
+            return {x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2)};
+        }
+        case 'getRectByText': {
+            const tx = typeof arg === 'string' ? arg : (arg && arg.text);
+            const all = document.querySelectorAll('*');
+            for (const e of all) {
+                if (e.childNodes.length === 1 && e.childNodes[0].nodeType === 3) {
+                    if (e.textContent.trim().includes(tx)) {
+                        const r = e.getBoundingClientRect();
+                        return {x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2)};
+                    }
+                }
+            }
+            return null;
+        }
         case 'click': {
             const el = document.querySelector(sel);
             if (!el) return 'not-found';

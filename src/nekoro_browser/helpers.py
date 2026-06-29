@@ -105,13 +105,19 @@ async def cdp(daemon, method: str, **params) -> dict:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def click_at_xy(daemon, x: float, y: float) -> dict:
-    """click_at_xy(100, 200) — CDP 真实鼠标点击 (isTrusted:true)"""
+    """click_at_xy(100, 200) — CDP 完整鼠标点击序列 (isTrusted:true)"""
     try:
+        # Step 1: mouseMoved — 关键！让 React pointer/hover 系统初始化
         await daemon.bridge.send("Input.dispatchMouseEvent",
-            {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1})
+            {"type": "mouseMoved", "x": x, "y": y, "button": "left", "buttons": 0, "modifiers": 0})
+        await asyncio.sleep(0.03)
+        # Step 2: mousePressed
+        await daemon.bridge.send("Input.dispatchMouseEvent",
+            {"type": "mousePressed", "x": x, "y": y, "button": "left", "buttons": 1, "clickCount": 1, "modifiers": 0})
         await asyncio.sleep(0.05)
+        # Step 3: mouseReleased
         await daemon.bridge.send("Input.dispatchMouseEvent",
-            {"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1})
+            {"type": "mouseReleased", "x": x, "y": y, "button": "left", "buttons": 1, "clickCount": 1, "modifiers": 0})
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -237,13 +243,18 @@ async def _find_tab(daemon, url_hint: str = "http") -> int | None:
 
 
 async def click_selector(daemon, sel: str, tab: int = None) -> dict:
-    """click_selector(".btn") — CSS 选择器点击"""
+    """click_selector(".btn") — CDP 真实坐标点击 (isTrusted:true)"""
     t = tab or await _find_tab(daemon)
     if not t: return {"ok": False, "error": "No tab"}
     try:
+        # JS 获取元素坐标（不派发事件）
         r = await daemon.bridge.send_scripting({
-            "action": "evaluate", "target": t, "op": "click", "sel": sel}, 10)
-        return {"ok": True, "result": r.get("value")}
+            "action": "evaluate", "target": t, "op": "getRect", "sel": sel}, 10)
+        rect = r.get("value") if r else None
+        if not rect or not rect.get("x"):
+            return {"ok": False, "error": f"element not found: {sel}"}
+        # CDP 真实鼠标点击
+        return await click_at_xy(daemon, rect["x"], rect["y"])
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -277,25 +288,31 @@ async def find_text(daemon, text: str, exact: bool = False,
 
 
 async def click_text(daemon, text: str, tab: int = None) -> dict:
-    """click_text("喜欢") — 按可见文本点击"""
+    """click_text("喜欢") — CDP 真实坐标点击 (isTrusted:true)"""
     t = tab or await _find_tab(daemon)
     if not t: return {"ok": False, "error": "No tab"}
     try:
         r = await daemon.bridge.send_scripting({
-            "action": "evaluate", "target": t, "op": "clickText", "arg": text}, 10)
-        return {"ok": True, "result": r.get("value")}
+            "action": "evaluate", "target": t, "op": "getRectByText", "arg": text}, 10)
+        rect = r.get("value") if r else None
+        if not rect or not rect.get("x"):
+            return {"ok": False, "error": f"text not found: {text}"}
+        return await click_at_xy(daemon, rect["x"], rect["y"])
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
 async def click_index(daemon, index: int, tab: int = None) -> dict:
-    """click_index(3) — 点击 state() 列表的第 N 个元素"""
+    """click_index(3) — CDP 真实坐标点击 (isTrusted:true)"""
     t = tab or await _find_tab(daemon)
     if not t: return {"ok": False, "error": "No tab"}
     try:
         r = await daemon.bridge.send_scripting({
-            "action": "evaluate", "target": t, "op": "clickIndex", "arg": index}, 10)
-        return {"ok": True, "result": r.get("value")}
+            "action": "evaluate", "target": t, "op": "getRectByIndex", "arg": index}, 10)
+        rect = r.get("value") if r else None
+        if not rect or not rect.get("x"):
+            return {"ok": False, "error": f"index not found: {index}"}
+        return await click_at_xy(daemon, rect["x"], rect["y"])
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
