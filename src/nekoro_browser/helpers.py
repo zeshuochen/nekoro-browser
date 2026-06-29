@@ -149,14 +149,14 @@ async def press_key(daemon, key: str, modifiers: int = 0) -> dict:
 
 async def scroll_wheel(daemon, dx: float = 0, dy: float = 300,
                        x: float = 500, y: float = 300) -> dict:
-    """scroll_wheel(0, 500) — CDP 鼠标滚轮事件。注意：不等价于 window.scrollTo，
-    滚轮事件可能被当前鼠标位置下的元素拦截。要滚动视口请用 scroll_to()。"""
-    try:
-        await daemon.bridge.send("Input.dispatchMouseEvent",
-            {"type": "mouseWheel", "x": x, "y": y, "deltaX": dx, "deltaY": dy})
-        return {"ok": True}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    """scroll_wheel(0, 500) — 派发 WheelEvent（CDP mouseWheel 类型无响应 → 用 JS 替代）。
+    不等价于 window.scrollTo——滚轮事件可能被目标元素拦截。滚动视口用 scroll_to()。"""
+    code = (f"(function(){{"
+            f"  var el = document.elementFromPoint({x}, {y}) || document.body;"
+            f"  el.dispatchEvent(new WheelEvent('wheel',"
+            f"    {{deltaX:{dx}, deltaY:{dy}, clientX:{x}, clientY:{y}, bubbles:true}}));"
+            f"}})()")
+    return await js(daemon, code)
 
 
 async def scroll_to(daemon, x: float = 0, y: float = 0) -> dict:
