@@ -12,6 +12,25 @@ from .bridge import ExtensionBridge
 logger = logging.getLogger(__name__)
 
 
+def _auto_await_code(code: str):
+    """Transpile bare async-call expression statements to await for backward compat.
+    navigate("url") → await navigate("url")
+    x = js("...") → left as-is (not a bare call expression)
+    """
+    import ast as _ast
+    try:
+        tree = _ast.parse(code, mode="exec")
+        for node in tree.body:
+            if isinstance(node, _ast.Expr) and isinstance(node.value, _ast.Call):
+                node.value = _ast.Await(value=node.value)
+        _ast.fix_missing_locations(tree)
+        return compile(tree, "<nekoro-script>", "exec",
+                       flags=_ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
+    except SyntaxError:
+        return compile(code, "<nekoro-script>", "exec",
+                       flags=_ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
+
+
 class Daemon:
     def __init__(self):
         self.bridge = ExtensionBridge()
@@ -41,6 +60,7 @@ class Daemon:
     async def _on_exec(self, code: str) -> dict:
         from functools import partial
         import importlib
+        import ast as _ast
         from . import helpers as h
         from . import agent_helpers as ah
         importlib.reload(ah)  # 每次 exec 拿最新 agent_helpers
@@ -52,9 +72,21 @@ class Daemon:
                 v[name] = partial(obj, self)
         stdout_buf = io.StringIO()
         try:
-            compiled = compile(code, "<nekoro-script>", "exec",
-                               flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
             with contextlib.redirect_stdout(stdout_buf):
+                # 单表达式 → eval（返回 result 字段，兼容旧脚本）
+                try:
+                    _ast.parse(code, mode="eval")
+                    compiled = compile(code, "<nekoro-expr>", "eval",
+                                       flags=_ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
+                    result = eval(compiled, {"__builtins__": __builtins__}, v)
+                    if asyncio.iscoroutine(result):
+                        result = await result
+                    return {"ok": True, "result": result,
+                            "stdout": stdout_buf.getvalue()}
+                except SyntaxError:
+                    pass
+                # 多行语句 → auto-await + exec
+                compiled = _auto_await_code(code)
                 coro = eval(compiled, {"__builtins__": __builtins__}, v)
                 if asyncio.iscoroutine(coro):
                     await coro
