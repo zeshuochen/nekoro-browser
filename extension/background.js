@@ -15,7 +15,11 @@ self.addEventListener('activate', () => {
 
 // Keep alive via alarms
 try { chrome.alarms.create('k', {periodInMinutes: 0.5}); } catch(_) {}
-try { chrome.alarms.onAlarm.addListener(() => { if(!running) startPolling(); }); } catch(_) {}
+function onAlarmFired() { if (!running) startPolling(); }
+try {
+    chrome.alarms.onAlarm.removeListener(onAlarmFired);
+    chrome.alarms.onAlarm.addListener(onAlarmFired);
+} catch(_) {}
 
 // Also try immediately
 setTimeout(() => { if(!running) startPolling(); }, 500);
@@ -787,20 +791,28 @@ async function getOccupiedTabs() {
     return occupied;
 }
 
-function tryAttach(id) {
+function tryAttach(id, retries = 5, delay = 500) {
     return new Promise(resolve => {
-        chrome.debugger.attach({tabId:id}, '1.3', () => {
-            if (chrome.runtime.lastError) {
-                const msg = chrome.runtime.lastError.message;
-                console.warn('[nekoro-browser] attach fail tab',id,':',msg);
-                post({type:'attach_error', tabId:id, detail:msg});
-                resolve(false); return;
-            }
-            tabId = id;
-            console.log('[nekoro-browser] attached tab', id);
-            post({type:'attached', tabId});
-            resolve(true);
-        });
+        function attempt(remaining) {
+            chrome.debugger.attach({tabId: id}, '1.3', () => {
+                if (chrome.runtime.lastError) {
+                    if (remaining > 0) {
+                        setTimeout(() => attempt(remaining - 1), delay);
+                    } else {
+                        const msg = chrome.runtime.lastError.message;
+                        console.error('[nekoro-browser] attach failed after retries tab', id, ':', msg);
+                        post({type:'attach_error', tabId: id, detail: msg});
+                        resolve(false);
+                    }
+                    return;
+                }
+                tabId = id;
+                console.log('[nekoro-browser] attached tab', id);
+                post({type:'attached', tabId});
+                resolve(true);
+            });
+        }
+        attempt(retries);
     });
 }
 
