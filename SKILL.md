@@ -19,17 +19,17 @@ nekoro-browser --verbose       # 调试模式
 
 ```bash
 # 单行
-nekoro-browser -c "print(page_info())"
+nekoro-browser -c "print(await page_info())"
 
 # 多步 (heredoc)
 nekoro-browser <<'PY'
-new_tab("https://douyin.com")
-wait_for_load()
-print(page_info())
+await new_tab("https://douyin.com")
+await wait_for_load()
+print(await page_info())
 PY
 
 # stdin 管道 (兼容旧用法)
-echo "page_info()" | nekoro-browser
+echo "await page_info()" | nekoro-browser
 ```
 
 ## 可用函数 (helpers)
