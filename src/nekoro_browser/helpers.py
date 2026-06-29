@@ -197,7 +197,7 @@ async def iframe_target(daemon, url_substr: str) -> dict:
 # HTTP (no browser)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def http_get(daemon, url: str, timeout: float = 20.0) -> dict:
+def http_get(daemon, url: str, timeout: float = 20.0) -> dict:
     """http_get("https://example.com") → 纯 HTTP GET，不启浏览器。用于静态页/API。"""
     import urllib.request
     import gzip
@@ -493,9 +493,10 @@ async def dialog_off(daemon, tab: int = None) -> dict:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def list_helpers() -> list[str]:
-    """列出所有可用的 helper 函数名。"""
+    """列出所有可用的 helper 函数名（含同步函数）。"""
     import inspect
     return [
         name for name, obj in globals().items()
-        if inspect.iscoroutinefunction(obj) and not name.startswith("_")
+        if callable(obj) and not name.startswith("_")
+        and (inspect.iscoroutinefunction(obj) or inspect.isfunction(obj))
     ]
