@@ -16,9 +16,11 @@ class Daemon:
     def __init__(self):
         self.bridge = ExtensionBridge()
         self._tab_id = None
+        self._event_queue: asyncio.Queue = asyncio.Queue()
 
     async def start(self) -> bool:
         self.bridge.set_exec_handler(self._on_exec)
+        self.bridge.on_event(self._queue_event)  # 全局事件收集
         await self.bridge.start()
         logger.info("Waiting for extension...")
         try:
@@ -93,6 +95,24 @@ class Daemon:
         self.bridge.on_event(cb)
         try: await asyncio.wait_for(ev.wait(), to); return True
         except asyncio.TimeoutError: return False
+
+    # ── Event Queue ────────────────────────────────────────────────────────
+
+    def _queue_event(self, method, params, session_id=None):
+        """Push CDP event into buffer — consumed by drain_events()."""
+        try:
+            self._event_queue.put_nowait({
+                "method": method, "params": params, "sessionId": session_id
+            })
+        except asyncio.QueueFull:
+            pass
+
+    async def drain_events(self) -> list[dict]:
+        """Pull all buffered CDP events since last drain."""
+        events = []
+        while not self._event_queue.empty():
+            events.append(self._event_queue.get_nowait())
+        return events
 
     @property
     def active_tab_id(self): return self._tab_id

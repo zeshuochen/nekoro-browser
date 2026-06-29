@@ -245,14 +245,37 @@ async def wait_for_load(daemon, timeout: float = 15.0) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-async def wait_for_network_idle(daemon, idle_time: float = 1.0,
+async def wait_for_network_idle(daemon, idle_time: float = 0.5,
                                  timeout: float = 15.0) -> dict:
-    """wait_for_network_idle(1, 15) — 等待网络请求静默。事件队列就绪后用 drain_events 替换。"""
+    """wait_for_network_idle(0.5, 15) — 等待 Network 请求静默 idle_time 秒。"""
+    import time
     try:
-        await asyncio.sleep(idle_time)
-        return {"ok": True}
+        await cdp(daemon, "Network.enable")
+        deadline = time.time() + timeout
+        pending: set = set()
+        last_active = time.time()
+        while time.time() < deadline:
+            events = await drain_events(daemon)
+            for ev in events:
+                m = ev.get("method", "")
+                p = ev.get("params", {})
+                if m == "Network.requestWillBeSent":
+                    pending.add(p.get("requestId", ""))
+                    last_active = time.time()
+                elif m in ("Network.loadingFinished", "Network.loadingFailed"):
+                    pending.discard(p.get("requestId", ""))
+            if not pending and time.time() - last_active >= idle_time:
+                return {"ok": True}
+            await asyncio.sleep(0.1)
+        return {"ok": False, "error": "timeout", "pending": len(pending)}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+async def drain_events(daemon):
+    """drain_events() → list — 拉取自上次 drain 后所有缓存的 CDP 事件。
+    每个事件为 {method, params, sessionId}。"""
+    return await daemon.drain_events()
 
 
 async def sleep(daemon, seconds: float) -> dict:
