@@ -144,14 +144,25 @@ async def press_key(daemon, key: str, modifiers: int = 0) -> dict:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Scroll
+# Scroll / Wheel
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def scroll(daemon, dx: float = 0, dy: float = 300) -> dict:
-    """scroll(0, 500) — CDP 鼠标滚轮"""
+async def scroll_wheel(daemon, dx: float = 0, dy: float = 300,
+                       x: float = 500, y: float = 300) -> dict:
+    """scroll_wheel(0, 500) — CDP 鼠标滚轮事件。注意：不等价于 window.scrollTo，
+    滚轮事件可能被当前鼠标位置下的元素拦截。要滚动视口请用 scroll_to()。"""
     try:
         await daemon.bridge.send("Input.dispatchMouseEvent",
-            {"type": "mouseWheel", "x": 500, "y": 300, "deltaX": dx, "deltaY": dy})
+            {"type": "mouseWheel", "x": x, "y": y, "deltaX": dx, "deltaY": dy})
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+async def scroll_to(daemon, x: float = 0, y: float = 0) -> dict:
+    """scroll_to(0, 500) — 滚动页面视口到坐标 (window.scrollTo)"""
+    try:
+        await daemon.evaluate(f"window.scrollTo({x}, {y})")
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -202,11 +213,24 @@ async def set_cookie(daemon, name: str, value: str,
 
 
 async def network_enable(daemon) -> dict:
-    """network_enable() — 启用网络请求捕获"""
+    """network_enable() — 启用 CDP 网络请求捕获"""
     try:
         await daemon.bridge.send("Network.enable", {
             "maxTotalBufferSize": 10000000, "maxResourceBufferSize": 5000000})
         return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+async def get_response_body(daemon, request_id: str) -> dict:
+    """get_response_body("1234.5") → CDP 网络响应体"""
+    try:
+        r = await daemon.bridge.send("Network.getResponseBody",
+            {"requestId": request_id})
+        body = r.get("body", "")
+        if r.get("base64Encoded", False):
+            body = base64.b64decode(body).decode("utf-8", errors="replace")
+        return {"ok": True, "body": body}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 

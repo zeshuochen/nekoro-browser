@@ -199,6 +199,14 @@ async function runOp(op, sel, arg) {
             }
             return null;
         }
+        case 'getRectByIndex': {
+            const idx = typeof arg === 'number' ? arg : parseInt(arg);
+            if (isNaN(idx) || idx < 0) return null;
+            const el = _getElementByIndex(idx);
+            if (!el) return null;
+            const r = el.getBoundingClientRect();
+            return {x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2)};
+        }
         case 'click': {
             const el = document.querySelector(sel);
             if (!el) return 'not-found';

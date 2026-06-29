@@ -60,29 +60,21 @@ echo "page_info()" | nekoro-browser
 # → {"ok": true, "result": {"title": "...", "url": "..."}}
 ```
 
-## Example: Open Bilibili, Search, Like a Video
+## Example: Douyin Search & Like (one command)
 
 ```bash
-# 1. Search
-echo "navigate('https://search.bilibili.com/all?keyword=some+creator')" | nekoro-browser
-echo "sleep(3)" | nekoro-browser
-
-# 2. Find first video link
-echo "js(\"return document.querySelector('a[href*=\\\\"/video/BV\\\\\"]')?.href\")" | nekoro-browser
-# → {"ok": true, "result": "https://www.bilibili.com/video/BV..."}
-
-# 3. Open the video
-echo "navigate('https://www.bilibili.com/video/...')" | nekoro-browser
-echo "sleep(4)" | nekoro-browser
-
-# 4. Click like
-echo "js(\"document.querySelector('[class*=like]:not([class*=dislike])')?.click(); 'done'\")" | nekoro-browser
-# → {"ok": true, "result": "done"}
+echo "douyin_like('some+creator')" | nekoro-browser
 ```
+
+Douyin keyboard shortcuts: `z`=like `x`=comment `c`=collect `G`=follow
+
+## Architecture
+
+`helpers.py` (30+ thin wrappers) → CDP commands, each ≤10 lines. Thick logic lives in `domain-skills/`.
 
 ## API
 
-All 20 helpers documented in [SKILL.md](SKILL.md). Common ones:
+All 30+ helpers documented in [SKILL.md](SKILL.md). Common ones:
 
 | Category | Commands |
 |----------|----------|
@@ -90,7 +82,7 @@ All 20 helpers documented in [SKILL.md](SKILL.md). Common ones:
 | Page info | `page_info()`, `page_html()`, `page_text()` |
 | JavaScript | `js(code)` |
 | Interaction | `click_selector(sel)`, `click_at_xy(x,y)`, `type_text(t)`, `press_key(k)` |
-| Waiting | `wait_for_load()`, `wait_for_selector(sel)`, `sleep(s)` |
+| Waiting | `wait_for_load()`, `wait_selector(sel)`, `sleep(s)` |
 | Screenshots | `capture_screenshot()`, `capture_screenshot("jpeg", 90)` |
 
 ## Self-Healing
@@ -110,7 +102,8 @@ Edit `helpers.py` at runtime. Agent adds missing functions on failure — takes 
 
 ## Acknowledgments
 
-Inspired by (no code used):
-- [browser-harness](https://github.com/nicholasgriffintn/browser-harness) — pipe mode
-- [playwright-cli](https://github.com/microsoft/playwright-cli) / [opencli](https://github.com/jackwener/opencli) — extension + daemon architecture
-- [Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/) — CDP docs
+Core architecture derived from:
+
+- **[browser-harness](https://github.com/browser-use/browser-harness)** — thin-wrapper philosophy (each function is a CDP alias, ≤10 lines), pipe mode, self-healing `agent_helpers.py`, domain-skills directory structure, `cdp()` raw access
+- **[browser-act](https://github.com/browser-act/skills)** — `state()` indexed element tree, `*[N]` change markers, `waitSelector()` state polling, `getMarkdown()` page extraction
+- **[Playwright](https://github.com/microsoft/playwright)** — CDP `Input.dispatchMouseEvent` real mouse events (`isTrusted:true`), extension + daemon dual-path architecture
