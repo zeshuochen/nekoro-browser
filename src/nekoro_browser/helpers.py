@@ -245,6 +245,16 @@ async def wait_for_load(daemon, timeout: float = 15.0) -> dict:
         return {"ok": False, "error": str(e)}
 
 
+async def wait_for_network_idle(daemon, idle_time: float = 1.0,
+                                 timeout: float = 15.0) -> dict:
+    """wait_for_network_idle(1, 15) — 等待网络请求静默。事件队列就绪后用 drain_events 替换。"""
+    try:
+        await asyncio.sleep(idle_time)
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 async def sleep(daemon, seconds: float) -> dict:
     """sleep(2)"""
     await asyncio.sleep(seconds)
@@ -494,6 +504,19 @@ async def dialog_off(daemon, tab: int = None) -> dict:
         return {"ok": True, "result": r.get("value")}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Self-heal
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def reload_agent_helpers(daemon) -> dict:
+    """reload_agent_helpers() — 重新加载 agent_helpers.py，无需重启 daemon。"""
+    import importlib
+    from . import agent_helpers as ah
+    importlib.reload(ah)
+    names = [k for k in vars(ah) if not k.startswith("_") and callable(vars(ah)[k])]
+    return {"ok": True, "reloaded": names}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

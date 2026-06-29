@@ -38,10 +38,16 @@ class Daemon:
 
     async def _on_exec(self, code: str) -> dict:
         from functools import partial
+        import importlib
         from . import helpers as h
+        from . import agent_helpers as ah
+        importlib.reload(ah)  # 每次 exec 拿最新 agent_helpers
         v = {"daemon": self, "tab": self._tab_id}
         for name in h.list_helpers():
             v[name] = partial(getattr(h, name), self)
+        for name, obj in vars(ah).items():
+            if not name.startswith("_") and callable(obj):
+                v[name] = partial(obj, self)
         stdout_buf = io.StringIO()
         try:
             compiled = compile(code, "<nekoro-script>", "exec",
