@@ -3,7 +3,17 @@
 ## URL
 
 - 内容管理: `https://creator.douyin.com/creator-micro/content/manage`
-- 粉丝统计: `https://creator.douyin.com/creator-micro/statistic/home/personal`
+- 粉丝列表: `https://creator.douyin.com/creator-micro/data/following/follower`
+- ~~粉丝统计~~: `https://creator.douyin.com/creator-micro/statistic/home/personal`（⚠️ 2026-06 已失效，显示"未找到相关页面"，被重定向到数据总览）
+
+## 粉丝增长数据 🔴 待探索
+
+旧 URL 已失效，新数据端点尚未找到。已知：
+- `web/api/creator/center/fans/index/config` — 返回空，仅为页面配置
+- `aweme/v1/creator/relation/follower/list/` — 粉丝列表 API，含 `total_num`，但不含每日涨粉数据
+- 数据总览页（`statistic/home/personal` 旧 URL）显示播放量/主页访问量/作品点赞等，但无涨粉
+
+**待做**：在数据中心页面手动点击各 tab 抓 Network 请求，找到真实的涨粉数据 API。
 
 ## 页面结构
 
