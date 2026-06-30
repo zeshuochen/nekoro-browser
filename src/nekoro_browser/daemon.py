@@ -15,14 +15,26 @@ logger = logging.getLogger(__name__)
 def _auto_await_code(code: str):
     """Transpile bare async-call expression statements to await for backward compat.
     navigate("url") → await navigate("url")
+    print("x") → left as-is (builtin)
     x = js("...") → left as-is (not a bare call expression)
     """
     import ast as _ast
+    _PY_BUILTINS = frozenset({
+        "print", "len", "str", "int", "float", "bool", "list", "dict", "set", "tuple",
+        "range", "enumerate", "zip", "map", "filter", "sorted", "reversed",
+        "min", "max", "sum", "abs", "round", "type", "isinstance", "hasattr",
+        "getattr", "setattr", "any", "all", "next", "iter",
+        "open", "input", "id", "dir", "vars", "repr", "format", "chr", "ord",
+        "hex", "oct", "bin", "pow", "divmod", "super", "object",
+    })
     try:
         tree = _ast.parse(code, mode="exec")
         for node in tree.body:
             if isinstance(node, _ast.Expr) and isinstance(node.value, _ast.Call):
-                node.value = _ast.Await(value=node.value)
+                func = node.value.func
+                # Only auto-await bare name calls that aren't Python builtins
+                if isinstance(func, _ast.Name) and func.id not in _PY_BUILTINS:
+                    node.value = _ast.Await(value=node.value)
         _ast.fix_missing_locations(tree)
         return compile(tree, "<nekoro-script>", "exec",
                        flags=_ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
