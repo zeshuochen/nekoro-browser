@@ -254,9 +254,9 @@ async function runOp(op, sel, arg) {
             if (!el) return 'no-element';
             // Dispatch full mouse event sequence
             const opts = {bubbles: true, cancelable: true, clientX: ex, clientY: ey, button: 0, view: window};
-            el.dispatchEvent(new MouseEvent('pointerdown', opts));
+            el.dispatchEvent(new PointerEvent('pointerdown', opts));
             el.dispatchEvent(new MouseEvent('mousedown', opts));
-            el.dispatchEvent(new MouseEvent('pointerup', opts));
+            el.dispatchEvent(new PointerEvent('pointerup', opts));
             el.dispatchEvent(new MouseEvent('mouseup', opts));
             el.dispatchEvent(new MouseEvent('click', opts));
             return 'clicked:' + ex + ',' + ey + ' <' + tag + '>';
@@ -295,7 +295,7 @@ async function runOp(op, sel, arg) {
             else _iel.value = _itext;
             _iel.dispatchEvent(new Event('input', {bubbles: true}));
             _iel.dispatchEvent(new Event('change', {bubbles: true}));
-            return 'typed:' + _tgt;
+            return 'typed:' + _itgt;
         }
         case 'clickText': {
             // Find by visible text using TreeWalker + direct-text matching
@@ -544,19 +544,37 @@ async function runOp(op, sel, arg) {
             return 'dialogs-off';
         }
         case 'waitNetworkIdle': {
-            // Poll until no in-flight requests for idle_ms
             const _ncfg = typeof arg === 'string' ? JSON.parse(arg) : (arg || {});
-            const _idle = _ncfg.idle || 1000;
+            const _idle = _ncfg.idle || 500;
             const _nmax = _ncfg.timeout || 15000;
             const _ndeadline = Date.now() + _nmax;
-            // Use Performance API to check pending resource loads
-            while (Date.now() < _ndeadline) {
-                const entries = performance.getEntriesByType('resource');
-                const pending = entries.filter(function(e) { return e.duration === 0 && e.startTime > Date.now() - 5000; });
-                if (pending.length === 0) return 'idle';
-                await new Promise(function(r) { setTimeout(r, _idle / 2); });
+            // Patch XHR + fetch to count in-flight requests (idempotent via __nekoro_patched flag)
+            if (!window.__nekoro_patched) {
+                window.__nekoro_pending = 0;
+                const _origOpen = XMLHttpRequest.prototype.open;
+                XMLHttpRequest.prototype.open = function(...a) {
+                    window.__nekoro_pending++;
+                    this.addEventListener('loadend', function() {
+                        window.__nekoro_pending = Math.max(0, window.__nekoro_pending - 1);
+                    });
+                    return _origOpen.apply(this, a);
+                };
+                const _origFetch = window.fetch;
+                window.fetch = function(...a) {
+                    window.__nekoro_pending++;
+                    return _origFetch.apply(this, a).finally(function() {
+                        window.__nekoro_pending = Math.max(0, window.__nekoro_pending - 1);
+                    });
+                };
+                window.__nekoro_patched = true;
             }
-            return 'timeout';
+            let _lastActive = Date.now();
+            while (Date.now() < _ndeadline) {
+                if (window.__nekoro_pending > 0) _lastActive = Date.now();
+                if (window.__nekoro_pending === 0 && Date.now() - _lastActive >= _idle) return 'idle';
+                await new Promise(function(r) { setTimeout(r, 100); });
+            }
+            return 'timeout:' + window.__nekoro_pending;
         }
         case 'html': return document.documentElement.outerHTML.slice(0, arg || 500);
         case 'text': return document.body?.innerText?.slice(0, arg || 500) || '';
@@ -670,9 +688,9 @@ async function handleScripting(msg) {
             post({id:msg.id, result:{tabs: tabs.map(t => ({id:t.id, url:t.url, title:t.title, active:t.active}))}});
         } else if (action === 'find_tab') {
             const tabs = await chrome.tabs.query({});
-            const found = tabs.find(t => 
-                t.url && t.url.toLowerCase().includes((url || 'douyin.com').toLowerCase())
-            );
+            const found = url
+                ? tabs.find(t => t.url && t.url.toLowerCase().includes(url.toLowerCase()))
+                : tabs.find(t => t.url && !t.url.startsWith('chrome://') && !t.url.startsWith('about:'));
             if (found) {
                 await chrome.tabs.update(found.id, {active: true});
                 await chrome.windows.update(found.windowId, {focused: true});

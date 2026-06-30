@@ -49,7 +49,11 @@ def main():
     if args.doctor:
         _doctor(); return
     if args.exec:
-        r = _post("/exec", args.exec); sys.stdout.write(json.dumps(r, default=str) + "\n"); return
+        r = _post("/exec", args.exec)
+        sys.stdout.write(json.dumps(r, default=str) + "\n")
+        if not r.get("ok"):
+            sys.exit(1)
+        return
 
     # Pipe mode
     if not sys.stdin.isatty():
@@ -57,7 +61,10 @@ def main():
         if code:
             if not _alive():
                 sys.stderr.write("Daemon not running. Start: nekoro-browser\n"); sys.exit(1)
-            r = _post("/exec", code); sys.stdout.write(json.dumps(r, default=str) + "\n")
+            r = _post("/exec", code)
+            sys.stdout.write(json.dumps(r, default=str) + "\n")
+            if not r.get("ok"):
+                sys.exit(1)
         return
 
     # Daemon mode
@@ -84,10 +91,6 @@ def _doctor():
     print("nekoro-browser Doctor\n" + "=" * 40)
     import platform
     print(f"[PASS] Python 3.12+ : v{platform.python_version()}")
-    try:
-        import websockets; print(f"[PASS] websockets   : v{websockets.__version__}")
-    except ImportError:
-        print("[FAIL] websockets")
     if _alive():
         print(f"[PASS] Daemon       : running")
     else:

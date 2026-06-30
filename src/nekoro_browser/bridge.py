@@ -45,9 +45,9 @@ class ExtensionBridge:
         logger.info(f"HTTP on http://127.0.0.1:{HTTP_PORT}")
 
     async def wait_for_extension(self, timeout: float = 30.0) -> bool:
-        deadline = asyncio.get_event_loop().time() + timeout
+        deadline = asyncio.get_running_loop().time() + timeout
         while not self._connected:
-            if asyncio.get_event_loop().time() > deadline:
+            if asyncio.get_running_loop().time() > deadline:
                 return False
             await asyncio.sleep(0.2)
         return True
@@ -58,7 +58,7 @@ class ExtensionBridge:
     async def send(self, method: str, params: dict | None = None,
                    session_id: str | None = None, timeout: float = 30.0) -> dict:
         cmd_id = _next_id()
-        f = asyncio.get_event_loop().create_future()
+        f = asyncio.get_running_loop().create_future()
         self._pending[cmd_id] = f
         msg = {"id": cmd_id, "method": method, "params": params or {}}
         if session_id:
@@ -76,7 +76,7 @@ class ExtensionBridge:
     async def send_scripting(self, params: dict, timeout: float = 30.0) -> dict:
         """Send a scripting command to the extension (no CDP needed). Waits for response."""
         cmd_id = _next_id()
-        f = asyncio.get_event_loop().create_future()
+        f = asyncio.get_running_loop().create_future()
         self._pending[cmd_id] = f
         await self._outbox.put({"id": cmd_id, "type": "scripting", "params": params})
         try:
