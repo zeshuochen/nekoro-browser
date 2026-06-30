@@ -6,14 +6,21 @@
 - 粉丝列表: `https://creator.douyin.com/creator-micro/data/following/follower`
 - ~~粉丝统计~~: `https://creator.douyin.com/creator-micro/statistic/home/personal`（⚠️ 2026-06 已失效，显示"未找到相关页面"，被重定向到数据总览）
 
-## 粉丝增长数据 🔴 待探索
+## 粉丝增长数据
 
-旧 URL 已失效，新数据端点尚未找到。已知：
-- `web/api/creator/center/fans/index/config` — 返回空，仅为页面配置
-- `aweme/v1/creator/relation/follower/list/` — 粉丝列表 API，含 `total_num`，但不含每日涨粉数据
-- 数据总览页（`statistic/home/personal` 旧 URL）显示播放量/主页访问量/作品点赞等，但无涨粉
+**方案：差值法**（2026-06 启用）。粉丝统计页 API 已失效，改用内容管理页的总粉丝数做日环比：
 
-**待做**：在数据中心页面手动点击各 tab 抓 Network 请求，找到真实的涨粉数据 API。
+```
+涨粉 = 今天粉丝总数 − 上次记录的粉丝总数
+```
+
+**State 文件**：`.douyin_fans_state.json`
+```json
+{"fans": 1234, "date": "2026-06-23"}
+```
+每次 KPI 爬取后自动更新。首次运行时 `prev_fans=0`，涨粉=0（需跑两次才有差值）。
+
+**内容管理页粉丝数正则**：`r'粉丝\s*([\d.]+万?)'` 或 `r'粉丝数\s*([\d.]+万?)'`
 
 ## 页面结构
 
@@ -37,13 +44,6 @@ innerText 按日期块分隔：`2026年06月27日` 后跟视频数据。
 
 正则：`r'播放\n([\d.]+万?)'`，`r'点赞\n([\d.]+万?)'` 等。
 
-## 粉丝统计页涨粉正则
-
-尝试顺序（页面布局因账号等级有差异）：
-1. `r'昨[日天](?:新增|涨粉)[^\d]*([-\d]+)'`
-2. `r'新增关注\s*([-\d]+)'`
-3. 表格行：`r'(\d{4}[-/]\d{2}[-/]\d{2})\t([-\d]+)'`
-
 ## React 导航
 
 `<Link>` 组件用 `click_at_xy(x, y)`（CDP compositor 级）或 `js_click(selector)`（JS dispatch）均可。
@@ -51,5 +51,6 @@ CDP `Input.dispatchMouseEvent type=click` 不可用（需加 fire-and-forget 修
 
 ## 已知坑
 
-- 粉丝统计页正则值为 0 不代表爬取失败——当天可能真的无涨粉
 - 数据延迟约 6 天，爬取时 target_date = today - 6
+- 首次运行差值法涨粉=0，需跑两次才有有效差值
+- 粉丝统计页 URL `statistic/home/personal` 已失效（2026-06 起显示"未找到相关页面"）
