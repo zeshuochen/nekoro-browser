@@ -20,6 +20,8 @@ import json
 import logging
 import struct
 
+from . import auth
+
 logger = logging.getLogger(__name__)
 
 HTTP_PORT = 19825
@@ -105,11 +107,16 @@ class ExtensionBridge:
         self.attached = asyncio.Event()
         self.attached_tab_id: int | None = None
         self._attach_handler = None
+        self.token = None  # CLI /exec /raw 的共享令牌，daemon.start 里注入
         self.port = port  # 0 → OS 分配临时端口（测试用），实际端口在 start() 回填
 
     def set_exec_handler(self, handler):
         """/exec 回调。handler(code: str) -> dict"""
         self._exec_handler = handler
+
+    def set_token(self, token):
+        """注入 CLI HTTP 令牌（/exec /raw 校验用）。"""
+        self.token = token
 
     def set_attach_handler(self, handler):
         """attach 状态变化回调。handler(tab_id) — attached 传 tab_id，detached 传 None。"""
@@ -221,8 +228,14 @@ class ExtensionBridge:
                     k, v = h.split(":", 1)
                     headers[k.strip().lower()] = v.strip()
 
-            # 扩展的 WebSocket 升级请求 → 进入持久循环
+            # 扩展的 WebSocket 升级请求 → 校验来源后进入持久循环。
+            # 只有 chrome-extension:// 来源放行，挡掉网页发起的 ws（带自身域名 Origin）。
             if headers.get("upgrade", "").lower() == "websocket":
+                origin = headers.get("origin", "")
+                if not origin.startswith("chrome-extension://"):
+                    logger.warning(f"WS rejected, origin={origin!r}")
+                    await _http_resp(writer, 403, "forbidden origin")
+                    return
                 await self._serve_ws(reader, writer, headers)
                 return
 
@@ -231,11 +244,16 @@ class ExtensionBridge:
             body = (await reader.readexactly(cl)).decode(errors="replace") if cl > 0 else ""
 
             if path == "/ping":
-                await _http_resp(writer, 200, "pong")
-            elif path == "/exec":
-                await self._handle_exec(writer, body)
-            elif path == "/raw":
-                await self._handle_raw(writer, body)
+                await _http_resp(writer, 200, "pong")  # 存活探测，无需令牌
+            elif path in ("/exec", "/raw"):
+                # /exec 跑任意 Python、/raw 直发 CDP —— 必须持有令牌
+                if not auth.token_eq(headers.get("x-nekoro-token", ""), self.token):
+                    logger.warning(f"HTTP {path} rejected: bad token")
+                    await _http_resp(writer, 403, "bad token")
+                elif path == "/exec":
+                    await self._handle_exec(writer, body)
+                else:
+                    await self._handle_raw(writer, body)
             else:
                 await _http_resp(writer, 404, "Not Found")
         except Exception:

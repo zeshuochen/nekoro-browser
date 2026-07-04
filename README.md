@@ -85,6 +85,15 @@ echo "douyin_like('籽岷')" | nekoro-browser
 | 页面没变化 | 扩展未 attach | 打开普通网页（非 chrome://），重启 daemon |
 | 端口占用 | 旧进程残留 | 杀掉占用 9230 的进程 |
 
+## 安全
+
+daemon 监听 `127.0.0.1`，`/exec` 会执行任意 Python，故传输层加了守卫：
+
+- **CLI → daemon**（`/exec`、`/raw`）：每会话签发令牌，写入用户私有文件（`%LOCALAPPDATA%\nekoro-browser\token`，POSIX 上 `chmod 600`）。CLI 读取后带在 `X-Nekoro-Token` 头里；缺失/错误 → `403`。网页和远程主机读不到本地文件，拿不到令牌。`/ping` 免令牌。
+- **扩展 → daemon**（`/ws`）：握手 `Origin` 必须是 `chrome-extension://…`；网页对 localhost 发起的 `WebSocket` 带自己的域名 Origin，会被拒。
+
+同用户的本地进程能读令牌文件——这条边界等于操作系统账户，与 browser-harness 的 `chmod 600` 一致。
+
 ---
 
 ## 致谢

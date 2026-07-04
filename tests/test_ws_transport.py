@@ -23,6 +23,7 @@ async def ws_connect(host, port, path="/ws"):
     writer.write((
         f"GET {path} HTTP/1.1\r\nHost: {host}:{port}\r\n"
         "Upgrade: websocket\r\nConnection: Upgrade\r\n"
+        "Origin: chrome-extension://testtesttesttesttesttesttesttest\r\n"
         f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n"
     ).encode())
     await writer.drain()

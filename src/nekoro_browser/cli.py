@@ -16,6 +16,7 @@ import urllib.request
 import urllib.error
 
 from . import __version__
+from . import auth
 
 URL = "http://127.0.0.1:19825"
 
@@ -29,10 +30,16 @@ def _alive():
 
 def _post(path, data="", timeout=30):
     try:
-        req = urllib.request.Request(f"{URL}{path}", data=data.encode(),
-                                     headers={"Content-Type": "text/plain"}, method="POST")
+        req = urllib.request.Request(
+            f"{URL}{path}", data=data.encode(), method="POST",
+            headers={"Content-Type": "text/plain",
+                     "X-Nekoro-Token": auth.read_token()})
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read()) if r.status == 200 else {"ok": False, "error": f"HTTP {r.status}"}
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            return {"ok": False, "error": "Forbidden: bad/missing token (restart daemon?)"}
+        return {"ok": False, "error": f"HTTP {e.code}: {e.reason}"}
     except urllib.error.URLError as e:
         return {"ok": False, "error": f"Daemon not running: {e.reason}"}
     except Exception as e:

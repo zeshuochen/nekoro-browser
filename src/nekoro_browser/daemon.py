@@ -7,6 +7,7 @@ import ast
 import json
 import logging
 
+from . import auth
 from .bridge import ExtensionBridge
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,10 @@ class Daemon:
         # 扩展重连/换标签时同步活动 tab_id（含用户关标签后的自动重连）
         self.bridge.set_attach_handler(self._on_attach)
         await self.bridge.start()
+        # 令牌在成功 bind 之后再签发：否则端口已被占用（已有 daemon 在跑）时，
+        # issue_token 会先覆盖共享令牌文件，把仍在运行的旧 daemon 弄成 403。
+        # bind 到签发之间 self.token 为 None，token_eq 判否 → /exec 拒，失败关闭。
+        self.bridge.set_token(auth.issue_token())
         logger.info("Waiting for extension...")
         try:
             await asyncio.wait_for(self.bridge.attached.wait(), timeout=10)

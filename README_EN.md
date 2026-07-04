@@ -98,6 +98,15 @@ Edit `helpers.py` at runtime. Agent adds missing functions on failure — takes 
 | Page unchanged | Extension not attached to tab | Open a regular (non-chrome://) page, restart daemon |
 | Port in use | Stale process | Kill the process on port 9230 |
 
+## Security
+
+The daemon listens on `127.0.0.1` and `/exec` runs arbitrary Python, so the transport is guarded:
+
+- **CLI → daemon** (`/exec`, `/raw`): a per-session token is written to a user-private file (`%LOCALAPPDATA%\nekoro-browser\token`, `chmod 600` on POSIX). The CLI reads it and sends `X-Nekoro-Token`; missing/wrong token → `403`. Web pages and remote hosts can't read local files, so they can't obtain it. `/ping` stays open.
+- **Extension → daemon** (`/ws`): the handshake `Origin` must be `chrome-extension://…`; a web page's `WebSocket` to localhost carries its own origin and is rejected.
+
+Same-user local processes can read the token file — that boundary matches the OS user account, as with browser-harness's `chmod 600`.
+
 ---
 
 ## Acknowledgments
