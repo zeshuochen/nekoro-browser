@@ -1,68 +1,74 @@
-// nekoro-browser background.js — minimal reliable polling
+// nekoro-browser background.js — persistent WebSocket transport
 const PORT = 19825;
+const WS_URL = `ws://127.0.0.1:${PORT}/ws`;
 
 let tabId = null;
-let running = false;
+let ws = null;
+let connecting = false;
+let reconnectDelay = 500;
 
-console.log('[nekoro-browser] v2 loaded');
+console.log('[nekoro-browser] v3 (websocket) loaded');
+
+// ─── WebSocket transport ────────────────────────────────────────────────
+// Persistent connection: commands arrive instantly (no poll gap), results
+// stream back over the same socket. The daemon sends a WS ping every ~20s;
+// the resulting socket traffic keeps the MV3 service worker pinned, so the
+// alarm keep-alive below is only a reconnect fallback for a killed worker.
+
+function wsOpen() { return ws && ws.readyState === WebSocket.OPEN; }
+
+function connect() {
+    if (connecting || wsOpen()) return;
+    connecting = true;
+    try {
+        ws = new WebSocket(WS_URL);
+    } catch (e) {
+        connecting = false;
+        scheduleReconnect();
+        return;
+    }
+    ws.onopen = () => {
+        connecting = false;
+        reconnectDelay = 500;
+        console.log('[nekoro-browser] WS connected');
+        autoAttach().catch(e => console.error('[nekoro-browser] autoAttach error:', e));
+    };
+    ws.onmessage = (ev) => {
+        let msg;
+        try { msg = JSON.parse(ev.data); } catch (_) { return; }
+        handleCmd(msg);
+    };
+    ws.onclose = () => {
+        connecting = false;
+        // Detach so a freshly restarted daemon re-attaches cleanly.
+        if (tabId !== null) {
+            try { chrome.debugger.detach({tabId}); } catch(_) {}
+            tabId = null;
+        }
+        scheduleReconnect();
+    };
+    ws.onerror = () => { try { ws.close(); } catch(_) {} };
+}
+
+function scheduleReconnect() {
+    setTimeout(connect, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 2, 5000);  // backoff cap 5s
+}
 
 // ─── Lifecycle ──────────────────────────────────────────────────────────
 
-self.addEventListener('activate', () => {
-    console.log('[nekoro-browser] activate → starting');
-    startPolling();
-});
+self.addEventListener('activate', () => { console.log('[nekoro-browser] activate'); connect(); });
 
-// Keep alive via alarms
+// Alarm keep-alive: revive the worker + reconnect if it was killed while the
+// socket was down (active WS otherwise keeps the worker alive on its own).
 try { chrome.alarms.create('k', {periodInMinutes: 0.5}); } catch(_) {}
-function onAlarmFired() { if (!running) startPolling(); }
+function onAlarmFired() { if (!wsOpen()) connect(); }
 try {
     chrome.alarms.onAlarm.removeListener(onAlarmFired);
     chrome.alarms.onAlarm.addListener(onAlarmFired);
 } catch(_) {}
 
-// Also try immediately
-setTimeout(() => { if(!running) startPolling(); }, 500);
-setTimeout(() => { if(!running) startPolling(); }, 2000);
-setTimeout(() => { if(!running) startPolling(); }, 5000);
-
-// ─── Polling Loop ───────────────────────────────────────────────────────
-
-async function startPolling() {
-    if (running) return;
-    running = true;
-    console.log('[nekoro-browser] polling started');
-
-    // Auto-attach in background — don't block polling
-    autoAttach().catch(e => console.error('[nekoro-browser] autoAttach error:', e));
-
-    let consecutiveErrors = 0;
-    while (running) {
-        try {
-            const resp = await fetch(`http://127.0.0.1:${PORT}/poll`);
-            consecutiveErrors = 0;
-            if (resp.ok) {
-                const text = await resp.text();
-                if (text) {
-                    const msg = JSON.parse(text);
-                    await handleCmd(msg);
-                }
-            }
-        } catch (e) {
-            consecutiveErrors++;
-            if (consecutiveErrors > 10) {
-                // Detach after too many consecutive failures
-                if (tabId !== null) {
-                    try { chrome.debugger.detach({tabId}); } catch(_) {}
-                    tabId = null;
-                }
-            }
-            await sleep(consecutiveErrors > 5 ? 5000 : 2000);
-            continue;
-        }
-        await sleep(1000);
-    }
-}
+setTimeout(connect, 200);
 
 // ─── Pre-defined operations (no eval, no CSP issues) ──────────────────
 
@@ -846,13 +852,9 @@ chrome.debugger.onDetach.addListener((src) => {
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 
-async function post(data) {
-    try {
-        await fetch(`http://127.0.0.1:${PORT}/result`, {
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body:JSON.stringify(data)
-        });
-    } catch(_) {}
+function post(data) {
+    if (!wsOpen()) return;
+    try { ws.send(JSON.stringify(data)); } catch(_) {}
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }

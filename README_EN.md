@@ -19,11 +19,11 @@ Lightweight browser automation CLI. Control your daily Chrome via extension — 
 
 ## Why Not CDP WebSocket?
 
-Chrome 136+ disables `--remote-debugging-port` for default profiles. nekoro-browser uses a custom extension + HTTP polling instead.
+Chrome 136+ disables `--remote-debugging-port` for default profiles. nekoro-browser uses a custom extension + a persistent WebSocket to the daemon instead.
 
 | | CDP WebSocket | playwright-cli | opencli | **nekoro-browser** |
 |------|:--:|:--:|:--:|:--:|
-| Approach | `--remote-debugging-port` | Playwright extension | OpenCLI extension | Custom extension + HTTP polling |
+| Approach | `--remote-debugging-port` | Playwright extension | OpenCLI extension | Custom extension + persistent WebSocket |
 | Install | one flag | `npm i -g` (~200MB) | npm / desktop app | `pip install` (stdlib only) |
 | Login state | ❌ fresh instance | ✅ | ✅ | ✅ |
 | Modify extension | — | Edit Playwright source | Edit OpenCLI source | ✅ right in this repo |

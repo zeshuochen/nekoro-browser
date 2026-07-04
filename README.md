@@ -21,7 +21,7 @@
 
 | | CDP WebSocket | playwright-cli | opencli | **nekoro-browser** |
 |------|:--:|:--:|:--:|:--:|
-| 原理 | `--remote-debugging-port` | Playwright 扩展 | OpenCLI 扩展 | 自建扩展 + HTTP polling |
+| 原理 | `--remote-debugging-port` | Playwright 扩展 | OpenCLI 扩展 | 自建扩展 + 持久 WebSocket |
 | 安装 | 一行参数 | `npm i -g`（~200MB） | npm / 桌面应用 | `pip install`（纯标准库） |
 | 登录态 | ❌ 独立实例 | ✅ | ✅ | ✅ |
 | 可修改扩展 | — | 需改 Playwright 源码 | 需改 OpenCLI 源码 | ✅ 扩展就在仓库里 |
