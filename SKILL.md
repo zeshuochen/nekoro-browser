@@ -41,7 +41,9 @@ echo "await page_info()" | nekoro-browser
 | 函数 | 用法 | 说明 |
 |------|------|------|
 | `new_tab(url)` | `new_tab("https://example.com")` | 新建标签页 |
-| `navigate(url)` | `navigate("https://example.com")` | 当前标签导航 |
+| `navigate(url)` | `navigate("https://example.com")` | 当前标签导航（默认等加载完成） |
+| `list_tabs()` | `list_tabs()` | 列托管组标签 `[{tabId,url,title,active,attached}]` |
+| `switch_tab(id)` | `switch_tab(123)` | 切换活动标签（后续命令发往该标签） |
 | `ensure_real_tab()` | `ensure_real_tab()` | 自动从 chrome:// 等内部页导航到 about:blank |
 | `iframe_target(url_substr)` | `iframe_target("player")` | 获取 iframe 的 CDP targetId |
 

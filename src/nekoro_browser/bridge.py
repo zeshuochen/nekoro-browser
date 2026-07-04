@@ -104,11 +104,16 @@ class ExtensionBridge:
         self._write_lock = asyncio.Lock()
         self.attached = asyncio.Event()
         self.attached_tab_id: int | None = None
+        self._attach_handler = None
         self.port = port  # 0 → OS 分配临时端口（测试用），实际端口在 start() 回填
 
     def set_exec_handler(self, handler):
         """/exec 回调。handler(code: str) -> dict"""
         self._exec_handler = handler
+
+    def set_attach_handler(self, handler):
+        """attach 状态变化回调。handler(tab_id) — attached 传 tab_id，detached 传 None。"""
+        self._attach_handler = handler
 
     async def start(self):
         self._server = await asyncio.start_server(
@@ -165,6 +170,21 @@ class ExtensionBridge:
 
     async def send_control(self, msg_type: str, **kwargs):
         await self._emit({"type": msg_type, **kwargs})
+
+    async def send_request(self, msg_type: str, timeout: float = 10.0, **kwargs) -> dict:
+        """发一条带 id 的控制命令并等待扩展回 {id, result}（如 list_tabs/switch_tab）。"""
+        cmd_id = _next_id()
+        f = asyncio.get_running_loop().create_future()
+        self._pending[cmd_id] = f
+        try:
+            await self._emit({"id": cmd_id, "type": msg_type, **kwargs})
+            return await asyncio.wait_for(f, timeout=timeout)
+        except asyncio.TimeoutError:
+            self._pending.pop(cmd_id, None)
+            raise TimeoutError(f"control '{msg_type}' timed out")
+        except Exception:
+            self._pending.pop(cmd_id, None)
+            raise
 
     async def send_scripting(self, params: dict, timeout: float = 30.0) -> dict:
         """发 scripting 命令（不走 CDP），等待响应。"""
@@ -285,6 +305,13 @@ class ExtensionBridge:
         except (asyncio.CancelledError, ConnectionResetError, RuntimeError, OSError):
             pass
 
+    def _notify_attach(self, tab_id):
+        if self._attach_handler:
+            try:
+                self._attach_handler(tab_id)
+            except Exception as e:
+                logger.error(f"attach handler error: {e}")
+
     def _dispatch(self, data: dict):
         """处理扩展上报：event / attached / result 等。"""
         tp = data.get("type")
@@ -298,8 +325,14 @@ class ExtensionBridge:
             self.attached_tab_id = data.get("tabId")
             self.attached.set()
             logger.info(f"Tab {self.attached_tab_id} attached")
+            self._notify_attach(self.attached_tab_id)
         elif tp == "detached":
             logger.info(f"Tab {data.get('tabId')} detached")
+            # 只在断开的是当前活动标签时清状态，避免关闭其它托管标签误清
+            if data.get("tabId") == self.attached_tab_id:
+                self.attached_tab_id = None
+                self.attached.clear()
+                self._notify_attach(None)
         elif tp == "attach_error":
             logger.error(f"ATTACH FAILED: tab={data.get('tabId')} "
                          f"detail={data.get('detail','?')}")

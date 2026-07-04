@@ -52,6 +52,8 @@ class Daemon:
     async def start(self) -> bool:
         self.bridge.set_exec_handler(self._on_exec)
         self.bridge.on_event(self._queue_event)  # 全局事件收集
+        # 扩展重连/换标签时同步活动 tab_id（含用户关标签后的自动重连）
+        self.bridge.set_attach_handler(self._on_attach)
         await self.bridge.start()
         logger.info("Waiting for extension...")
         try:
@@ -68,6 +70,10 @@ class Daemon:
             except asyncio.TimeoutError:
                 logger.error("Failed to attach tab after retry")
         return True
+
+    def _on_attach(self, tab_id):
+        """扩展 attach 状态变化时更新活动标签（重连自动换标签后仍指向可用 tab）。"""
+        self._tab_id = tab_id
 
     async def _on_exec(self, code: str) -> dict:
         from functools import partial
@@ -109,6 +115,12 @@ class Daemon:
                     "stdout": stdout_buf.getvalue()}
 
     # ── API ───────────────────────────────────────────────────────────────
+    async def list_tabs(self):
+        """列出 nekoro 托管组里的标签及 attach 状态。"""
+        return await self.bridge.send_request("list_tabs")
+    async def switch_tab(self, tab_id):
+        """把活动标签切到 tab_id（未 attach 则 attach）。_tab_id 由 attach 回调同步。"""
+        return await self.bridge.send_request("switch_tab", tabId=tab_id)
     async def navigate(self, url): return await self.bridge.send("Page.navigate", {"url": url})
     async def evaluate(self, expr): return await self.bridge.send("Runtime.evaluate", {"expression":expr,"returnByValue":True})
     async def screenshot(self, f="png", q=80):

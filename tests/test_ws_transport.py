@@ -125,6 +125,56 @@ async def run():
     assert res2["big"] == big and len(res2["big"]) == 70000
     await t2
 
+    # 4b. send_request 控制命令往返（list_tabs 形状）
+    async def responder_lt():
+        _, payload = await client_read(reader)
+        msg = json.loads(payload)
+        assert msg["type"] == "list_tabs" and "id" in msg, msg
+        await send_json(writer, {"id": msg["id"],
+                                 "result": {"tabs": [{"tabId": 1}, {"tabId": 2}]}})
+    tlt = asyncio.create_task(responder_lt())
+    r = await bridge.send_request("list_tabs")
+    assert r["tabs"] == [{"tabId": 1}, {"tabId": 2}], r
+    await tlt
+
+    # 4c. attach/detach 回调：attached 传 tabId，当前标签 detached 传 None，
+    #     重连再 attached 恢复（自动重连的核心）
+    seen = []
+    bridge.set_attach_handler(lambda t: seen.append(t))
+    await send_json(writer, {"type": "attached", "tabId": 7})
+    await asyncio.sleep(0.05)
+    await send_json(writer, {"type": "detached", "tabId": 99})  # 非活动，忽略
+    await asyncio.sleep(0.05)
+    await send_json(writer, {"type": "detached", "tabId": 7})   # 活动，清空
+    await asyncio.sleep(0.05)
+    await send_json(writer, {"type": "attached", "tabId": 8})   # 重连到新标签
+    await asyncio.sleep(0.05)
+    assert seen == [7, None, 8], seen
+    assert bridge.attached_tab_id == 8
+    bridge.set_attach_handler(None)
+
+    # 4d. send_request 错误传播（switch_tab 失败复用顶层 {id,error}）
+    async def responder_err():
+        _, payload = await client_read(reader)
+        msg = json.loads(payload)
+        await send_json(writer, {"id": msg["id"], "error": {"message": "no tab"}})
+    ter = asyncio.create_task(responder_err())
+    try:
+        await bridge.send_request("switch_tab", tabId=999)
+        assert False, "expected RuntimeError"
+    except RuntimeError as e:
+        assert "no tab" in str(e), e
+    await ter
+
+    # 4e. send_request 超时 → TimeoutError 且 _pending 不泄漏（无人应答）
+    try:
+        await bridge.send_request("list_tabs", timeout=0.3)
+        assert False, "expected TimeoutError"
+    except TimeoutError:
+        pass
+    assert bridge._pending == {}, bridge._pending
+    await client_read(reader)  # 排掉那条无人应答的请求帧，别污染后续 client_read
+
     # 5. 顶层 error（扩展真实上报形状 post({id, error:{...}})）→ 异常
     async def responder3():
         _, payload = await client_read(reader)

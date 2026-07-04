@@ -27,6 +27,24 @@ async def new_tab(daemon, url: str = "about:blank") -> dict:
         return {"ok": False, "error": str(e)}
 
 
+async def list_tabs(daemon) -> dict:
+    """list_tabs() → nekoro 托管组里的标签 [{tabId,url,title,active,attached}]。"""
+    try:
+        r = await daemon.list_tabs()
+        return {"ok": True, "tabs": r.get("tabs", []), "active": daemon.active_tab_id}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+async def switch_tab(daemon, tab_id: int) -> dict:
+    """switch_tab(123) — 把后续命令切到该标签（未 attach 则先 attach）。"""
+    try:
+        r = await daemon.switch_tab(tab_id)
+        return {"ok": bool(r.get("attached", False)), "tabId": r.get("tabId", tab_id)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 async def navigate(daemon, url: str, wait: bool = True, timeout: float = 15.0) -> dict:
     """navigate("https://example.com") — 默认等 readyState==='complete' 再返回。
     wait=False 立即返回（Page.navigate 一发出就走）。loaded 标记是否等到加载完成。"""

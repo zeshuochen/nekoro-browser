@@ -617,6 +617,23 @@ async function handleCmd(msg) {
         await tryAttach(msg.tabId);
     } else if (msg.type === 'auto_attach') {
         await autoAttach();
+    } else if (msg.type === 'list_tabs') {
+        post({id: msg.id, result: {tabs: await listManagedTabs()}});
+    } else if (msg.type === 'switch_tab') {
+        const id = msg.tabId;
+        let ok;
+        if (managedTabIds.has(id)) {
+            // 我们已 attach 的标签 → 直接切指针，别重复 attach。用 managedTabIds
+            // 而非全局 getOccupiedTabs：后者含 DevTools 等他方 attach 的标签，
+            // 那种切过去 sendCommand 会失败，tryAttach 才会诚实报 attached:false。
+            tabId = id;
+            post({type:'attached', tabId});
+            ok = true;
+        } else {
+            ok = await tryAttach(id);
+            if (ok) managedTabIds.add(id);
+        }
+        post({id: msg.id, result: {attached: ok, tabId: ok ? tabId : id}});
     } else if (msg.type === 'scripting') {
         // Fallback: use chrome.scripting.executeScript (no CDP needed)
         await handleScripting(msg);
@@ -836,6 +853,24 @@ async function autoAttach() {
     console.error('[nekoro-browser] autoAttach: all attempts failed');
 }
 
+// List nekoro-managed tabs (or all non-chrome tabs if no group yet) with
+// active/attached flags — feeds list_tabs.
+async function listManagedTabs() {
+    const occupied = await getOccupiedTabs();
+    let tabs = [];
+    try {
+        tabs = managedGroupId != null
+            ? await chrome.tabs.query({groupId: managedGroupId})
+            : await chrome.tabs.query({});
+    } catch(_) {}
+    return tabs
+        .filter(t => !(t.url || '').startsWith('chrome://'))
+        .map(t => ({
+            tabId: t.id, url: t.url || '', title: t.title || '',
+            active: t.id === tabId, attached: occupied.has(t.id),
+        }));
+}
+
 // Helper: get set of tab IDs that already have debugger attached
 async function getOccupiedTabs() {
     const occupied = new Set();
@@ -879,9 +914,16 @@ function tryAttach(id, retries = 5, delay = 500) {
 chrome.debugger.onEvent.addListener((src,method,params) => {
     post({type:'event', method, params, sessionId:src.sessionId});
 });
-chrome.debugger.onDetach.addListener((src) => {
-    if (tabId === src.tabId) tabId = null;
-    post({type:'detached', tabId:src.tabId});
+chrome.debugger.onDetach.addListener((src, reason) => {
+    const wasActive = (tabId === src.tabId);
+    if (wasActive) tabId = null;
+    managedTabIds.delete(src.tabId);
+    post({type:'detached', tabId:src.tabId, reason});
+    // 用户关掉当前活动标签 → 自动重连到另一个可用标签，避免命令失效。
+    // canceled_by_user（用户点调试横幅取消）不重连，否则会反复弹横幅。
+    if (wasActive && wsOpen() && reason !== 'canceled_by_user') {
+        autoAttach().catch(e => console.error('[nekoro-browser] reattach failed:', e));
+    }
 });
 
 // ─── Helpers ────────────────────────────────────────────────────────────

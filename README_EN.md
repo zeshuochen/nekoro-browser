@@ -78,7 +78,7 @@ All 30+ helpers documented in [SKILL.md](SKILL.md). Common ones:
 
 | Category | Commands |
 |----------|----------|
-| Navigation | `navigate(url)`, `new_tab(url)` |
+| Navigation | `navigate(url)`, `new_tab(url)`, `list_tabs()`, `switch_tab(id)` |
 | Page info | `page_info()`, `page_html()`, `page_text()` |
 | JavaScript | `js(code)` |
 | Interaction | `click_selector(sel)`, `click_at_xy(x,y)`, `type_text(t)`, `press_key(k)` |
