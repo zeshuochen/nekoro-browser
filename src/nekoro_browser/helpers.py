@@ -174,6 +174,26 @@ async def type_text(daemon, text: str) -> dict:
         return {"ok": False, "error": str(e)}
 
 
+async def fill_input(daemon, sel: str, text: str, tab: int = None) -> dict:
+    """fill_input("#email", "a@b.com") — 框架感知填值。
+    走 scripting：原生 value setter 写值 + 派发 input/change，React/Vue 受控组件
+    能收到 onChange（type_text 的 Input.insertText 常绕不过框架 setter）。
+    非 input/textarea/contenteditable 或找不到元素 → ok:false，不伪造成功。
+    自定义组件要真实键入用 click_selector + type_text。"""
+    t = tab or await _find_tab(daemon)
+    if not t: return {"ok": False, "error": "No tab"}
+    try:
+        r = await daemon.bridge.send_scripting({
+            "action": "evaluate", "target": t, "op": "fillInput",
+            "sel": sel, "arg": text}, 10)
+        res = (r.get("value") if r else None) or {}
+        if res.get("ok"):
+            return {"ok": True, "value": res.get("value")}
+        return {"ok": False, "error": res.get("error", f"fill failed: {sel}")}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 async def press_key(daemon, key: str, modifiers: int = 0) -> dict:
     """press_key("Enter") — 修饰键: Ctrl=2 Alt=1 Shift=8 Meta=4"""
     try:

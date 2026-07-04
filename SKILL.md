@@ -77,7 +77,8 @@ echo "await page_info()" | nekoro-browser
 | `click_at_xy(x, y)` | `click_at_xy(100, 200)` | CDP 真实鼠标点击（isTrusted:true） |
 | `click_selector(sel)` | `click_selector("#btn")` | CSS 选择器 → CDP 坐标点击 |
 | `click_text("文字")` | `click_text("喜欢")` | 按可见文本 → CDP 坐标点击 |
-| `type_text(text)` | `type_text("hello")` | CDP Input.insertText |
+| `type_text(text)` | `type_text("hello")` | CDP Input.insertText（往当前焦点插字符） |
+| `fill_input(sel, text)` | `fill_input("#email", "a@b.com")` | 框架感知填值：原生 setter + input/change，React/Vue 受控组件能收到 onChange |
 | `press_key(key)` | `press_key("Enter")` | 按键 |
 | `press_key("c", 2)` | 同上 | Ctrl+C（2=Ctrl, 1=Alt, 8=Shift, 4=Meta） |
 

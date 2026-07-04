@@ -196,6 +196,30 @@ async function runOp(op, sel, arg) {
             const r = el.getBoundingClientRect();
             return {x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2)};
         }
+        case 'fillInput': {
+            // 框架感知填值：用原生 value setter 写值，绕过 React/Vue 对 value 的劫持，
+            // 让受控组件的 onChange 收到（直接 el.value= 会被框架的 setter 吞掉不触发）。
+            const el = document.querySelector(sel);
+            if (!el) return {ok: false, error: 'element not found: ' + sel};
+            const text = (arg == null) ? '' : String(arg);
+            el.focus();
+            if (el.isContentEditable) {
+                el.textContent = text;
+                el.dispatchEvent(new Event('input', {bubbles: true}));
+                return {ok: true, value: el.textContent};
+            }
+            // 只对 input/textarea 用原生 setter；其他元素（div/select/自定义组件）
+            // 返回 not-fillable，让 helper 回退到 CDP 点击+插字符（真实键入）。
+            const isText = (el instanceof HTMLInputElement) || (el instanceof HTMLTextAreaElement);
+            if (!isText) return {ok: false, error: 'not a fillable input: ' + el.tagName};
+            const proto = (el instanceof HTMLTextAreaElement)
+                ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+            const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+            if (desc && desc.set) desc.set.call(el, text); else el.value = text;
+            el.dispatchEvent(new Event('input', {bubbles: true}));
+            el.dispatchEvent(new Event('change', {bubbles: true}));
+            return {ok: true, value: el.value};
+        }
         case 'getRectByText': {
             const tx = typeof arg === 'string' ? arg : (arg && arg.text);
             const all = document.querySelectorAll('*');

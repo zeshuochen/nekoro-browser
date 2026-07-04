@@ -81,7 +81,7 @@ All 30+ helpers documented in [SKILL.md](SKILL.md). Common ones:
 | Navigation | `navigate(url)`, `new_tab(url)`, `list_tabs()`, `switch_tab(id)` |
 | Page info | `page_info()`, `page_html()`, `page_text()` |
 | JavaScript | `js(code)`, `cdp(method, **p)`, `cdp_batch(*cmds)` |
-| Interaction | `click_selector(sel)`, `click_at_xy(x,y)`, `type_text(t)`, `press_key(k)` |
+| Interaction | `click_selector(sel)`, `click_at_xy(x,y)`, `type_text(t)`, `fill_input(sel,t)`, `press_key(k)` |
 | Waiting | `wait_for_load()`, `wait_selector(sel)`, `sleep(s)` |
 | Screenshots | `capture_screenshot()`, `capture_screenshot("jpeg", 90)` |
 
