@@ -81,6 +81,12 @@ def main():
 
 async def _run():
     from .daemon import Daemon
+    # 端口已占 = 多半已有 daemon 在跑。友好提示而非抛 bind 栈。
+    if _alive():
+        print("Another daemon is already running on 127.0.0.1:19825.\n"
+              "Use it directly (echo ... | nekoro-browser), or stop it first.",
+              file=sys.stderr)
+        sys.exit(1)
     d = Daemon()
     try:
         ok = await d.start()
@@ -90,6 +96,10 @@ async def _run():
         await d.wait_forever()
     except KeyboardInterrupt:
         pass
+    except OSError as e:
+        # 端口竞态：_alive 之后、bind 之前被别人占了
+        print(f"Cannot start daemon (port in use?): {e}", file=sys.stderr)
+        sys.exit(1)
     finally:
         await d.stop()
 
@@ -98,10 +108,25 @@ def _doctor():
     print("nekoro-browser Doctor\n" + "=" * 40)
     import platform
     print(f"[PASS] Python 3.12+ : v{platform.python_version()}")
-    if _alive():
-        print(f"[PASS] Daemon       : running")
+    if not _alive():
+        print("[INFO] Daemon       : not running (start: nekoro-browser)")
+        print("=" * 40); return
+    print("[PASS] Daemon       : running")
+    # 端对端探活：一次真实 CDP 往返，证明扩展 + Service Worker 都活着，
+    # 而不只是 Python 进程在。SW 被 Chrome 回收时这步会失败。
+    r = _post("/exec", "await page_info()", timeout=8)
+    info = (r.get("result") or {}) if r.get("ok") else {}
+    url = info.get("url", "")
+    if r.get("ok") and url:
+        print(f"[PASS] Extension/SW : responding ({url})")
+    elif "token" in r.get("error", "").lower():
+        print(f"[FAIL] Token        : {r['error']}")
     else:
-        print(f"[INFO] Daemon       : not running")
+        # ok=True 但 url 空 = get_page_info 吞了异常（不能只信 ok，否则误报 PASS）；
+        # 或往返直接失败。两者都说明 SW/扩展没响应。
+        why = r.get("error") or "no response within 8s (SW asleep / extension not connected)"
+        print(f"[FAIL] Extension/SW : {why}")
+        print("        → 检查 chrome://extensions，或重开普通网页后重启 daemon")
     print("=" * 40)
 
 

@@ -44,11 +44,14 @@ def _auto_await_code(code: str):
                        flags=_ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
 
 
+EVENT_BUFFER_MAX = 2000  # CDP 事件缓冲上限；满了丢最旧，防没人 drain 时无界增长
+
+
 class Daemon:
     def __init__(self):
         self.bridge = ExtensionBridge()
         self._tab_id = None
-        self._event_queue: asyncio.Queue = asyncio.Queue()
+        self._event_queue: asyncio.Queue = asyncio.Queue(maxsize=EVENT_BUFFER_MAX)
 
     async def start(self) -> bool:
         self.bridge.set_exec_handler(self._on_exec)
@@ -149,24 +152,27 @@ class Daemon:
             u = await self.bridge.send("Runtime.evaluate", {"expression":"location.href","returnByValue":True})
             return {"title":t["result"].get("value",""),"url":u["result"].get("value","")}
         except: return {"title":"","url":""}
-    async def wait_for_load(self, to=30):
-        ev = asyncio.Event()
-        def cb(m,p,s):
-            if m=="Page.loadEventFired": ev.set()
-        self.bridge.on_event(cb)
-        try: await asyncio.wait_for(ev.wait(), to); return True
-        except asyncio.TimeoutError: return False
+    # wait_for_load 的真实实现在 helpers.py（轮询 readyState，无 listener 泄漏）。
+    # 曾有的 daemon 版依赖 Page.loadEventFired 但从没 Page.enable → 永不触发、
+    # 每次调用还漏一个事件监听，已删。
 
     # ── Event Queue ────────────────────────────────────────────────────────
 
     def _queue_event(self, method, params, session_id=None):
-        """Push CDP event into buffer — consumed by drain_events()."""
+        """Push CDP event into buffer — consumed by drain_events()。
+        缓冲满时丢最旧（环形），保证没人 drain 也不会无界占内存。"""
+        ev = {"method": method, "params": params, "sessionId": session_id}
         try:
-            self._event_queue.put_nowait({
-                "method": method, "params": params, "sessionId": session_id
-            })
+            self._event_queue.put_nowait(ev)
         except asyncio.QueueFull:
-            pass
+            try:
+                self._event_queue.get_nowait()  # 丢最旧
+            except asyncio.QueueEmpty:
+                pass
+            try:
+                self._event_queue.put_nowait(ev)
+            except asyncio.QueueFull:
+                pass
 
     async def drain_events(self) -> list[dict]:
         """Pull all buffered CDP events since last drain."""
