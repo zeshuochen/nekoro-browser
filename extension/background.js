@@ -659,7 +659,8 @@ async function handleCmd(msg) {
         }
         post({id: msg.id, result: {attached: ok, tabId: ok ? tabId : id}});
     } else if (msg.type === 'scripting') {
-        // Fallback: use chrome.scripting.executeScript (no CDP needed)
+        // tab/DOM 操作（navigate/find_tab/evaluate…）。evaluate 经 CDP Runtime.evaluate
+        // 执行 runOp（见 handleScripting），不再用 chrome.scripting.executeScript。
         await handleScripting(msg);
     } else if (msg.method) {
         // Fire-and-forget: Input events Chrome doesn't respond to — skip waiting for callback.
@@ -723,8 +724,35 @@ function waitTabLoad(tabId, checkNow = false, timeout = 10000) {
     });
 }
 
+// runOp 经 CDP Runtime.evaluate 在页面 MAIN world 执行，返回其结果值。
+// returnByValue：直接拿 JSON 可序列化的返回值；awaitPromise：runOp 是 async。
+// 页内抛异常 → reject(带描述)，由 handleScripting 的 catch 统一 post error。
+function cdpEval(tabId, expression) {
+    return new Promise((resolve, reject) => {
+        chrome.debugger.sendCommand(
+            {tabId}, 'Runtime.evaluate',
+            {expression, returnByValue: true, awaitPromise: true},
+            (res) => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                } else if (res && res.exceptionDetails) {
+                    const ex = res.exceptionDetails;
+                    const desc = (ex.exception && (ex.exception.description || ex.exception.value))
+                        || ex.text || 'eval error';
+                    reject(new Error(String(desc)));
+                } else {
+                    resolve(res && res.result ? res.result.value : undefined);
+                }
+            }
+        );
+    });
+}
+
+// runOp 源码只需序列化一次（~20KB），避免每次 evaluate 重复 toString。
+const RUN_OP_SRC = runOp.toString();
+
 async function handleScripting(msg) {
-    const {action, target, expression, func, args, url} = msg.params || {};
+    const {action, target, expression, url} = msg.params || {};
     try {
         if (action === 'navigate') {
             let tabId = target, created = false;
@@ -755,15 +783,18 @@ async function handleScripting(msg) {
             const load = await loadP;
             post({id:msg.id, result:{navigated:url, tabId, load}});
         } else if (action === 'evaluate') {
-            // Inject into MAIN world to see React-hydrated DOM
+            // runOp 跑在页面 MAIN world（要看到 React 水合后的 DOM）。原先走
+            // chrome.scripting.executeScript(world:'MAIN')，但在 debugger-attached tab
+            // 上它会静默挂死（Chrome 149：scripting 的 MAIN 世界注入在调试会话下不返回）。
+            // CDP Runtime.evaluate 同样跑在页面 MAIN world，且在 attached tab 上稳定，
+            // 故把 runOp 序列化后经 CDP 执行，绕开 scripting 传输层的挂死。
             const {op, sel, arg} = msg.params || {};
-            const results = await chrome.scripting.executeScript({
-                target: {tabId: target},
-                func: runOp,
-                args: [op || 'title', sel || null, arg ?? null],
-                world: 'MAIN'
-            });
-            post({id:msg.id, result:{value:results[0]?.result}});
+            const expr = '(' + RUN_OP_SRC + ')('
+                + JSON.stringify(op || 'title') + ','
+                + JSON.stringify(sel ?? null) + ','
+                + JSON.stringify(arg ?? null) + ')';
+            const value = await cdpEval(target || tabId, expr);
+            post({id:msg.id, result:{value}});
         } else if (action === 'list_tabs') {
             const tabs = await chrome.tabs.query({});
             post({id:msg.id, result:{tabs: tabs.map(t => ({id:t.id, url:t.url, title:t.title, active:t.active}))}});

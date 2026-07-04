@@ -65,8 +65,9 @@ async def run():
     r = await helpers.fill_input(d, "div.box", "x")
     assert not r["ok"] and "fillable" in r["error"], r
 
-    # 4. 页内抛异常 → executeScript 结果为 undefined，JSON.stringify 丢键 → daemon 收 {}
-    #    helpers 里 res={} → 不能当成功，诚实报 fill failed
+    # 4. evaluate 返回空结果（无 value 键）→ helpers 里 res={}，不能当成功，诚实报 fill failed。
+    #    （页内抛异常现由 CDP exceptionDetails → send_scripting raise → 各 helper 的 try/except
+    #     兜成 ok:False；此处直喂 {} 覆盖“拿到结果但缺 value”这条路径。）
     br = FakeBridge({"fillInput": {}})              # 无 value 键，模拟空结果
     d = FakeDaemon(br)
     r = await helpers.fill_input(d, "#weird", "x")
