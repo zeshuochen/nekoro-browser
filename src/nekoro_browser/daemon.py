@@ -147,10 +147,13 @@ class Daemon:
         return await self.bridge.send("Input.dispatchMouseEvent", {"type":"mouseReleased","x":x,"y":y,"button":"left","clickCount":1})
     async def type_text(self, t): return await self.bridge.send("Input.insertText", {"text":t})
     async def get_page_info(self):
+        # 单次 evaluate 返回 {title,url}，省一个往返（原来 title/href 两次串行）。
         try:
-            t = await self.bridge.send("Runtime.evaluate", {"expression":"document.title","returnByValue":True})
-            u = await self.bridge.send("Runtime.evaluate", {"expression":"location.href","returnByValue":True})
-            return {"title":t["result"].get("value",""),"url":u["result"].get("value","")}
+            r = await self.bridge.send("Runtime.evaluate", {
+                "expression": "({title: document.title, url: location.href})",
+                "returnByValue": True})
+            v = r["result"].get("value") or {}
+            return {"title": v.get("title", ""), "url": v.get("url", "")}
         except: return {"title":"","url":""}
     # wait_for_load 的真实实现在 helpers.py（轮询 readyState，无 listener 泄漏）。
     # 曾有的 daemon 版依赖 Page.loadEventFired 但从没 Page.enable → 永不触发、

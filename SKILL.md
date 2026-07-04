@@ -68,6 +68,7 @@ echo "await page_info()" | nekoro-browser
 |------|------|------|
 | `js(code)` | `js("document.title")` | 执行 JS 并返回结果 |
 | `cdp(method, **params)` | `cdp("Page.navigate", url="...")` | 原始 CDP 命令 |
+| `cdp_batch(*cmds)` | `cdp_batch(["DOM.getDocument"], ["Page.getLayoutMetrics"])` | 多条独立 CDP 命令并发（流水线，N 条 ~1 个往返） |
 
 ### 交互操作
 

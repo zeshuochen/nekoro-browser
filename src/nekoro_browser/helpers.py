@@ -126,6 +126,23 @@ async def cdp(daemon, method: str, **params) -> dict:
         return {"ok": False, "error": str(e)}
 
 
+async def cdp_batch(daemon, *cmds) -> dict:
+    """cdp_batch(["DOM.getDocument",{}], ["Page.getLayoutMetrics"]) —
+    多条【互不依赖】的 CDP 命令一次性并发下发。命令是 id-keyed 的，
+    N 条同时在途 → 只花 ~1 个往返延迟，而非串行 N 个。
+    每条 = [method] 或 [method, params]。后条要用前条结果时别用（有依赖）。"""
+    async def _one(c):
+        method = c[0]
+        params = c[1] if len(c) > 1 else {}
+        try:
+            return {"ok": True, "result": await daemon.bridge.send(method, params)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+    results = list(await asyncio.gather(*[_one(c) for c in cmds]))
+    # 顶层 ok 反映「全部成功」，与本文件其他 helper 的 ok 语义一致
+    return {"ok": all(r["ok"] for r in results), "results": results}
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Click / Input
 # ═══════════════════════════════════════════════════════════════════════════════
