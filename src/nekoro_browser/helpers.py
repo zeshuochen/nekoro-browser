@@ -27,10 +27,18 @@ async def new_tab(daemon, url: str = "about:blank") -> dict:
         return {"ok": False, "error": str(e)}
 
 
-async def navigate(daemon, url: str) -> dict:
-    """navigate("https://example.com")"""
+async def navigate(daemon, url: str, wait: bool = True, timeout: float = 15.0) -> dict:
+    """navigate("https://example.com") — 默认等 readyState==='complete' 再返回。
+    wait=False 立即返回（Page.navigate 一发出就走）。loaded 标记是否等到加载完成。"""
     try:
-        return {"ok": True, "result": await daemon.navigate(url)}
+        res = await daemon.navigate(url)
+        loaded = True
+        if wait:
+            # 先给导航一点提交时间，避免 readyState 读到上一页残留的 complete
+            # （stale-complete 竞态）。150ms 远小于旧的硬编码 3s。
+            await asyncio.sleep(0.15)
+            loaded = (await wait_for_load(daemon, timeout)).get("ok", False)
+        return {"ok": True, "result": res, "loaded": loaded}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 

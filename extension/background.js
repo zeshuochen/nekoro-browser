@@ -651,14 +651,46 @@ async function handleCmd(msg) {
     }
 }
 
+// 等 tab 加载完成。用 chrome.tabs.onUpdated 的 status==='complete' 事件驱动，
+// 不轮询 readyState——那样会读到上一页残留的 complete（stale-complete 竞态，
+// 正是被硬编码 sleep(3000) 掩盖的问题）。timeout 兜底，短于调用方传输超时。
+// 返回 'complete' | 'timeout' | 'no-tab'。
+// checkNow：create 路径专用——监听器在 tabs.create（导航已开始）之后才挂，可能
+// 错过秒开页（about:blank/data:/缓存）的 complete，故补查一次当前状态。update 路径
+// 绝不能开：那时导航还没触发，补查会读到上一页残留的 complete（stale-complete）。
+function waitTabLoad(tabId, checkNow = false, timeout = 10000) {
+    if (!tabId) return Promise.resolve('no-tab');
+    return new Promise((resolve) => {
+        let done = false;
+        const finish = (v) => {
+            if (done) return;
+            done = true;
+            chrome.tabs.onUpdated.removeListener(onUpd);
+            clearTimeout(timer);
+            resolve(v);
+        };
+        const onUpd = (id, info) => {
+            if (id === tabId && info.status === 'complete') finish('complete');
+        };
+        chrome.tabs.onUpdated.addListener(onUpd);
+        const timer = setTimeout(() => finish('timeout'), timeout);
+        if (checkNow) {
+            chrome.tabs.get(tabId, (t) => {
+                if (!chrome.runtime.lastError && t && t.status === 'complete') finish('complete');
+            });
+        }
+    });
+}
+
 async function handleScripting(msg) {
     const {action, target, expression, func, args, url} = msg.params || {};
     try {
         if (action === 'navigate') {
-            let tabId = target;
+            let tabId = target, created = false;
             if (!tabId) {
                 const tab = await chrome.tabs.create({url, active:true});
                 tabId = tab?.id;
+                created = true;
                 // Ensure tab is in our group (create group if needed)
                 if (tabId && chrome.tabs.group) {
                     try {
@@ -674,11 +706,13 @@ async function handleScripting(msg) {
                         }
                     } catch(_) {}
                 }
-            } else {
-                await chrome.tabs.update(tabId, {url, active:true});
             }
-            await sleep(3000);
-            post({id:msg.id, result:{navigated:url, tabId}});
+            // 监听器先挂再触发导航（update 路径），避免快页面在挂监听前就 complete。
+            // 等真实加载完成而非硬编码 3s：快页面即时返回，慢页面等够，10s 兜底。
+            const loadP = waitTabLoad(tabId, created);
+            if (!created) await chrome.tabs.update(tabId, {url, active:true});
+            const load = await loadP;
+            post({id:msg.id, result:{navigated:url, tabId, load}});
         } else if (action === 'evaluate') {
             // Inject into MAIN world to see React-hydrated DOM
             const {op, sel, arg} = msg.params || {};
