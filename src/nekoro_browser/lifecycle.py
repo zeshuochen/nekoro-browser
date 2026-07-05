@@ -17,6 +17,7 @@ import urllib.request
 from pathlib import Path
 
 from . import auth
+from . import paths
 
 URL = "http://127.0.0.1:19825"   # 测试可 monkeypatch lifecycle.URL 指向本地测试服
 
@@ -26,8 +27,8 @@ _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 def pid_path() -> Path:
-    """pid 文件与令牌同目录（用户私有）。"""
-    return auth.token_path().parent / "daemon.pid"
+    """pid 文件路径（与令牌同目录，都派生自 paths.data_dir()）。"""
+    return paths.pid_path()
 
 
 def write_pid():

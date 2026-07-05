@@ -20,12 +20,12 @@ import os
 import secrets
 from pathlib import Path
 
+from . import paths
+
 
 def token_path() -> Path:
-    base = (os.environ.get("LOCALAPPDATA")
-            or os.environ.get("XDG_CONFIG_HOME")
-            or str(Path.home()))
-    return Path(base) / "nekoro-browser" / "token"
+    """令牌文件路径（派生自 paths.data_dir()）。"""
+    return paths.token_path()
 
 
 def issue_token() -> str:
