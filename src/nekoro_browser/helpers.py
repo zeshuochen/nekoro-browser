@@ -69,6 +69,20 @@ async def switch_tab(daemon, tab_id: int) -> dict:
         return {"ok": False, "error": str(e)}
 
 
+async def close_tab(daemon, tab: int = None) -> dict:
+    """close_tab(123) — 关掉指定标签；tab 省略则关当前 attached tab。
+    走扩展 close_tab action（chrome.tabs.remove）。关掉活动标签后扩展会自动重连到
+    另一可用标签、经 attach 回调同步 active_tab_id。无标签可关 → ok:false。"""
+    t = tab if tab is not None else daemon.active_tab_id
+    if not t:
+        return {"ok": False, "error": "No tab"}     # 与兄弟 helper 错误串一致
+    try:
+        r = await daemon.bridge.send_scripting({"action": "close_tab", "target": t}, 10)
+        return {"ok": True, "closed": (r or {}).get("closed", t)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 async def navigate(daemon, url: str, wait: bool = True, timeout: float = 15.0) -> dict:
     """navigate("https://example.com") — 默认等 readyState==='complete' 再返回。
     wait=False 立即返回（Page.navigate 一发出就走）。loaded 标记是否等到加载完成。"""
