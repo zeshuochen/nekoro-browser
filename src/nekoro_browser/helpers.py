@@ -10,8 +10,32 @@ import asyncio
 import base64
 import json
 import logging
+import math
 
 logger = logging.getLogger(__name__)
+
+
+def _decode_unserializable_js_value(value):
+    """CDP 对 JSON 无法表示的返回值（Infinity/NaN/-0/BigInt）不给 value，只给
+    unserializableValue 字符串。这里解回 Python 值（移植 browser-harness）。"""
+    if value == "NaN":
+        return math.nan
+    if value == "Infinity":
+        return math.inf
+    if value == "-Infinity":
+        return -math.inf
+    if value == "-0":
+        return -0.0
+    if isinstance(value, str) and value.endswith("n"):   # BigInt 字面量 "123n"
+        try:
+            return int(value[:-1])
+        except ValueError:
+            return value
+    return value
+
+
+def _is_illegal_return_error(desc: str) -> bool:
+    return "Illegal return statement" in (desc or "")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -105,17 +129,38 @@ async def capture_screenshot(daemon, format: str = "png", quality: int = 80) -> 
 # JavaScript (Runtime.evaluate via CDP)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def js(daemon, code: str) -> dict:
-    """js("document.title") — 在当前页面执行 JS"""
+async def js(daemon, code: str, _wrapped: bool = False) -> dict:
+    """js("document.title") — 在当前页面执行 JS，返回完成值。
+    先按裸表达式/脚本 eval（`document.title` 直接返回标题）；顶层 `return` 触发
+    "Illegal return statement" 时自动包进函数重试（`return x` 也能用）。
+    不可 JSON 序列化的值（Infinity/NaN/-0/BigInt）解码回 Python 值，不再吐原始 dict。
+    页内异常 / eval 出错 → ok:false，不伪造成功。"""
     try:
-        wrapped = f"(function() {{ {code} }})()"
-        r = await daemon.evaluate(wrapped)
-        val = r.get("result", {})
-        if val.get("type") == "object" and val.get("subtype") == "error":
-            return {"ok": False, "error": val.get("description", "?")}
-        return {"ok": True, "result": val.get("value", val)}
+        expr = _wrap_js_function(code) if _wrapped else code
+        r = await daemon.evaluate(expr)
+        det = r.get("exceptionDetails")
+        res = r.get("result", {})
+        if det:
+            desc = ((det.get("exception") or {}).get("description")
+                    or det.get("text") or "eval error")
+            # 顶层 return 非法 → 包函数重试一次（只重试一次，防死循环）
+            if not _wrapped and _is_illegal_return_error(desc):
+                return await js(daemon, code, _wrapped=True)
+            return {"ok": False, "error": desc}
+        if res.get("subtype") == "error":
+            return {"ok": False, "error": res.get("description", "?")}
+        if "value" in res:
+            return {"ok": True, "result": res["value"]}
+        if "unserializableValue" in res:
+            return {"ok": True,
+                    "result": _decode_unserializable_js_value(res["unserializableValue"])}
+        return {"ok": True, "result": None}          # undefined 返回
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+def _wrap_js_function(code: str) -> str:
+    return f"(function(){{{code}}})()"
 
 
 async def cdp(daemon, method: str, **params) -> dict:
