@@ -8,6 +8,7 @@ import json
 import logging
 
 from . import auth
+from . import lifecycle
 from .bridge import ExtensionBridge
 
 logger = logging.getLogger(__name__)
@@ -63,6 +64,7 @@ class Daemon:
         # issue_token 会先覆盖共享令牌文件，把仍在运行的旧 daemon 弄成 403。
         # bind 到签发之间 self.token 为 None，token_eq 判否 → /exec 拒，失败关闭。
         self.bridge.set_token(auth.issue_token())
+        lifecycle.write_pid()  # 令牌签发后写 pid，供 CLI --stop/--restart 与自愈用
         logger.info("Waiting for extension...")
         try:
             await asyncio.wait_for(self.bridge.attached.wait(), timeout=10)
@@ -187,5 +189,10 @@ class Daemon:
     @property
     def active_tab_id(self): return self._tab_id
 
-    async def stop(self): await self.bridge.stop()
-    async def wait_forever(self): await asyncio.Event().wait()
+    async def stop(self):
+        await self.bridge.stop()
+        lifecycle.cleanup_pid()
+
+    async def wait_forever(self):
+        # /shutdown 命中或 Ctrl-C 时返回，交给 _run 的 finally 清理。
+        await self.bridge.shutdown_requested.wait()

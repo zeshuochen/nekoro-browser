@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import sys
+import time
 import urllib.request
 import urllib.error
 
@@ -20,12 +21,22 @@ from . import auth
 
 URL = "http://127.0.0.1:19825"
 
+# 空代理 opener：系统/env 代理会拦 127.0.0.1 返 502，误判 daemon 死。localhost 直连。
+_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
 
 def _alive():
     try:
-        with urllib.request.urlopen(f"{URL}/ping", timeout=2) as r:
+        with _OPENER.open(f"{URL}/ping", timeout=2) as r:
             return r.status == 200
     except: return False
+
+
+def _healthy(timeout=8):
+    """端到端探活：一次真实 CDP 往返（page_info）。仅 /ping 200 不够——
+    僵尸 daemon 端口还占着、ping 照样过，但扩展/SW 已死、CDP 往返失败。"""
+    r = _post("/exec", "await page_info()", timeout=timeout)
+    return bool(r.get("ok") and (r.get("result") or {}).get("url"))
 
 
 def _post(path, data="", timeout=30):
@@ -34,7 +45,7 @@ def _post(path, data="", timeout=30):
             f"{URL}{path}", data=data.encode(), method="POST",
             headers={"Content-Type": "text/plain",
                      "X-Nekoro-Token": auth.read_token()})
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with _OPENER.open(req, timeout=timeout) as r:
             return json.loads(r.read()) if r.status == 200 else {"ok": False, "error": f"HTTP {r.status}"}
     except urllib.error.HTTPError as e:
         if e.code == 403:
@@ -50,8 +61,35 @@ def main():
     p = argparse.ArgumentParser(prog="nekoro-browser")
     p.add_argument("--version", action="version", version=f"nekoro-browser {__version__}")
     p.add_argument("--doctor", action="store_true")
+    p.add_argument("--stop", action="store_true", help="停止正在运行的 daemon")
+    p.add_argument("--restart", action="store_true", help="停止后重启（前台）")
     p.add_argument("-c", "--exec", type=str, default=None)
     args = p.parse_args()
+
+    if args.stop:
+        from . import lifecycle
+        if not _alive():
+            print("No daemon running.", file=sys.stderr); return
+        lifecycle.stop_daemon()
+        for _ in range(15):                  # 复核最多 3s
+            if not _alive(): break
+            time.sleep(0.2)
+        if _alive():
+            # 据实上报，不谎报成功。多半是 pre-#10 daemon（无 /shutdown 路由、无 pid 文件），
+            # 优雅停对它无效、又没安全 handle 可杀 → 让用户手动处理。
+            print("Warning: daemon still responding after stop request.\n"
+                  "  (likely a pre-#10 daemon without /shutdown; kill its PID manually)",
+                  file=sys.stderr)
+        else:
+            print("Daemon stopped.", file=sys.stderr)
+        return
+    if args.restart:
+        from . import lifecycle
+        lifecycle.stop_daemon()
+        for _ in range(25):                  # 最多 5s 等端口释放
+            if not _alive(): break
+            time.sleep(0.2)
+        # 不 return：下方 pipe 分支被 `not args.restart` 跳过，直落 daemon 前台启动
 
     if args.doctor:
         _doctor(); return
@@ -62,8 +100,8 @@ def main():
             sys.exit(1)
         return
 
-    # Pipe mode
-    if not sys.stdin.isatty():
+    # Pipe mode（--restart 强制走 daemon 启动，跳过管道）
+    if not args.restart and not sys.stdin.isatty():
         code = sys.stdin.read().strip()
         if code:
             if not _alive():
@@ -82,11 +120,20 @@ def main():
 async def _run():
     from .daemon import Daemon
     # 端口已占 = 多半已有 daemon 在跑。友好提示而非抛 bind 栈。
+    from . import lifecycle
     if _alive():
-        print("Another daemon is already running on 127.0.0.1:19825.\n"
-              "Use it directly (echo ... | nekoro-browser), or stop it first.",
+        if _healthy():
+            print("Daemon already running (healthy) on 127.0.0.1:19825.\n"
+                  "Use it (echo ... | nekoro-browser), or restart: nekoro-browser --restart",
+                  file=sys.stderr)
+            sys.exit(1)
+        # 端口占着但 CDP 不通 = 僵尸。自动清掉再启，免用户手动 taskkill。
+        print("Stale daemon detected (port held, not serving). Cleaning up...",
               file=sys.stderr)
-        sys.exit(1)
+        lifecycle.stop_daemon()
+        for _ in range(25):
+            if not _alive(): break
+            time.sleep(0.2)
     d = Daemon()
     try:
         ok = await d.start()

@@ -18,6 +18,7 @@ import base64
 import hashlib
 import json
 import logging
+import os
 import struct
 
 from . import auth
@@ -109,6 +110,7 @@ class ExtensionBridge:
         self._attach_handler = None
         self.token = None  # CLI /exec /raw 的共享令牌，daemon.start 里注入
         self.port = port  # 0 → OS 分配临时端口（测试用），实际端口在 start() 回填
+        self.shutdown_requested = asyncio.Event()  # /shutdown 置位 → daemon.wait_forever 返回
 
     def set_exec_handler(self, handler):
         """/exec 回调。handler(code: str) -> dict"""
@@ -245,6 +247,21 @@ class ExtensionBridge:
 
             if path == "/ping":
                 await _http_resp(writer, 200, "pong")  # 存活探测，无需令牌
+            elif path == "/pid":
+                # 自报 pid，供 lifecycle.identify 核验身份。免令牌（只读、无副作用）。
+                await _http_resp(writer, 200, json.dumps({"pid": os.getpid()}),
+                                 "Content-Type: application/json")
+            elif path == "/shutdown":
+                # 优雅停：置位 shutdown 事件让 daemon 主循环退出。必须 POST + 持令牌。
+                if method != "POST":
+                    await _http_resp(writer, 405, "method not allowed")
+                elif not auth.token_eq(headers.get("x-nekoro-token", ""), self.token):
+                    logger.warning("HTTP /shutdown rejected: bad token")
+                    await _http_resp(writer, 403, "bad token")
+                else:
+                    await _http_resp(writer, 200, json.dumps({"ok": True}),
+                                     "Content-Type: application/json")
+                    self.shutdown_requested.set()
             elif path in ("/exec", "/raw"):
                 # /exec 跑任意 Python、/raw 直发 CDP —— 必须持有令牌
                 if not auth.token_eq(headers.get("x-nekoro-token", ""), self.token):
