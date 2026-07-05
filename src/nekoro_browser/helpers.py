@@ -279,13 +279,39 @@ async def upload_file(daemon, sel: str, path) -> dict:
         return {"ok": False, "error": str(e)}
 
 
+_KEYS = {  # key → (windowsVirtualKeyCode, code, text)
+    "Enter": (13, "Enter", "\r"), "Tab": (9, "Tab", "\t"), "Backspace": (8, "Backspace", ""),
+    "Escape": (27, "Escape", ""), "Delete": (46, "Delete", ""), " ": (32, "Space", " "),
+    "ArrowLeft": (37, "ArrowLeft", ""), "ArrowUp": (38, "ArrowUp", ""),
+    "ArrowRight": (39, "ArrowRight", ""), "ArrowDown": (40, "ArrowDown", ""),
+    "Home": (36, "Home", ""), "End": (35, "End", ""),
+    "PageUp": (33, "PageUp", ""), "PageDown": (34, "PageDown", ""),
+}
+
+
 async def press_key(daemon, key: str, modifiers: int = 0) -> dict:
-    """press_key("Enter") — 修饰键: Ctrl=2 Alt=1 Shift=8 Meta=4"""
+    """press_key("Enter") / press_key("a") — 修饰键位: Alt=1 Ctrl=2 Meta=4 Shift=8。
+    特殊键（Enter/Tab/Arrow*/Backspace…）带 virtual key code，监听 e.keyCode/e.which/e.key
+    的页面（表单、老站）都能触发；单字符可打印键补发 char 事件（直接进 input，不走 insertText）；
+    Alt/Ctrl/Meta 修饰时不发 char（让 Ctrl+A 走快捷键而非打出字符 'a'）。
+    移植 browser-harness press_key。"""
     try:
-        await daemon.bridge.send("Input.dispatchKeyEvent",
-            {"type": "keyDown", "key": key, "modifiers": modifiers})
-        await daemon.bridge.send("Input.dispatchKeyEvent",
-            {"type": "keyUp", "key": key, "modifiers": modifiers})
+        vk, code, text = _KEYS.get(
+            key, (ord(key[0]) if len(key) == 1 else 0, key, key if len(key) == 1 else ""))
+        base = {"key": key, "code": code, "modifiers": modifiers,
+                "windowsVirtualKeyCode": vk, "nativeVirtualKeyCode": vk}
+        shortcut_mods = modifiers & (1 | 2 | 4)          # Alt/Ctrl/Meta 把单键变快捷键
+        printable = len(key) == 1 and bool(text) and not shortcut_mods
+        # keyDown：特殊键（有 text 但非可打印，如 Enter="\r"）在此带 text；可打印字符的 text
+        # 留给 char 事件，keyDown 不带（否则重复输入）。
+        kd = dict(base)
+        if text and not printable:
+            kd["text"] = text
+        await daemon.bridge.send("Input.dispatchKeyEvent", {"type": "keyDown", **kd})
+        if printable:
+            await daemon.bridge.send("Input.dispatchKeyEvent",
+                                     {"type": "char", "text": text, **base})
+        await daemon.bridge.send("Input.dispatchKeyEvent", {"type": "keyUp", **base})
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}
