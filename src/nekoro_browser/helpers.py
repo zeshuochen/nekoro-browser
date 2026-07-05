@@ -194,6 +194,32 @@ async def fill_input(daemon, sel: str, text: str, tab: int = None) -> dict:
         return {"ok": False, "error": str(e)}
 
 
+async def upload_file(daemon, sel: str, path) -> dict:
+    """upload_file("input[type=file]", r"C:\\a.png") — 给文件输入框设文件。
+    走 CDP DOM.setFileInputFiles（触发 change 事件，框架能收到）；path 为绝对路径，
+    单个 str 或多个 list。文件不存在 / 找不到元素 / 元素非 file input → ok:false，不伪造成功。
+    注意：作用于当前 attached tab，nodeId 经 daemon.query_selector 解析。"""
+    import os
+    # str / pathlib.Path 当单个；否则视为可迭代（list/tuple of str|Path）。os.fspath 归一。
+    if isinstance(path, (str, os.PathLike)):
+        files = [os.fspath(path)]
+    else:
+        files = [os.fspath(p) for p in path]
+    missing = [f for f in files if not os.path.isfile(f)]
+    if missing:
+        return {"ok": False, "error": f"file not found: {missing}"}
+    try:
+        nid = await daemon.query_selector(sel)
+        if not nid:
+            return {"ok": False, "error": f"element not found: {sel}"}
+        # 元素非 <input type=file> 时 CDP 报错，catch 统一转 ok:false
+        await daemon.bridge.send("DOM.setFileInputFiles",
+                                 {"nodeId": nid, "files": files})
+        return {"ok": True, "files": files}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 async def press_key(daemon, key: str, modifiers: int = 0) -> dict:
     """press_key("Enter") — 修饰键: Ctrl=2 Alt=1 Shift=8 Meta=4"""
     try:
