@@ -92,6 +92,12 @@ async function runOp(op, sel, arg) {
         if (!el || el.nodeType !== 1) return false;
         const r = el.getBoundingClientRect();
         if (r.width === 0 || r.height === 0) return false;
+        // checkVisibility 沿祖先链判定：能捕获父级 opacity:0（opacity 不继承，手写只查
+        // 元素自身的 getComputedStyle 会漏）、父级 display:none/visibility:hidden 等。
+        // 老 Chrome 无此 API 时回退到自身样式检查（display/visibility 覆盖大多数情形）。
+        if (typeof el.checkVisibility === 'function') {
+            return el.checkVisibility({checkOpacity: true, checkVisibilityCSS: true});
+        }
         const s = getComputedStyle(el);
         if (s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0') return false;
         return true;
