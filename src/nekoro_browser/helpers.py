@@ -707,13 +707,28 @@ async def box_of(daemon, sel: str, tab: int = None) -> dict:
 
 
 async def dialog_off(daemon, tab: int = None) -> dict:
-    """dialog_off() — 自动关闭 alert/confirm/prompt"""
+    """dialog_off() — JS 层覆盖 window.alert/confirm/prompt 为自动关闭（需在触发前注入，
+    盖不住 beforeunload / 已开的原生对话框）。想要兜底防挂用扩展的 CDP 层处置（见
+    get_last_dialog）——那个 attach 后一直生效、覆盖 beforeunload。"""
     t = tab or await _find_tab(daemon)
     if not t: return {"ok": False, "error": "No tab"}
     try:
         r = await daemon.bridge.send_scripting({
             "action": "evaluate", "target": t, "op": "dialogOff"}, 10)
         return {"ok": True, "result": r.get("value")}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+async def get_last_dialog(daemon) -> dict:
+    """get_last_dialog() → {dialog} — 取最近一次被扩展自动处置的原生对话框，读后清。
+    attach 后扩展 Page.enable + 拦 Page.javascriptDialogOpening 立即处置（beforeunload
+    放行、alert/confirm/prompt 取消），防原生对话框冻结页面 JS 线程导致 evaluate 系
+    helper 挂死。dialog = {kind, message, url, defaultPrompt} 或 None（期间无对话框）。
+    仅事后观测，不能代答：需 confirm()===true 或特定 prompt 字符串的流程会被无条件取消。"""
+    try:
+        r = await daemon.bridge.send_request("last_dialog", timeout=5)
+        return {"ok": True, "dialog": r}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 

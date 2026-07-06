@@ -643,6 +643,10 @@ async function handleCmd(msg) {
         await autoAttach();
     } else if (msg.type === 'list_tabs') {
         post({id: msg.id, result: {tabs: await listManagedTabs()}});
+    } else if (msg.type === 'last_dialog') {
+        // 返回最近被自动处置的原生对话框（读后清，下次只报新的）
+        post({id: msg.id, result: lastDialog});
+        lastDialog = null;
     } else if (msg.type === 'switch_tab') {
         const id = msg.tabId;
         let ok;
@@ -828,6 +832,9 @@ async function handleScripting(msg) {
 
 let managedGroupId = null;
 let managedTabIds = new Set();
+// 最近一次被 CDP 层自动处置的原生对话框（读后清）。原生 alert/confirm/prompt/beforeunload
+// 会冻结页面 JS 线程 → 任何 Runtime.evaluate 挂死；attach 后 Page.enable + 拦截处置来防挂。
+let lastDialog = null;
 
 async function autoAttach() {
     // Find existing nekoro group first
@@ -956,6 +963,10 @@ function tryAttach(id, retries = 5, delay = 500) {
                 }
                 tabId = id;
                 console.log('[nekoro-browser] attached tab', id);
+                // Page.enable：让原生对话框走 CDP Page.javascriptDialogOpening 事件（由
+                // onEvent 拦截处置），而非弹原生 UI 冻结页面。失败无碍（chrome:// 等受限页）。
+                chrome.debugger.sendCommand({tabId: id}, 'Page.enable', {},
+                    () => { void chrome.runtime.lastError; });
                 post({type:'attached', tabId});
                 resolve(true);
             });
@@ -967,6 +978,18 @@ function tryAttach(id, retries = 5, delay = 500) {
 // ─── Events ─────────────────────────────────────────────────────────────
 
 chrome.debugger.onEvent.addListener((src,method,params) => {
+    if (method === 'Page.javascriptDialogOpening') {
+        // 原生对话框冻结页面 JS 线程 → evaluate 系 helper 挂死。立即在 CDP 层处置：
+        // beforeunload 放行（accept:true，别卡住导航），alert/confirm/prompt 取消（accept:false）。
+        const info = {kind: params.type, message: params.message || '',
+                      url: params.url || '', defaultPrompt: params.defaultPrompt || ''};
+        lastDialog = info;
+        const accept = params.type === 'beforeunload';
+        chrome.debugger.sendCommand({tabId: src.tabId}, 'Page.handleJavaScriptDialog',
+            {accept}, () => { void chrome.runtime.lastError; });
+        post({type:'dialog', ...info, handled: accept ? 'accept' : 'dismiss', tabId: src.tabId});
+        return;                       // 已处置，不再当普通 event 转发
+    }
     post({type:'event', method, params, sessionId:src.sessionId});
 });
 chrome.debugger.onDetach.addListener((src, reason) => {

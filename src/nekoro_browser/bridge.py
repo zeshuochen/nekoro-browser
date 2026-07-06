@@ -375,8 +375,10 @@ class ExtensionBridge:
             f = self._pending.pop(data["id"], None)
             if f and not f.done():
                 # 扩展的错误在顶层（background.js post({id, error:{...}})），
-                # 原始 CDP 错误则嵌在 result.error 里，两种都要处理
-                err = data.get("error") or data.get("result", {}).get("error")
+                # 原始 CDP 错误则嵌在 result.error 里，两种都要处理。
+                # result 可能是 null（如 last_dialog 无对话框）→ 用 `or {}` 兜底，
+                # 否则 None.get 抛 AttributeError 会一路拆掉 WS 桥。
+                err = data.get("error") or (data.get("result") or {}).get("error")
                 if err:
                     f.set_exception(RuntimeError(
                         f"CDP error: {err.get('message', '?')}"))
