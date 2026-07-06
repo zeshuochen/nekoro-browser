@@ -101,7 +101,7 @@ async def run():
 
     # 3. event 分发
     got = []
-    bridge.on_event(lambda m, p, s: got.append((m, p)))
+    bridge.on_event(lambda m, p, s, t=None: got.append((m, p)))  # 事件 handler 现收 tabId 第4参
     await send_json(writer, {"type": "event", "method": "E", "params": {"x": 2}})
     await asyncio.sleep(0.1)
     assert got == [("E", {"x": 2})], got

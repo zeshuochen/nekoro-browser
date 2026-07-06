@@ -163,10 +163,11 @@ class Daemon:
 
     # ── Event Queue ────────────────────────────────────────────────────────
 
-    def _queue_event(self, method, params, session_id=None):
+    def _queue_event(self, method, params, session_id=None, tab_id=None):
         """Push CDP event into buffer — consumed by drain_events()。
-        缓冲满时丢最旧（环形），保证没人 drain 也不会无界占内存。"""
-        ev = {"method": method, "params": params, "sessionId": session_id}
+        缓冲满时丢最旧（环形），保证没人 drain 也不会无界占内存。
+        tab_id 用于按标签过滤（如 wait_for_network_idle 只认活动标签）。"""
+        ev = {"method": method, "params": params, "sessionId": session_id, "tabId": tab_id}
         try:
             self._event_queue.put_nowait(ev)
         except asyncio.QueueFull:

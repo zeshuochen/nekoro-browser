@@ -436,16 +436,22 @@ async def wait_for_load(daemon, timeout: float = 15.0) -> dict:
 
 async def wait_for_network_idle(daemon, idle_time: float = 0.5,
                                  timeout: float = 15.0) -> dict:
-    """wait_for_network_idle(0.5, 15) — 等待 Network 请求静默 idle_time 秒。"""
+    """wait_for_network_idle(0.5, 15) — 等待【当前活动标签】的 Network 请求静默 idle_time 秒。
+    只算 active_tab_id 的事件：其它 attached 标签（后台轮询/SSE 页）的 Network 事件也进全局
+    缓冲，不过滤会一直把 idle 窗口顶开、永不静默。"""
     import time
     try:
         await cdp(daemon, "Network.enable")
+        active = daemon.active_tab_id     # 只抓一次：等待期间即使 switch_tab 也继续认起始标签
         deadline = time.time() + timeout
         pending: set = set()
         last_active = time.time()
         while time.time() < deadline:
             events = await drain_events(daemon)
             for ev in events:
+                # 只认当前活动标签的事件（后台标签的 Network 事件会污染 idle 判定）
+                if active is not None and ev.get("tabId") != active:
+                    continue
                 m = ev.get("method", "")
                 p = ev.get("params", {})
                 if m == "Network.requestWillBeSent":
@@ -463,7 +469,7 @@ async def wait_for_network_idle(daemon, idle_time: float = 0.5,
 
 async def drain_events(daemon):
     """drain_events() → list — 拉取自上次 drain 后所有缓存的 CDP 事件。
-    每个事件为 {method, params, sessionId}。"""
+    每个事件为 {method, params, sessionId, tabId}（tabId 用于按标签过滤）。"""
     return await daemon.drain_events()
 
 

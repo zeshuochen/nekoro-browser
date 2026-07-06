@@ -990,7 +990,7 @@ chrome.debugger.onEvent.addListener((src,method,params) => {
         post({type:'dialog', ...info, handled: accept ? 'accept' : 'dismiss', tabId: src.tabId});
         return;                       // 已处置，不再当普通 event 转发
     }
-    post({type:'event', method, params, sessionId:src.sessionId});
+    post({type:'event', method, params, sessionId:src.sessionId, tabId:src.tabId});
 });
 chrome.debugger.onDetach.addListener((src, reason) => {
     const wasActive = (tabId === src.tabId);

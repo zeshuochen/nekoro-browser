@@ -353,7 +353,8 @@ class ExtensionBridge:
         if tp == "event":
             for h in self._event_handlers:
                 try:
-                    h(data["method"], data.get("params", {}), data.get("sessionId"))
+                    h(data["method"], data.get("params", {}), data.get("sessionId"),
+                      data.get("tabId"))
                 except Exception as e:
                     logger.error(f"Event error: {e}")
         elif tp == "attached":
