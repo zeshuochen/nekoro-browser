@@ -42,11 +42,21 @@ def _is_illegal_return_error(desc: str) -> bool:
 # Tab
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def new_tab(daemon, url: str = "about:blank") -> dict:
-    """new_tab("https://example.com")"""
+async def new_tab(daemon, url: str = "about:blank", timeout: float = 15.0) -> dict:
+    """new_tab("https://example.com") — 开新标签，加入 nekoro 托管组，切过去并 attach。
+    走扩展 navigate action：chrome.tabs.create + 分组 + waitTabLoad 等**真实 load 事件**，
+    返回时页面已加载完（不像原来裸 Target.createTarget 直接返回、后续 wait 撞 about:blank
+    stale-complete 竞态）。返回 {tabId, loaded}，之后 helper 直接作用于新标签。
+    注意：load 等待上限由扩展内部硬编码（~10s），`timeout` 只界定这条 RPC 的传输上限
+    （取 timeout+5），并不缩短扩展侧的 load 等待预算。"""
     try:
-        r = await daemon.bridge.send("Target.createTarget", {"url": url})
-        return {"ok": True, "targetId": r.get("targetId", "")}
+        r = await daemon.bridge.send_scripting({"action": "navigate", "url": url}, timeout + 5)
+        tab_id = (r or {}).get("tabId")
+        if not tab_id:
+            return {"ok": False, "error": "new_tab: no tabId from extension"}
+        loaded = bool((r or {}).get("load"))
+        await daemon.switch_tab(tab_id)          # attach debugger + 切活动指针
+        return {"ok": True, "tabId": tab_id, "loaded": loaded}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
