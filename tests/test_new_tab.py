@@ -36,7 +36,8 @@ def run(coro):
 
 
 def test_new_tab_success():
-    d = FakeDaemon({"navigated": "https://x.com", "tabId": 7, "load": True})
+    # 扩展 waitTabLoad 返回字符串 'complete'（不是 Python bool）
+    d = FakeDaemon({"navigated": "https://x.com", "tabId": 7, "load": "complete"})
     r = run(helpers.new_tab(d, "https://x.com"))
     assert r == {"ok": True, "tabId": 7, "loaded": True}, r
     # 走 navigate action（非裸 Target.createTarget）
@@ -46,7 +47,7 @@ def test_new_tab_success():
 
 
 def test_new_tab_default_blank():
-    d = FakeDaemon({"tabId": 3, "load": True})
+    d = FakeDaemon({"tabId": 3, "load": "complete"})
     r = run(helpers.new_tab(d))
     assert r["ok"] is True and r["tabId"] == 3
     assert d.bridge.scripting[0]["url"] == "about:blank"
@@ -61,9 +62,9 @@ def test_new_tab_none_result():
     assert d.switched == []
 
 
-def test_new_tab_load_false():
-    # 慢页面 waitTabLoad 超时 → load:false，仍算开成功但 loaded=False
-    d = FakeDaemon({"tabId": 9, "load": False})
+def test_new_tab_load_timeout():
+    # 慢页面 waitTabLoad 超时 → load:'timeout'，仍算开成功但 loaded=False（不谎报加载完）
+    d = FakeDaemon({"tabId": 9, "load": "timeout"})
     r = run(helpers.new_tab(d, "https://slow.example"))
     assert r == {"ok": True, "tabId": 9, "loaded": False}, r
     assert d.switched == [9]
@@ -91,7 +92,7 @@ if __name__ == "__main__":
     test_new_tab_success()
     test_new_tab_default_blank()
     test_new_tab_none_result()
-    test_new_tab_load_false()
+    test_new_tab_load_timeout()
     test_new_tab_no_tabid()
     test_new_tab_error()
     test_registered()
