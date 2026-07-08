@@ -59,6 +59,10 @@ function scheduleReconnect() {
 
 self.addEventListener('activate', () => { console.log('[nekoro-browser] activate'); connect(); });
 
+// 浏览器冷启动（含脚本/cron 拉起 Chrome）时立刻连 daemon，不必等 alarm（最长 30s，
+// 空闲还会被节流）。onStartup 是持久事件注册，能让 SW 在 Chrome 启动时被唤醒并跑到这。
+chrome.runtime.onStartup.addListener(() => { console.log('[nekoro-browser] onStartup'); connect(); });
+
 // Alarm keep-alive: revive the worker + reconnect if it was killed while the
 // socket was down (active WS otherwise keeps the worker alive on its own).
 try { chrome.alarms.create('k', {periodInMinutes: 0.5}); } catch(_) {}
