@@ -57,14 +57,34 @@ def _post(path, data="", timeout=30):
         return {"ok": False, "error": str(e)}
 
 
+def _reload_ext() -> int:
+    """--reload-ext：命扩展重载 service worker，拿干净状态（治 alive-stale）。
+    据实返回退出码：无 daemon → 1（且不发 exec）；请求成功 → 0；失败 → 1。
+    注意只治"SW 还在处理消息但状态腐坏"；truly-wedged（不处理消息）救不了，靠心跳唤醒。"""
+    if not _alive():
+        print("No daemon running.", file=sys.stderr)
+        return 1
+    r = _post("/exec", "await reload_extension()")
+    if r.get("ok"):
+        print("Extension reload requested.", file=sys.stderr)
+        return 0
+    print(f"reload failed: {r.get('error', '?')}", file=sys.stderr)
+    return 1
+
+
 def main():
     p = argparse.ArgumentParser(prog="nekoro-browser")
     p.add_argument("--version", action="version", version=f"nekoro-browser {__version__}")
     p.add_argument("--doctor", action="store_true")
     p.add_argument("--stop", action="store_true", help="停止正在运行的 daemon")
     p.add_argument("--restart", action="store_true", help="停止后重启（前台）")
+    p.add_argument("--reload-ext", action="store_true",
+                   help="重载扩展 service worker（自愈，治 alive-stale；跑任务前刷干净）")
     p.add_argument("-c", "--exec", type=str, default=None)
     args = p.parse_args()
+
+    if args.reload_ext:
+        sys.exit(_reload_ext())
 
     if args.stop:
         from . import lifecycle
