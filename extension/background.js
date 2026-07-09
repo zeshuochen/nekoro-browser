@@ -63,6 +63,14 @@ self.addEventListener('activate', () => { console.log('[nekoro-browser] activate
 // 空闲还会被节流）。onStartup 是持久事件注册，能让 SW 在 Chrome 启动时被唤醒并跑到这。
 chrome.runtime.onStartup.addListener(() => { console.log('[nekoro-browser] onStartup'); connect(); });
 
+// content-script 心跳 Port（keepalive.js）：连接进来即说明 SW 被唤醒（含从 dead/wedged
+// 被内容脚本重连叫醒）→ 顺手补 WS。回 pong 让 Port 上有收发，续 SW 空闲计时器。
+chrome.runtime.onConnect.addListener((port) => {
+    if (port.name !== 'keepalive') return;
+    if (!wsOpen()) connect();
+    port.onMessage.addListener(() => { try { port.postMessage('pong'); } catch (_) {} });
+});
+
 // Alarm keep-alive: revive the worker + reconnect if it was killed while the
 // socket was down (active WS otherwise keeps the worker alive on its own).
 try { chrome.alarms.create('k', {periodInMinutes: 0.5}); } catch(_) {}
