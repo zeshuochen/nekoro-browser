@@ -673,6 +673,7 @@ async function handleCmd(msg) {
             // 而非全局 getOccupiedTabs：后者含 DevTools 等他方 attach 的标签，
             // 那种切过去 sendCommand 会失败，tryAttach 才会诚实报 attached:false。
             tabId = id;
+            rememberTab(id);
             post({type:'attached', tabId});
             ok = true;
         } else {
@@ -854,7 +855,27 @@ let managedTabIds = new Set();
 // 会冻结页面 JS 线程 → 任何 Runtime.evaluate 挂死；attach 后 Page.enable + 拦截处置来防挂。
 let lastDialog = null;
 
+// 记住当前 attach 的标签，供 SW 死后重启时接回（chrome.storage.session：survives SW
+// 重启，浏览器关时自动清 = 冷启无残留）。fire-and-forget，失败无碍。
+function rememberTab(id) {
+    try { chrome.storage.session.set({ lastTab: id }); } catch (_) {}
+}
+
 async function autoAttach() {
+    // SW-4：优先重挂 SW 死前驱动的标签，别漂到组内遗留 about:blank（伤自愈重启/长任务连续性）。
+    // 先 tabs.get 确认标签还在（避免对已关标签白跑 tryAttach 的重试），并顺带恢复 managedGroupId。
+    try {
+        const { lastTab } = await chrome.storage.session.get('lastTab');
+        if (lastTab) {
+            const t = await chrome.tabs.get(lastTab).catch(() => null);
+            if (t && await tryAttach(lastTab)) {
+                managedTabIds.add(lastTab);
+                if (managedGroupId == null && t.groupId > 0) managedGroupId = t.groupId;
+                return;
+            }
+        }
+    } catch (_) {}
+
     // Find existing nekoro group first
     if (managedGroupId == null && chrome.tabGroups) {
         try {
@@ -980,6 +1001,7 @@ function tryAttach(id, retries = 5, delay = 500) {
                     return;
                 }
                 tabId = id;
+                rememberTab(id);
                 console.log('[nekoro-browser] attached tab', id);
                 // Page.enable：让原生对话框走 CDP Page.javascriptDialogOpening 事件（由
                 // onEvent 拦截处置），而非弹原生 UI 冻结页面。失败无碍（chrome:// 等受限页）。
@@ -1015,8 +1037,17 @@ chrome.debugger.onDetach.addListener((src, reason) => {
     if (wasActive) tabId = null;
     managedTabIds.delete(src.tabId);
     post({type:'detached', tabId:src.tabId, reason});
+    // canceled_by_user（用户点调试横幅取消）：清掉被取消标签的 lastTab 记忆，否则后续
+    // autoAttach 会优先重挂它、又弹调试横幅。只清「被取消的正是记住的那个」，别误伤别的。
+    if (reason === 'canceled_by_user') {
+        try {
+            chrome.storage.session.get('lastTab', ({ lastTab }) => {
+                if (lastTab === src.tabId) chrome.storage.session.remove('lastTab');
+            });
+        } catch (_) {}
+    }
     // 用户关掉当前活动标签 → 自动重连到另一个可用标签，避免命令失效。
-    // canceled_by_user（用户点调试横幅取消）不重连，否则会反复弹横幅。
+    // canceled_by_user 不重连，否则会反复弹横幅。
     if (wasActive && wsOpen() && reason !== 'canceled_by_user') {
         autoAttach().catch(e => console.error('[nekoro-browser] reattach failed:', e));
     }

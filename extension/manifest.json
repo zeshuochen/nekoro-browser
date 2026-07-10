@@ -6,6 +6,7 @@
   "permissions": [
     "alarms",
     "debugger",
+    "storage",
     "tabs",
     "tabGroups"
   ],
