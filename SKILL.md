@@ -9,10 +9,12 @@ nekoro-browser 是浏览器自动化 CLI，通过 Chrome 扩展的 `chrome.debug
 ### 启动和状态
 
 ```bash
-nekoro-browser                 # 交互模式，从 stdin 读 Python 代码
-nekoro-browser --doctor        # 诊断检查
+nekoro-browser                 # 前台启动 daemon
+nekoro-browser --doctor        # 端到端诊断（daemon + 扩展 + SW 是否都活着）
 nekoro-browser --version       # 版本
-nekoro-browser --verbose       # 调试模式
+nekoro-browser --stop          # 停止 daemon
+nekoro-browser --restart       # 停止后重启（前台）
+nekoro-browser --reload-ext    # 命扩展重载 service worker（跑批量任务前刷干净状态）
 ```
 
 ### 管道模式
@@ -34,7 +36,7 @@ echo "await page_info()" | nekoro-browser
 
 ## 可用函数 (helpers)
 
-所有函数返回 `{"ok": True, ...}` 或 `{"ok": False, "error": "..."}`。
+所有函数返回 `{"ok": True, ...}` 或 `{"ok": False, "error": "..."}`。`list_helpers()` 列出当前全部可用函数名。
 
 ### Tab 管理
 
@@ -46,6 +48,7 @@ echo "await page_info()" | nekoro-browser
 | `switch_tab(id)` | `switch_tab(123)` | 切换活动标签（后续命令发往该标签） |
 | `ensure_real_tab()` | `ensure_real_tab()` | 自动从 chrome:// 等内部页导航到 about:blank |
 | `iframe_target(url_substr)` | `iframe_target("player")` | 获取 iframe 的 CDP targetId |
+| `close_tab(tab=None)` | `close_tab(123)` | 关闭标签；省略则关当前 attached tab |
 
 ### 页面信息
 
@@ -79,8 +82,9 @@ echo "await page_info()" | nekoro-browser
 | `click_text("文字")` | `click_text("喜欢")` | 按可见文本 → CDP 坐标点击 |
 | `type_text(text)` | `type_text("hello")` | CDP Input.insertText（往当前焦点插字符） |
 | `fill_input(sel, text)` | `fill_input("#email", "a@b.com")` | 框架感知填值：原生 setter + input/change，React/Vue 受控组件能收到 onChange |
-| `press_key(key)` | `press_key("Enter")` | 按键 |
-| `press_key("c", 2)` | 同上 | Ctrl+C（2=Ctrl, 1=Alt, 8=Shift, 4=Meta） |
+| `press_key(key)` | `press_key("Enter")` | 按键（带 virtual key code + char 事件，特殊键/单字符都真实触发） |
+| `press_key("c", 2)` | 同上 | Ctrl+C（1=Alt, 2=Ctrl, 4=Meta, 8=Shift） |
+| `upload_file(sel, path)` | `upload_file("input[type=file]", r"C:\a.png")` | CDP 设置文件输入框的文件（str/Path 或其 list） |
 
 ### 索引元素树（browser-act 风格）
 
@@ -109,6 +113,7 @@ echo "await page_info()" | nekoro-browser
 | `wait_for_load()` | `wait_for_load()` | 等待页面加载（30s 超时） |
 | `wait_for_load(60)` | 同上 | 自定义超时 |
 | `wait_selector(sel, state)` | `wait_selector(".modal", "visible", 15)` | 等待元素状态（visible/hidden/attached/detached） |
+| `wait_for_network_idle(idle_time, timeout)` | `wait_for_network_idle(0.5, 15)` | 等待【当前活动标签】Network 请求静默 |
 | `sleep(seconds)` | `sleep(2)` | 暂停 |
 
 ### 滚动
@@ -135,12 +140,20 @@ echo "await page_info()" | nekoro-browser
 |------|------|------|
 | `http_get(url)` | `http_get("https://example.com")` | 纯 HTTP GET，适合静态页/API |
 
-### 其他
+### 对话框与事件
 
 | 函数 | 用法 | 说明 |
 |------|------|------|
-| `dialog_off()` | `dialog_off()` | 自动关闭 alert/confirm/prompt |
-| `reload_extension()` | `reload_extension()` | 强制重载 Chrome 扩展（自愈用） |
+| `dialog_off()` | `dialog_off()` | JS 层覆盖 alert/confirm/prompt 为自动关闭（需在触发前调用） |
+| `get_last_dialog()` | `get_last_dialog()` | 取最近一次被扩展自动处置的原生对话框，读后清；扩展会自动处置所有原生对话框（beforeunload 放行、其余取消），防止页面冻结 |
+| `drain_events()` | `drain_events()` | 拉取自上次 drain 后缓存的 CDP 事件 |
+
+### 自愈
+
+| 函数 | 用法 | 说明 |
+|------|------|------|
+| `reload_extension()` | `reload_extension()` | 强制重载 Chrome 扩展 service worker |
+| `reload_agent_helpers()` | `reload_agent_helpers()` | 重新加载 agent_helpers.py，无需重启 daemon |
 
 ## 领域技能 (domain-skills)
 
@@ -178,5 +191,5 @@ cat domain-skills/wechat-channels/post-list.md
 | 问题 | 解决 |
 |------|------|
 | `Extension not connected` | 确保扩展已安装并在 chrome://extensions 中启用 |
-| `No free port` | 检查端口 9230-9245 是否被占用 |
-| CDP 命令超时 | 页面可能卡住，尝试刷新标签 |
+| `Address already in use` | 检查端口 19825 是否被旧进程占用；先 `nekoro-browser --stop`，或直接杀掉占用该端口的进程 |
+| CDP 命令超时 | 扩展 service worker 可能睡死/卡住；`nekoro-browser --doctor` 定位，`--reload-ext` 或 chrome://extensions 手动重载 |
