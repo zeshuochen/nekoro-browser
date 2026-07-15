@@ -191,5 +191,5 @@ cat domain-skills/wechat-channels/post-list.md
 | 问题 | 解决 |
 |------|------|
 | `Extension not connected` | 确保扩展已安装并在 chrome://extensions 中启用 |
-| `Address already in use` | 检查端口 19825 是否被旧进程占用；先 `nekoro-browser --stop`，或直接杀掉占用该端口的进程 |
+| `Address already in use` | 检查端口 28417 是否被旧进程占用；先 `nekoro-browser --stop`，或直接杀掉占用该端口的进程 |
 | CDP 命令超时 | 扩展 service worker 可能睡死/卡住；`nekoro-browser --doctor` 定位，`--reload-ext` 或 chrome://extensions 手动重载 |

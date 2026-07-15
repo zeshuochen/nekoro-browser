@@ -1,6 +1,6 @@
 """bridge.py — 扩展 ↔ daemon 传输层
 
-传输分两路，同一端口 19825：
+传输分两路，同一端口 28417：
 
   1. 扩展 ↔ daemon：持久 WebSocket（GET /ws + Upgrade）。
      命令即时下发，结果/事件即时上报。零轮询、零 sleep 间隙。
@@ -25,7 +25,7 @@ from . import auth
 
 logger = logging.getLogger(__name__)
 
-HTTP_PORT = 19825
+HTTP_PORT = 28417  # 非标准/不常见端口，避开与 @jackwener/opencli（同类工具，19825）撞车
 _WS_MAGIC = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 _cmd_counter = 0
 

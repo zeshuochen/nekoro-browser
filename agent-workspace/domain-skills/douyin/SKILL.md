@@ -43,7 +43,7 @@ Right sidebar: x≈1216, y≈150, w=66, h≈485
 
 ## Gotchas
 - `chrome.runtime.reload()` kills Service Worker — Chrome doesn't auto-restart. Must manually toggle in `chrome://extensions`.
-- `send_scripting` times out if extension SW is dead — check port 19825 first
+- `send_scripting` times out if extension SW is dead — check port 28417 first
 - CDP attach may fail if another debugger (Playwright, DevTools) is on the tab
 - Modal videos: URL shows `?modal_id=...` not `/video/...`
 - React hydration timeout: wait 8-12s after clicking video card before interacting

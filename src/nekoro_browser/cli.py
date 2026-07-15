@@ -19,7 +19,7 @@ import urllib.error
 from . import __version__
 from . import auth
 
-URL = "http://127.0.0.1:19825"
+URL = "http://127.0.0.1:28417"
 
 # 空代理 opener：系统/env 代理会拦 127.0.0.1 返 502，误判 daemon 死。localhost 直连。
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -143,7 +143,7 @@ async def _run():
     from . import lifecycle
     if _alive():
         if _healthy():
-            print("Daemon already running (healthy) on 127.0.0.1:19825.\n"
+            print("Daemon already running (healthy) on 127.0.0.1:28417.\n"
                   "Use it (echo ... | nekoro-browser), or restart: nekoro-browser --restart",
                   file=sys.stderr)
             sys.exit(1)

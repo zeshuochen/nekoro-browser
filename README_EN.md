@@ -113,7 +113,7 @@ Edit `helpers.py` at runtime. Agent adds missing functions on failure — takes 
 | `Daemon not running` | Daemon not started | Run `nekoro-browser` in terminal 1 |
 | CDP timeout | Extension not connected / service worker asleep | `nekoro-browser --doctor` to diagnose; try `--reload-ext` or manually reload in `chrome://extensions` |
 | Page unchanged | Extension not attached to tab | Open a regular (non-chrome://) page, restart daemon |
-| Port in use | Stale process | Kill the process on port 19825, or just run `nekoro-browser --stop` |
+| Port in use | Stale process | Kill the process on port 28417, or just run `nekoro-browser --stop` |
 
 ## Security
 

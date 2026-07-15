@@ -99,7 +99,7 @@ echo "douyin_like('籽岷')" | nekoro-browser
 | `Daemon not running` | daemon 没启动 | 终端 1 运行 `nekoro-browser` |
 | CDP 命令超时 | 扩展未连接 / service worker 睡死 | `nekoro-browser --doctor` 定位；必要时 `--reload-ext` 或 `chrome://extensions` 手动重载 |
 | 页面没变化 | 扩展未 attach | 打开普通网页（非 chrome://），重启 daemon |
-| 端口占用 | 旧进程残留 | 杀掉占用 19825 的进程，或直接 `nekoro-browser --stop` |
+| 端口占用 | 旧进程残留 | 杀掉占用 28417 的进程，或直接 `nekoro-browser --stop` |
 
 ## 安全
 

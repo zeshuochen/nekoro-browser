@@ -3,7 +3,7 @@
 移植 browser-harness B 树（4d75f11）admin.py:_process_start_time / restart_daemon
 + _ipc.identify 的概念，适配 nekoro 的 HTTP 传输（socket IPC → HTTP /pid /shutdown）。
 
-僵尸场景（本项目实测坑）：旧 daemon 进程占着 19825、/ping 仍 200，但扩展/SW 已死，
+僵尸场景（本项目实测坑）：旧 daemon 进程占着 28417、/ping 仍 200，但扩展/SW 已死，
 CDP 往返失败 → CLI 既不能用、又启动不了（bind 撞 port in use）。此模块提供自报身份、
 指纹防误杀、优雅停 + 兜底 kill、清 pid 文件。
 """
@@ -19,7 +19,7 @@ from pathlib import Path
 from . import auth
 from . import paths
 
-URL = "http://127.0.0.1:19825"   # 测试可 monkeypatch lifecycle.URL 指向本地测试服
+URL = "http://127.0.0.1:28417"   # 测试可 monkeypatch lifecycle.URL 指向本地测试服
 
 # 显式空代理 opener：系统/env 代理（如 wandayun）会拦截 127.0.0.1 并返 502，
 # 把健康的本地 daemon 误判成僵尸。localhost 一律直连、绕过任何代理。

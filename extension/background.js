@@ -1,5 +1,5 @@
 // nekoro-browser background.js — persistent WebSocket transport
-const PORT = 19825;
+const PORT = 28417;  // 避开与同类工具 @jackwener/opencli（19825）撞车
 const WS_URL = `ws://127.0.0.1:${PORT}/ws`;
 
 let tabId = null;
