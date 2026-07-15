@@ -70,7 +70,23 @@ echo "douyin_like('籽岷')" | nekoro-browser
 
 ## 架构
 
-`helpers.py`（30 个）→ CDP 薄封装，每个 ≤10 行。厚逻辑在 `domain-skills/`。
+`helpers.py`（46 个）→ CDP 薄封装，每个 ≤10 行。厚逻辑在 `domain-skills/`。
+
+`lifecycle.py` 管 daemon 生命周期：pid 文件 + 进程指纹防误杀、僵尸自愈（CDP 探活失败自动清理重启）、localhost 请求绕过系统代理。
+
+扩展侧针对 MV3 service worker 会被 Chrome 回收这件事做了硬化：`content_scripts` 心跳（页面里的独立向量，SW 被杀也能重连唤醒）+ `onStartup`（Chrome 冷启动立即连 daemon）+ 断线后自动重挂上次操作的标签，不会漂到空白页。
+
+## CLI
+
+| 命令 | 作用 |
+|------|------|
+| `nekoro-browser` | 前台启动 daemon |
+| `nekoro-browser --doctor` | 端到端诊断（daemon + 扩展 + SW 是否都活着） |
+| `nekoro-browser --stop` | 停止 daemon |
+| `nekoro-browser --restart` | 停止后重启（前台） |
+| `nekoro-browser --reload-ext` | 命扩展重载 service worker，跑批量任务前刷干净状态 |
+| `nekoro-browser -c "code"` | 执行一段代码并返回结果 |
+| `echo "code" \| nekoro-browser` | 管道模式（需 daemon 已运行） |
 
 ## 自愈
 
@@ -81,9 +97,9 @@ echo "douyin_like('籽岷')" | nekoro-browser
 | 现象 | 原因 | 解决 |
 |------|------|------|
 | `Daemon not running` | daemon 没启动 | 终端 1 运行 `nekoro-browser` |
-| CDP 命令超时 | 扩展未连接 | 检查 `chrome://extensions` |
+| CDP 命令超时 | 扩展未连接 / service worker 睡死 | `nekoro-browser --doctor` 定位；必要时 `--reload-ext` 或 `chrome://extensions` 手动重载 |
 | 页面没变化 | 扩展未 attach | 打开普通网页（非 chrome://），重启 daemon |
-| 端口占用 | 旧进程残留 | 杀掉占用 9230 的进程 |
+| 端口占用 | 旧进程残留 | 杀掉占用 19825 的进程，或直接 `nekoro-browser --stop` |
 
 ## 安全
 

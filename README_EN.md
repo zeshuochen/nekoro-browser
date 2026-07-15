@@ -70,19 +70,36 @@ Douyin keyboard shortcuts: `z`=like `x`=comment `c`=collect `G`=follow
 
 ## Architecture
 
-`helpers.py` (30+ thin wrappers) → CDP commands, each ≤10 lines. Thick logic lives in `domain-skills/`.
+`helpers.py` (46 thin wrappers) → CDP commands, each ≤10 lines. Thick logic lives in `domain-skills/`.
+
+`lifecycle.py` manages the daemon: pid file + process fingerprint (avoids killing a reused pid), self-heal on stale daemon (CDP probe fails → auto cleanup and restart), localhost requests bypass the system proxy.
+
+The extension is hardened against MV3 service worker eviction: a `content_scripts` heartbeat (an independent wake vector living in the page, reconnects and wakes the SW even after it's killed) + `onStartup` (reconnects instantly on Chrome cold start) + reattaches the last-driven tab after a restart instead of drifting to a blank tab.
+
+## CLI
+
+| Command | What it does |
+|---------|---------------|
+| `nekoro-browser` | Start the daemon (foreground) |
+| `nekoro-browser --doctor` | End-to-end diagnostic (daemon + extension + SW all alive?) |
+| `nekoro-browser --stop` | Stop the daemon |
+| `nekoro-browser --restart` | Stop and restart (foreground) |
+| `nekoro-browser --reload-ext` | Reload the extension's service worker — run before a batch job for a clean state |
+| `nekoro-browser -c "code"` | Run one snippet, print the result |
+| `echo "code" \| nekoro-browser` | Pipe mode (daemon must already be running) |
 
 ## API
 
-All 30+ helpers documented in [SKILL.md](SKILL.md). Common ones:
+All 46 helpers documented in [SKILL.md](SKILL.md). Common ones:
 
 | Category | Commands |
 |----------|----------|
-| Navigation | `navigate(url)`, `new_tab(url)`, `list_tabs()`, `switch_tab(id)` |
-| Page info | `page_info()`, `page_html()`, `page_text()` |
+| Navigation | `navigate(url)`, `new_tab(url)`, `list_tabs()`, `switch_tab(id)`, `close_tab(id)` |
+| Page info | `page_info()`, `page_html()`, `page_text()`, `get_markdown()` |
 | JavaScript | `js(code)`, `cdp(method, **p)`, `cdp_batch(*cmds)` |
-| Interaction | `click_selector(sel)`, `click_at_xy(x,y)`, `type_text(t)`, `fill_input(sel,t)`, `press_key(k)` |
-| Waiting | `wait_for_load()`, `wait_selector(sel)`, `sleep(s)` |
+| Interaction | `click_selector(sel)`, `click_at_xy(x,y)`, `type_text(t)`, `fill_input(sel,t)`, `press_key(k)`, `upload_file(sel,path)` |
+| Dialogs | `dialog_off()`, `get_last_dialog()` |
+| Waiting | `wait_for_load()`, `wait_selector(sel)`, `wait_for_network_idle()`, `sleep(s)` |
 | Screenshots | `capture_screenshot()`, `capture_screenshot("jpeg", 90)` |
 
 ## Self-Healing
@@ -94,9 +111,9 @@ Edit `helpers.py` at runtime. Agent adds missing functions on failure — takes 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | `Daemon not running` | Daemon not started | Run `nekoro-browser` in terminal 1 |
-| CDP timeout | Extension not connected | Check `chrome://extensions` for errors |
+| CDP timeout | Extension not connected / service worker asleep | `nekoro-browser --doctor` to diagnose; try `--reload-ext` or manually reload in `chrome://extensions` |
 | Page unchanged | Extension not attached to tab | Open a regular (non-chrome://) page, restart daemon |
-| Port in use | Stale process | Kill the process on port 9230 |
+| Port in use | Stale process | Kill the process on port 19825, or just run `nekoro-browser --stop` |
 
 ## Security
 
