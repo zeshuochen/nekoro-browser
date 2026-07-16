@@ -1,0 +1,45 @@
+---
+name: nekoro-browser
+description: 浏览器自动化——打开网页、搜索、点击、截图、执行 JS、填表、上传文件、处理对话框。通过 Chrome 扩展的 chrome.debugger API 操控用户日常浏览器，保留登录态，不开调试端口。触发词："浏览器"、"打开网页"、"搜索"、"截图"、"点击"、"填表"、"上传文件"、"自动化操作"。
+allowed-tools: Bash(nekoro-browser:*) Bash(python:*) Read Edit Write
+---
+
+# nekoro-browser
+
+通过 Chrome 扩展 + 持久 WebSocket 操控用户日常 Chrome 的 CLI 工具。不需要
+`--remote-debugging-port`（Chrome 136 起该方式无法接默认 profile），保留真实登录态。
+
+**完整命令参考、故障排查、领域技能见仓库根目录 [`SKILL.md`](../../../SKILL.md)——先读那份，本文件只补 Claude Code 场景的要点。**
+
+## 前置条件
+
+```bash
+pip install -e .    # 或 uv pip install -e .，注册 nekoro-browser 命令
+```
+
+加载 Chrome 扩展：`chrome://extensions` → 开发者模式 → 加载已解压的扩展程序 → 选 `extension/` 目录。
+
+## 快速开始
+
+```bash
+# 终端 1：启动 daemon（前台，保持打开）
+nekoro-browser
+
+# 终端 2：验证
+nekoro-browser --doctor
+echo "page_info()" | nekoro-browser
+```
+
+daemon 监听 `127.0.0.1:28417`（选此端口是为了不与同类工具 `@jackwener/opencli` 的
+19825 撞车，若你机器上也装了 OpenCLI，两者可共存但同一时刻按需只启一个 daemon）。
+
+## 每次调用前
+
+检查 daemon 是否存活（`nekoro-browser --doctor`），死了 `nekoro-browser --reload-ext`
+或重启；扩展 service worker 偶尔需要在 `chrome://extensions` 手动重载（尤其 Chrome
+刚重开时）。
+
+## 自愈
+
+缺少函数时直接编辑 `src/nekoro_browser/helpers.py` 添加，`helpers.py` 每次调用前重新
+加载，改完立即生效，无需重启 daemon。
