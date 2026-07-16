@@ -22,4 +22,5 @@ Thumbs.db
 scripts/*.ps1
 scripts/*.py
 scripts/*.sh
+scripts/*.txt
 !scripts/.gitkeep
