@@ -57,6 +57,21 @@ def _post(path, data="", timeout=30):
         return {"ok": False, "error": str(e)}
 
 
+def extension_dir():
+    """扩展目录的落地路径。
+
+    从 PyPI 装的 wheel 里扩展在包内（`nekoro_browser/extension`）；
+    从仓库 `pip install -e .` 装的则在仓库根（`src/nekoro_browser` 上两级）。
+    两处都找不到返回 None——据实说没有，不猜一个不存在的路径给用户。
+    """
+    from pathlib import Path
+    here = Path(__file__).resolve().parent
+    for cand in (here / "extension", here.parent.parent / "extension"):
+        if (cand / "manifest.json").is_file():
+            return cand
+    return None
+
+
 def _reload_ext() -> int:
     """--reload-ext：命扩展重载 service worker，拿干净状态（治 alive-stale）。
     据实返回退出码：无 daemon → 1（且不发 exec）；请求成功 → 0；失败 → 1。
@@ -80,8 +95,18 @@ def main():
     p.add_argument("--restart", action="store_true", help="停止后重启（前台）")
     p.add_argument("--reload-ext", action="store_true",
                    help="重载扩展 service worker（自愈，治 alive-stale；跑任务前刷干净）")
+    p.add_argument("--extension-path", action="store_true",
+                   help="打印 Chrome 扩展目录（chrome://extensions 里「加载已解压的扩展」选它）")
     p.add_argument("-c", "--exec", type=str, default=None)
     args = p.parse_args()
+
+    if args.extension_path:
+        d = extension_dir()
+        if d is None:
+            print("Extension directory not found in this install.", file=sys.stderr)
+            sys.exit(1)
+        print(d)
+        return
 
     if args.reload_ext:
         sys.exit(_reload_ext())

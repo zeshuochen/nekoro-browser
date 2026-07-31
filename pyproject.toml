@@ -5,23 +5,62 @@ build-backend = "hatchling.build"
 [project]
 name = "nekoro-browser"
 version = "0.1.0"
-description = "Lightweight browser automation CLI via chrome.debugger API"
+description = "Lightweight browser automation CLI + MCP server driving your everyday Chrome via the extension chrome.debugger API — keeps your login state, no --remote-debugging-port"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.12"
 dependencies = []
+keywords = [
+    "browser-automation", "chrome", "cdp", "chrome-devtools-protocol",
+    "mcp", "model-context-protocol", "agent", "llm", "playwright-alternative",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
+    # Windows 是主力开发/实测平台；POSIX 分支有代码（XDG 目录、chmod 600、
+    # OpenProcess vs os.kill 分平台探活）且由 CI 的 ubuntu job 覆盖单测，
+    # 但没在真机 macOS/Linux + Chrome 上跑过全链路 —— 见 README「平台支持」。
     "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS :: MacOS X",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Internet :: WWW/HTTP :: Browsers",
 ]
+
+[project.urls]
+Homepage = "https://github.com/zeshuochen/nekoro-browser"
+Repository = "https://github.com/zeshuochen/nekoro-browser"
+Issues = "https://github.com/zeshuochen/nekoro-browser/issues"
+Documentation = "https://github.com/zeshuochen/nekoro-browser/blob/master/SKILL.md"
 
 [project.scripts]
 nekoro-browser = "nekoro_browser.cli:main"
+nekoro-browser-mcp = "nekoro_browser.mcp_server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/nekoro_browser"]
+
+# 从 PyPI 装的人拿不到 git 仓库，但没有 extension/ 就没法加载扩展 = 装了也用不了。
+# 把扩展和 domain-skills 塞进 wheel，`nekoro-browser --extension-path` 打印落地路径。
+[tool.hatch.build.targets.wheel.force-include]
+"extension" = "nekoro_browser/extension"
+"domain-skills" = "nekoro_browser/domain-skills"
+
+[tool.hatch.build.targets.sdist]
+# 扩展和 domain-skills 不是 Python 包，但没有扩展这工具没法用，
+# sdist 里必须带上，否则 `pip download` 拿到的是半个东西。
+include = [
+    "src/nekoro_browser",
+    "extension",
+    "domain-skills",
+    "tests",
+    "README.md",
+    "README_EN.md",
+    "SKILL.md",
+    "AGENTS.md",
+    "LICENSE",
+]
