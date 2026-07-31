@@ -9,6 +9,7 @@ build/
 # Virtual environments
 .venv/
 venv/
+uv.lock          # 库不锁依赖版本（本来就零依赖），锁文件只是本地噪音
 
 # IDE
 .vscode/

@@ -1,6 +1,9 @@
 """Domain skill: Douyin (抖音) video liking workflow.
 
-Load with: from agent-workspace.domain-skills.douyin.like import douyin_like
+Domain skills are NOT loaded automatically. The daemon's exec namespace only
+merges `helpers.py` + `agent_helpers.py`. To use these functions, copy them
+into `src/nekoro_browser/agent_helpers.py` (they take `daemon` as first arg,
+same convention) — the daemon reloads that file on every `/exec`, no restart.
 """
 import asyncio
 

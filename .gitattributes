@@ -1,0 +1,5 @@
+# shell 脚本必须是 LF：CRLF 会让 Linux/macOS 报 "bad interpreter: /usr/bin/env bash^M"。
+# 本仓库在 Windows 上开发，autocrlf 会把工作区转成 CRLF，这里把落地行尾钉死。
+*.sh text eol=lf
+*.ps1 text eol=crlf
+* text=auto

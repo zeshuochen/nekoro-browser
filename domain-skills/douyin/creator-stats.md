@@ -14,7 +14,7 @@
 涨粉 = 今天粉丝总数 − 上次记录的粉丝总数
 ```
 
-**State 文件**：`.douyin_fans_state.json`
+**State 文件**（路径由调用方决定，例如 `.douyin_fans_state.json`）：
 ```json
 {"fans": 1234, "date": "2026-06-23"}
 ```
