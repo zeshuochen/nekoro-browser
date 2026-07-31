@@ -22,6 +22,10 @@ Two halves, one wire (HTTP + WebSocket, same port):
   - `helpers.py` — CDP wrapper functions auto-imported into `-c` scripts, each a thin
     (≤10 line) wrapper over one CDP capability
   - `cli.py` — the `nekoro-browser` command
+  - `mcp_server.py` — the `nekoro-browser-mcp` command: stdio JSON-RPC MCP server for
+    clients that don't read skill files (Cursor / Cline / Claude Desktop). Tools are
+    reflected off `helpers.py` via `inspect.signature`, then forwarded to the same
+    daemon `/exec` endpoint the CLI uses — no second execution path to keep in sync.
 
 `SKILL.md` tells agents how to use the CLI and lists every helper. `README.md` covers
 install + quick start for humans.
@@ -29,7 +33,8 @@ install + quick start for humans.
 An agent operating nekoro-browser edits two places:
 - `src/nekoro_browser/agent_helpers.py` — task-specific browser helpers the agent adds
   at runtime; hot-reloaded via `reload_agent_helpers()`, no daemon restart needed
-- `agent-workspace/domain-skills/` — site-specific playbooks the agent writes and reads
+- `domain-skills/` — site-specific playbooks the agent writes and reads. Functions in
+  there are NOT auto-loaded; paste what you need into `agent_helpers.py` first.
 
 # Testing
 `tests/*.py` are stdlib-style, not pytest: `assert` + a final `print("ALL OK")`, run via

@@ -17,7 +17,9 @@ allowed-tools: Bash(nekoro-browser:*) Bash(python:*) Read Edit Write
 pip install -e .    # 或 uv pip install -e .，注册 nekoro-browser 命令
 ```
 
-加载 Chrome 扩展：`chrome://extensions` → 开发者模式 → 加载已解压的扩展程序 → 选 `extension/` 目录。
+加载 Chrome 扩展：`chrome://extensions` → 开发者模式 → 加载已解压的扩展程序 → 选
+`extension/` 目录（`nekoro-browser --extension-path` 打印绝对路径）。未打包扩展会被
+Chrome 更新/重启后自动停用，`--doctor` 说 SW 不响应时先去那页确认它还开着。
 
 ## 快速开始
 
@@ -41,5 +43,6 @@ daemon 监听 `127.0.0.1:28417`（选此端口是为了不与同类工具 `@jack
 
 ## 自愈
 
-缺少函数时直接编辑 `src/nekoro_browser/helpers.py` 添加，`helpers.py` 每次调用前重新
-加载，改完立即生效，无需重启 daemon。
+缺少函数时编辑 `src/nekoro_browser/agent_helpers.py` 添加——**只有这个文件**每次
+`/exec` 前会自动 reload，改完立即生效、无需重启 daemon。改 `helpers.py` 本身需要重启
+daemon 才生效（daemon 启动时导入一次）。

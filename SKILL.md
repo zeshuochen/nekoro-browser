@@ -15,7 +15,15 @@ nekoro-browser --version       # 版本
 nekoro-browser --stop          # 停止 daemon
 nekoro-browser --restart       # 停止后重启（前台）
 nekoro-browser --reload-ext    # 命扩展重载 service worker（跑批量任务前刷干净状态）
+nekoro-browser --extension-path # 打印扩展目录（chrome://extensions 加载已解压扩展时用）
 ```
+
+### MCP（非 CLI 客户端）
+
+不读文件的 agent 客户端（Cursor / Cline / Claude Desktop）走 MCP：
+配 `{"mcpServers": {"nekoro-browser": {"command": "nekoro-browser-mcp"}}}`。
+helpers 自动反射成工具，外加 `cdp`（原始 CDP）和 `exec_python`（任意 Python，
+多步流程一次往返）。daemon 仍要在另一个终端跑着。
 
 ### 管道模式
 
@@ -167,16 +175,22 @@ cat domain-skills/wechat-channels/post-list.md
 
 厚逻辑（站点工作流）放 `domain-skills/` 目录。
 
-### 抖音 (douyin/creator-stats.md)
+### 抖音 (douyin/)
+
+⚠️ **domain-skills 里的函数不在 daemon 命名空间里**——exec 环境只合并 `helpers.py`
+和 `agent_helpers.py`。要用 `domain-skills/douyin/actions.py` 里的函数，先把它们贴进
+`src/nekoro_browser/agent_helpers.py`（签名约定相同，第一个参数是 `daemon`），
+下一次 `/exec` 自动 reload 就能直接调。
 
 | 函数 | 用法 | 说明 |
 |------|------|------|
-| `douyin_like("用户名")` | `douyin_like("籽岷")` | 搜索用户并点赞第一个视频 |
-| `douyin_press(key)` | `douyin_press("z")` | 按抖音键盘快捷键 |
+| `douyin_like("用户名")` | `douyin_like("籽岷")` | 搜索用户并点赞第一个视频（需先装载） |
+| `douyin_press(key)` | `douyin_press("z")` | 按抖音键盘快捷键（需先装载） |
 
 抖音键盘快捷键：`z`=点赞 `x`=评论 `c`=收藏 `G`=关注 `f`=首页 `b`=弹幕 `esc`=退出
 
-详细爬取指南见 `domain-skills/douyin/creator-stats.md`。
+页面结构和交互坑见 `domain-skills/douyin/video-interaction.md`，
+创作者中心数据爬取见 `domain-skills/douyin/creator-stats.md`。
 
 ### 视频号 (wechat-channels/post-list.md)
 
@@ -184,7 +198,8 @@ cat domain-skills/wechat-channels/post-list.md
 
 ## 自愈机制
 
-如果遇到缺失的功能，Agent 可以编辑 `helpers.py` 添加新函数。文件在每次调用前被重新加载，修改立即生效。
+缺功能时编辑 `src/nekoro_browser/agent_helpers.py` 添加——**只有这个文件**在每次
+`/exec` 前自动 reload，改完立即生效。改 `helpers.py` 本身要重启 daemon（启动时导入一次）。
 
 ## 故障排查
 
