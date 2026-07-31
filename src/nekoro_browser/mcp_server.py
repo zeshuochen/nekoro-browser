@@ -23,6 +23,10 @@ from .cli import _alive, _post
 
 PROTOCOL_VERSION = "2025-06-18"
 
+# 客户端请求这些版本时原样回显——本 server 没用任何版本独有特性，回显纯赚兼容性。
+# 锁死在老版本的客户端见到不认识的 protocolVersion 有权直接断开。
+_SUPPORTED_VERSIONS = frozenset({"2024-11-05", "2025-03-26", "2025-06-18"})
+
 # 手写 schema 的例外：签名是 **params / *cmds，签名反射表达不了。
 # cdp 值得留（原始 CDP 逃生口），cdp_batch 的 [method, params] 列表结构对
 # MCP 客户端不友好，让它们发多次 tools/call 即可。
@@ -57,6 +61,14 @@ _MANUAL_TOOLS = {
 
 _JSON_TYPES = {str: "string", int: "integer", float: "number", bool: "boolean",
                dict: "object", list: "array"}
+
+# 反射表达不了的单个参数：签名没注解、但实际接受多种形态。
+_PARAM_OVERRIDES = {
+    ("upload_file", "path"): {
+        "description": "File path, or a list of paths for multi-file inputs",
+        "anyOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}],
+    },
+}
 
 
 def _param_schema(param: inspect.Parameter) -> dict:
@@ -96,7 +108,7 @@ def build_tools() -> list[dict]:
                 continue                   # 私有开关（如 js 的 _wrapped）不外露
             if p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD):
                 continue
-            props[p.name] = _param_schema(p)
+            props[p.name] = _PARAM_OVERRIDES.get((name, p.name)) or _param_schema(p)
             if p.default is inspect.Parameter.empty:
                 required.append(p.name)
         doc = inspect.getdoc(fn) or name
@@ -129,9 +141,10 @@ def _code_for(name: str, args: dict) -> str:
 def _timeout_for(args: dict) -> float:
     """HTTP 超时要盖过 helper 自己的等待，否则 `wait_selector(timeout=60)`
     会在客户端这边先断，daemon 那边还在等——报错还会误导成 daemon 死了。"""
-    inner = args.get("timeout")
     base = 60.0
-    if isinstance(inner, (int, float)) and inner > 0:
+    # sleep 的等待时长参数叫 seconds 不叫 timeout，只认 timeout 会漏掉它
+    inner = args.get("timeout") if "timeout" in args else args.get("seconds")
+    if isinstance(inner, (int, float)) and not isinstance(inner, bool) and inner > 0:
         return max(base, float(inner) + 15.0)
     return base
 
@@ -149,18 +162,31 @@ def call_tool(name: str, args: dict) -> dict:
     # 截图走 image content，MCP 客户端能直接显示；文本通道塞 base64 是浪费。
     if (name == "capture_screenshot" and isinstance(result, dict)
             and result.get("ok") and result.get("data")):
-        fmt = result.get("format", "png")
+        # CDP 的 format 原样透传，webp 也是合法值——标错 mimeType 客户端渲染不出来
+        fmt = str(result.get("format", "png")).lower()
+        mime = {"jpeg": "image/jpeg", "jpg": "image/jpeg",
+                "webp": "image/webp"}.get(fmt, "image/png")
         return {"content": [{"type": "image", "data": result["data"],
-                             "mimeType": f"image/{'jpeg' if fmt == 'jpeg' else 'png'}"}]}
+                             "mimeType": mime}]}
 
     # helper 自身报的失败（{"ok": false, ...}）也算工具错误，别让 agent 当成功
     is_error = isinstance(result, dict) and result.get("ok") is False
-    payload = result if result is not None else r.get("stdout", "")
+    # page_info 是个例外：daemon.get_page_info() 吞异常返回空串，形状上仍是「成功」。
+    # 扩展/SW 睡死时这会变成一次静默的空结果——CLI 的 --doctor 专门防了这点，
+    # MCP 侧同样不能让 agent 拿着空 url 往下走。
+    if (name == "page_info" and isinstance(result, dict)
+            and not result.get("url")):
+        return _err("page_info returned an empty url — the extension or its "
+                    "service worker is probably not responding. Check "
+                    "chrome://extensions, then `nekoro-browser --doctor`.")
+
+    stdout = r.get("stdout") or ""
+    payload = result if result is not None else stdout
     text = payload if isinstance(payload, str) else json.dumps(
         payload, ensure_ascii=False, default=str)
     out = {"content": [{"type": "text", "text": text}]}
-    stdout = r.get("stdout")
-    if stdout and not isinstance(payload, str):
+    # print() 出来的东西也要带上（exec_python 常见），但别把 stdout-only 的响应重复两遍
+    if stdout and stdout != payload:
         out["content"].append({"type": "text", "text": stdout})
     if is_error:
         out["isError"] = True
@@ -171,14 +197,26 @@ def _err(msg: str) -> dict:
     return {"content": [{"type": "text", "text": msg}], "isError": True}
 
 
-def handle(msg: dict) -> dict | None:
-    """处理一条 JSON-RPC 消息。返回 None = 通知（notification），不回包。"""
+def handle(msg) -> dict | None:
+    """处理一条 JSON-RPC 消息。返回 None = 通知（notification），不回包。
+
+    msg 不保证是 object：合法 JSON 也可能是数字、字符串，或顶层数组
+    （2024-11-05 的 batch 形状）。这些必须当协议错误挡在这里，不能让
+    `msg.get` 抛 AttributeError 冲穿 serve() 把进程带走。
+    """
+    if not isinstance(msg, dict):
+        return {"jsonrpc": "2.0", "id": None,
+                "error": {"code": -32600,
+                          "message": "Invalid Request: expected a JSON object "
+                                     "(JSON-RPC batching is not supported)"}}
     method = msg.get("method")
     mid = msg.get("id")
 
     if method == "initialize":
+        want = ((msg.get("params") or {}).get("protocolVersion")
+                if isinstance(msg.get("params"), dict) else None)
         return _ok(mid, {
-            "protocolVersion": PROTOCOL_VERSION,
+            "protocolVersion": want if want in _SUPPORTED_VERSIONS else PROTOCOL_VERSION,
             "capabilities": {"tools": {"listChanged": False}},
             "serverInfo": {"name": "nekoro-browser", "version": __version__},
         })
@@ -224,7 +262,9 @@ def serve(stdin=None, stdout=None) -> None:
             try:
                 resp = handle(msg)
             except Exception as e:                     # 单条崩了别拖垮整个 server
-                resp = {"jsonrpc": "2.0", "id": msg.get("id"),
+                # id 也要防御地取——msg 可能不是 dict，处理器自己再抛就真死了
+                mid = msg.get("id") if isinstance(msg, dict) else None
+                resp = {"jsonrpc": "2.0", "id": mid,
                         "error": {"code": -32603, "message": f"Internal error: {e}"}}
         if resp is not None:
             stdout.write(json.dumps(resp, ensure_ascii=False) + "\n")
@@ -233,6 +273,16 @@ def serve(stdin=None, stdout=None) -> None:
 
 def main() -> None:
     # stdout 是协议通道，任何日志都必须走 stderr，否则会污染 JSON-RPC 流。
+    #
+    # 编码必须钉成 UTF-8：MCP 的 stdio 传输规定 UTF-8，但 Python 默认跟随
+    # locale——中文 Windows（ACP=936）上 `page_text()` 抓到一个 emoji 就
+    # UnicodeEncodeError 把 server 打死，而中文本身 gbk 编得动，症状是间歇性崩。
+    # newline="" 防 Windows 把 \n 写成 \r\n（行分隔的协议帧里那是脏字节）。
+    for stream, kw in ((sys.stdin, {}), (sys.stdout, {"newline": ""})):
+        try:
+            stream.reconfigure(encoding="utf-8", **kw)
+        except (AttributeError, ValueError):
+            pass          # 被替换成非 TextIOWrapper 的流（测试/嵌入场景），跳过
     serve()
 
 

@@ -9,7 +9,9 @@ build/
 # Virtual environments
 .venv/
 venv/
-uv.lock          # 库不锁依赖版本（本来就零依赖），锁文件只是本地噪音
+# 库不锁依赖版本（本来就零依赖），锁文件只是本地噪音
+# 注意：gitignore 不支持行尾注释，注释必须独占一行，否则整行都会被当成 pattern
+uv.lock
 
 # IDE
 .vscode/

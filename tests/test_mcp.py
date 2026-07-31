@@ -23,10 +23,18 @@ def _fake_exec(captured, response):
     return _post
 
 
+_REAL = (m._alive, m._post)
+
+
 def _patch(monkey_alive=True, response=None, captured=None):
     m._alive = lambda: monkey_alive
     m._post = _fake_exec(captured if captured is not None else [],
                          response or {"ok": True, "result": None, "stdout": ""})
+
+
+def _unpatch():
+    """还原真实的 _alive/_post，免得测试顺序变了互相串（pytest 会打乱顺序）。"""
+    m._alive, m._post = _REAL
 
 
 def test_tools_reflect_helpers():
@@ -71,7 +79,9 @@ def test_code_encoding_quotes_and_unicode():
 
 def test_call_tool_success_and_daemon_error():
     cap = []
-    _patch(response={"ok": True, "result": {"ok": True, "title": "T", "url": "u"},
+    # page_info 的真实返回**没有 ok 键**（helpers.page_info → {"title","url"}），
+    # fake 里别自作主张补一个，否则测的是不存在的形状。
+    _patch(response={"ok": True, "result": {"title": "T", "url": "u"},
                      "stdout": ""}, captured=cap)
     r = m.call_tool("page_info", {})
     assert cap[0][0] == "/exec" and cap[0][1] == "await page_info(**{})"
@@ -83,6 +93,29 @@ def test_call_tool_success_and_daemon_error():
                      "stdout": ""})
     r = m.call_tool("page_info", {})
     assert r["isError"] and "NameError" in r["content"][0]["text"]
+    _unpatch()
+
+
+def test_page_info_empty_url_is_error():
+    # daemon.get_page_info() 吞异常后返回两个空串，形状上还是「成功」。
+    # SW 睡死时不能让 agent 拿着空 url 当真。
+    _patch(response={"ok": True, "result": {"title": "", "url": ""}, "stdout": ""})
+    r = m.call_tool("page_info", {})
+    assert r["isError"] and "doctor" in r["content"][0]["text"]
+    _unpatch()
+
+
+def test_str_result_keeps_stdout():
+    # http_get 返回裸 str；print 出来的东西不能因此被丢掉
+    _patch(response={"ok": True, "result": "<html>hi</html>", "stdout": "note\n"})
+    r = m.call_tool("http_get", {"url": "https://example.com"})
+    texts = [c["text"] for c in r["content"]]
+    assert texts == ["<html>hi</html>", "note\n"]
+    # 纯语句（无 result）时 stdout 只出现一次，不重复
+    _patch(response={"ok": True, "stdout": "printed\n"})
+    r = m.call_tool("exec_python", {"code": "print('printed')"})
+    assert [c["text"] for c in r["content"]] == ["printed\n"]
+    _unpatch()
 
 
 def test_helper_level_failure_is_error():
@@ -168,17 +201,83 @@ def test_bad_json_line_does_not_kill_server():
     resps = [json.loads(l) for l in out.getvalue().strip().split("\n")]
     assert resps[0]["error"]["code"] == -32700
     assert resps[1]["id"] == 7 and resps[1]["result"] == {}
+    _unpatch()
+
+
+def test_non_object_json_does_not_kill_server():
+    """合法 JSON 但不是 object：数字、字符串、顶层数组（2024-11-05 的 batch 形状）。
+    这些若让 msg.get 抛出去，serve() 会连同后续所有请求一起死掉。"""
+    _patch()
+    lines = ['123', '"hi"',
+             '[{"jsonrpc":"2.0","id":1,"method":"ping"}]',
+             '{"jsonrpc":"2.0","id":8,"method":"ping"}']      # 前面几条不能影响这条
+    out = io.StringIO()
+    m.serve(io.StringIO("\n".join(lines) + "\n"), out)
+    resps = [json.loads(l) for l in out.getvalue().strip().split("\n")]
+    assert [r["error"]["code"] for r in resps[:3]] == [-32600, -32600, -32600]
+    assert resps[3]["id"] == 8 and resps[3]["result"] == {}   # server 还活着
+    _unpatch()
+
+
+def test_protocol_version_is_echoed_when_known():
+    _patch()
+    for want, expect in (("2024-11-05", "2024-11-05"),      # 老客户端：回显它认识的
+                         ("2025-06-18", "2025-06-18"),
+                         ("1999-01-01", m.PROTOCOL_VERSION),  # 不认识：回自己的
+                         (None, m.PROTOCOL_VERSION)):
+        params = {"capabilities": {}}
+        if want:
+            params["protocolVersion"] = want
+        r = m.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                      "params": params})
+        assert r["result"]["protocolVersion"] == expect, want
+    _unpatch()
+
+
+def test_screenshot_webp_mimetype():
+    # CDP 的 format 原样透传，webp 合法；标成 png 客户端渲染不出来
+    _patch(response={"ok": True, "result": {"ok": True, "data": "QUJD", "format": "webp"},
+                     "stdout": ""})
+    assert m.call_tool("capture_screenshot", {"format": "webp"})[
+        "content"][0]["mimeType"] == "image/webp"
+    _unpatch()
+
+
+def test_sleep_seconds_extends_http_timeout():
+    seen = []
+
+    def _post(path, data="", timeout=30):
+        seen.append(timeout)
+        return {"ok": True, "result": {"ok": True}, "stdout": ""}
+    m._alive, m._post = lambda: True, _post
+    m.call_tool("sleep", {"seconds": 120})     # 等待参数叫 seconds，不叫 timeout
+    assert seen == [135.0]
+    _unpatch()
+
+
+def test_upload_file_path_accepts_list():
+    schema = {t["name"]: t for t in m.build_tools()}["upload_file"]
+    path = schema["inputSchema"]["properties"]["path"]
+    types = {s["type"] for s in path["anyOf"]}
+    assert types == {"string", "array"}        # 多文件上传不该被 schema 挡在客户端
 
 
 if __name__ == "__main__":
     test_tools_reflect_helpers()
     test_code_encoding_quotes_and_unicode()
     test_call_tool_success_and_daemon_error()
+    test_page_info_empty_url_is_error()
+    test_str_result_keeps_stdout()
     test_helper_level_failure_is_error()
     test_screenshot_returns_image_content()
+    test_screenshot_webp_mimetype()
     test_http_timeout_covers_helper_timeout()
+    test_sleep_seconds_extends_http_timeout()
+    test_upload_file_path_accepts_list()
     test_no_daemon_is_actionable_error()
     test_unknown_tool_does_not_reach_daemon()
     test_protocol_roundtrip_over_stdio()
+    test_protocol_version_is_echoed_when_known()
     test_bad_json_line_does_not_kill_server()
+    test_non_object_json_does_not_kill_server()
     print("ALL OK")

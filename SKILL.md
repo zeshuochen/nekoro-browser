@@ -44,7 +44,16 @@ echo "await page_info()" | nekoro-browser
 
 ## 可用函数 (helpers)
 
-所有函数返回 `{"ok": True, ...}` 或 `{"ok": False, "error": "..."}`。`list_helpers()` 列出当前全部可用函数名。
+绝大多数函数返回 `{"ok": True, ...}` 或 `{"ok": False, "error": "..."}`。`list_helpers()`
+列出当前全部可用函数名。
+
+**三个例外，别对它们判 `["ok"]`（会 KeyError）：**
+
+| 函数 | 实际返回 |
+|------|---------|
+| `page_info()` | `{"title": ..., "url": ...}`，无 `ok` 键；扩展/SW 没响应时是两个空串（不是报错） |
+| `drain_events()` | 裸 list |
+| `http_get()` | 裸 str |
 
 ### Tab 管理
 
@@ -118,7 +127,7 @@ echo "await page_info()" | nekoro-browser
 
 | 函数 | 用法 | 说明 |
 |------|------|------|
-| `wait_for_load()` | `wait_for_load()` | 等待页面加载（30s 超时） |
+| `wait_for_load()` | `wait_for_load()` | 等待页面加载（默认 15s 超时） |
 | `wait_for_load(60)` | 同上 | 自定义超时 |
 | `wait_selector(sel, state)` | `wait_selector(".modal", "visible", 15)` | 等待元素状态（visible/hidden/attached/detached） |
 | `wait_for_network_idle(idle_time, timeout)` | `wait_for_network_idle(0.5, 15)` | 等待【当前活动标签】Network 请求静默 |

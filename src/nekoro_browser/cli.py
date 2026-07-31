@@ -186,6 +186,14 @@ async def _run():
             print("ERROR: Extension not connected", file=sys.stderr); sys.exit(1)
         print("Ready. Pipe: echo 'page_info()' | nekoro-browser", file=sys.stderr)
         await d.wait_forever()
+    except RuntimeError as e:
+        # 扩展没装/没启用时 start() 里 auto_attach 会抛 "extension not connected (WS)"。
+        # 不兜住的话用户看到的是一坨 traceback，还得自己猜是扩展的问题。
+        print(f"ERROR: {e}\n"
+              "  扩展没连上。检查 chrome://extensions：扩展是否已加载并处于启用状态\n"
+              "  （未打包扩展会被 Chrome 更新/重启后自动停用）。\n"
+              f"  扩展目录：{extension_dir() or '未找到'}", file=sys.stderr)
+        sys.exit(1)
     except KeyboardInterrupt:
         pass
     except OSError as e:

@@ -28,7 +28,24 @@ async def run():
 
     # drain 后清空
     assert await d.drain_events() == []
+
+    await _exec_namespace_binding(d)
     print("ALL OK")
+
+
+async def _exec_namespace_binding(d):
+    """exec 命名空间：协程 helper 绑 daemon，同步的不绑。
+
+    曾经无差别 partial(fn, daemon)，于是 SKILL.md 里写着的 `list_helpers()`
+    一调就 TypeError: takes 0 positional arguments but 1 was given。
+    这条不碰浏览器——list_helpers 纯本地。
+    """
+    r = await d._on_exec("list_helpers()")
+    assert r["ok"], r
+    assert isinstance(r["result"], list) and "page_info" in r["result"], r
+    # 协程 helper 仍然是绑好 daemon 的（调用方不传 daemon）
+    r = await d._on_exec("sleep(0)")
+    assert r["ok"], r
 
 
 if __name__ == "__main__":

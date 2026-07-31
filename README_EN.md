@@ -29,7 +29,7 @@ Since Chrome 136, `--remote-debugging-port` / `--remote-debugging-pipe` **refuse
 | Login state | ❌ fresh instance | ✅ | ✅ | ✅ |
 | Modify the extension | — | Edit Playwright source | Edit OpenCLI source | ✅ right in this repo |
 | Self-healing | ❌ | ❌ | ❌ | ✅ Agent edits helpers at runtime |
-| MCP | ❌ | ❌ | ❌ | ✅ 45 tools via `nekoro-browser-mcp` |
+| MCP | ❌ | ✅ (separate `@playwright/mcp`) | ❌ | ✅ built in, 45 tools via `nekoro-browser-mcp` |
 
 ## Install
 
@@ -46,7 +46,7 @@ Load the Chrome extension:
 
 ## Quick Start
 
-> ⚠️ **Load the extension first, then start the daemon.** Wrong order = 60s timeout.
+> ⚠️ **Load the extension first, then start the daemon.** Wrong order = the daemon waits ~20s, then exits with "extension not connected".
 
 **Terminal 1** — start the daemon (keep it running):
 
@@ -165,6 +165,7 @@ Site-specific functions under `domain-skills/` (e.g. Douyin's `douyin_like`) are
 - **Unpacked extensions get disabled by Chrome.** An extension installed via "Load unpacked" may be switched off automatically after a Chrome update or restart, or hidden behind the "Disable developer mode extensions" prompt. When `--doctor` reports Extension/SW not responding, re-enable it in `chrome://extensions/` first. This project is **not published to the Chrome Web Store**, so the limitation is not going away soon.
 - **Service worker keepalive is not 100%.** MV3 eviction timing is Chrome's call. The heartbeat + `onStartup` + reattach cover the vast majority of cases, but unattended long-running cron jobs should still health-check with `--doctor` and retry.
 - **One active tab at a time.** Tabs can be listed and switched (`list_tabs` / `switch_tab`), but commands always go to the current active tab — there are no parallel sessions.
+- **The MCP server handles requests serially.** During a `wait_selector(timeout=90)` every other request on that connection (including `ping`) queues behind it. Open separate client connections if you need concurrency.
 
 ## Troubleshooting
 

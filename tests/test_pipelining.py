@@ -55,7 +55,10 @@ async def run():
     assert r["ok"] and len(r["results"]) == 5, r
     assert all(x["ok"] for x in r["results"]), r
     assert br.max_inflight == 5, br.max_inflight          # 全部同时在途（真并发的硬证据）
-    assert elapsed < br.rtt * 3, elapsed                  # ≈1 个往返，非 5×（宽松阈值防抖动）
+    # 只要求「明显快于串行」（串行是 5×rtt=100ms），不去卡 ≈1 个往返：
+    # CI 的 Windows runner 定时器粒度 15.6ms + 负载抖动，卡 3×rtt 会偶发假红。
+    # 真并发的硬证据是上面的 max_inflight == 5，这条只是兜底。
+    assert elapsed < br.rtt * 4, elapsed
     # 省略 params 也能跑：[method] 形式
     r = await helpers.cdp_batch(d, ["Solo"])
     assert r["results"][0]["ok"] and br.calls[-1] == ("Solo", {}), br.calls[-1]

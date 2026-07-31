@@ -94,7 +94,11 @@ class Daemon:
         importlib.reload(ah)  # 每次 exec 拿最新 agent_helpers
         v = {"daemon": self, "tab": self._tab_id}
         for name in h.list_helpers():
-            v[name] = partial(getattr(h, name), self)
+            fn = getattr(h, name)
+            # 只有吃 daemon 的（协程 helper）才绑；list_helpers 这类同步工具函数
+            # 不吃 daemon，硬 partial 上去调用时会 TypeError: takes 0 positional
+            # arguments but 1 was given。
+            v[name] = partial(fn, self) if asyncio.iscoroutinefunction(fn) else fn
         for name, obj in vars(ah).items():
             if not name.startswith("_") and callable(obj):
                 v[name] = partial(obj, self)

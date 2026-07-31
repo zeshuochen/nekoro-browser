@@ -29,7 +29,7 @@ Chrome 136 起，`--remote-debugging-port` / `--remote-debugging-pipe` **不再�
 | 登录态 | ❌ 独立实例 | ✅ | ✅ | ✅ |
 | 可修改扩展 | — | 需改 Playwright 源码 | 需改 OpenCLI 源码 | ✅ 扩展就在仓库里 |
 | 自愈 | ❌ | ❌ | ❌ | ✅ Agent 运行时编辑 helpers |
-| MCP | ❌ | ❌ | ❌ | ✅ 45 个工具，`nekoro-browser-mcp` |
+| MCP | ❌ | ✅（另装 `@playwright/mcp`） | ❌ | ✅ 内置 45 个工具，`nekoro-browser-mcp` |
 
 ## 安装
 
@@ -46,7 +46,7 @@ pip install -e .       # 注册 nekoro-browser 命令；也可 ./install.sh 或 
 
 ## 快速开始
 
-> ⚠️ **先加载扩展，再启动 daemon。** 顺序反了会等 60 秒超时。
+> ⚠️ **先加载扩展，再启动 daemon。** 顺序反了 daemon 会等约 20 秒后报「扩展没连上」退出。
 
 **终端 1** — 启动 daemon（保持打开）：
 
@@ -153,6 +153,7 @@ CLI (nekoro-browser)  ·  MCP server (nekoro-browser-mcp)
 - **未打包的扩展会被 Chrome 停用。** 以「加载已解压的扩展程序」装的扩展，在 Chrome 更新或重启后可能被自动关掉、或弹出「停用开发者模式扩展程序」的提示。`--doctor` 报 Extension/SW 不响应时，先去 `chrome://extensions/` 把它重新打开。本项目目前**不发 Chrome 应用商店**，这条限制短期内不会消失。
 - **Service Worker 保活不是 100%。** MV3 的回收时机由 Chrome 决定。心跳 + `onStartup` + 自动重挂能覆盖绝大多数情况，但无人值守的长时 cron 任务仍建议先 `--doctor` 健康检查再重试。
 - **同时只驱动一个「活动标签」。** 多标签可以列举和切换（`list_tabs` / `switch_tab`），但命令总是发往当前活动标签，不做并行会话。
+- **MCP server 串行处理请求。** 一次 `wait_selector(timeout=90)` 期间，同一连接上的其他请求（含 `ping`）会排队等它做完。要并发就开多个客户端连接。
 
 ## 故障排查
 
