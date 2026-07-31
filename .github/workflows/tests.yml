@@ -1,0 +1,69 @@
+name: tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    # 测试是纯标准库、无浏览器的（fake 掉扩展侧），所以能在三平台裸跑。
+    # POSIX 分支（XDG 目录、chmod 600、/proc 与 ps 探活）本地没有真机可验，
+    # 这里的 ubuntu / macos job 就是它们唯一的回归门。
+    name: ${{ matrix.os }} / py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        python: ["3.12", "3.13"]
+        include:
+          - os: macos-latest
+            python: "3.13"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install
+        run: python -m pip install -e .
+      - name: Run tests
+        shell: bash
+        run: |
+          fail=0
+          for f in tests/test_*.py; do
+            echo "── $f"
+            python "$f" || { echo "FAILED: $f"; fail=1; }
+          done
+          exit $fail
+
+  build:
+    name: build (wheel + sdist)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install build
+      - run: python -m build
+      - name: Extension must ship inside the wheel
+        # 从 PyPI 装的人没有 git 仓库；wheel 里少了 extension/ 就等于装了个用不了的包。
+        run: |
+          python - <<'PY'
+          import glob, sys, zipfile
+          whl = sorted(glob.glob("dist/*.whl"))[-1]
+          names = zipfile.ZipFile(whl).namelist()
+          need = ["nekoro_browser/extension/manifest.json",
+                  "nekoro_browser/extension/background.js",
+                  "nekoro_browser/mcp_server.py"]
+          missing = [n for n in need if n not in names]
+          if missing:
+              sys.exit(f"missing from {whl}: {missing}")
+          print(f"{whl}: ok ({len(names)} entries)")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
