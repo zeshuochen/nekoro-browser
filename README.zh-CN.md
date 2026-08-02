@@ -17,6 +17,12 @@
 <sub><a href="README.md">English</a></sub>
 </p>
 
+```bash
+pip install nekoro-browser && nekoro-browser setup   # 装好，然后引导加载扩展
+nekoro-browser                                       # daemon：单独一个终端，保持打开
+echo "page_info()" | nekoro-browser                  # 直接驱动你已登录的 Chrome
+```
+
 ---
 
 ## 为什么不用 `--remote-debugging-port`
@@ -123,46 +129,35 @@ Python daemon (127.0.0.1:28417)
 CLI (nekoro-browser)  ·  MCP server (nekoro-browser-mcp)
 ```
 
-`helpers.py`（46 个）→ CDP 薄封装，每个 ≤10 行，且都不认识任何具体网站。
+`helpers.py`（47 个）→ CDP 薄封装，每个 ≤10 行，且都不认识任何具体网站。
 
 `lifecycle.py` 管 daemon 生命周期：pid 文件 + 进程指纹防误杀、僵尸自愈（CDP 探活失败自动清理重启）、localhost 请求绕过系统代理。
 
 扩展侧针对 MV3 service worker 会被 Chrome 回收这件事做了硬化：`content_scripts` 心跳（页面里的独立向量，SW 被杀也能重连唤醒）+ `onStartup`（Chrome 冷启动立即连 daemon）+ 断线后自动重挂上次操作的标签，不会漂到空白页。
 
-## CLI
+## 自愈与站点知识
 
-| 命令 | 作用 |
-|------|------|
-| `nekoro-browser` | 前台启动 daemon |
-| `nekoro-browser setup` | 引导式安装：给出扩展路径 + 打开 chrome://extensions + 等扩展连上并确认 |
-| `nekoro-browser --doctor` | 端到端诊断（daemon + 扩展 + SW 是否都活着） |
-| `nekoro-browser --stop` | 停止 daemon |
-| `nekoro-browser --restart` | 停止后重启（前台） |
-| `nekoro-browser --reload-ext` | 命扩展重载 service worker，跑批量任务前刷干净状态 |
-| `nekoro-browser --extension-path` | 打印扩展目录（加载已解压扩展时用） |
-| `nekoro-browser --port N` | daemon 监听 N 端口（默认 28417） |
-| `nekoro-browser -c "code"` | 执行一段代码并返回结果 |
-| `nekoro-browser --timeout N` | 单次执行的超时秒数（默认 120，等页面加载很费时） |
-| `echo "code" \| nekoro-browser` | 管道模式（需 daemon 已运行） |
+Agent 遇到缺口时当场补、当场用——不重新编译，不重启 daemon，不重载扩展。
 
-## 配置
+- `src/nekoro_browser/agent_helpers.py` 是**草稿纸**：每次 `/exec` 自动 reload，适合临时试。
+  它在已安装的包里面，升级会被覆盖。
+- 想长期留着的放你自己的 skills 目录（`NEKORO_DOMAIN_SKILLS`，回落到仓库内
+  `domain-skills/`），一个站点一个目录，两种材料放一起：`<site>/*.md` 记知识，
+  `<site>/*.py` 放流程。脚本每次调用都会载入 `/exec` 命名空间，并且能直接用内置 helper。
 
-daemon 默认监听 **28417**。要改：
+关键在于这些材料**会主动找上 agent，而不是等着被发现**。站点有材料时，
+`navigate()` / `new_tab()` 的返回值里会多两个字段：
 
-| 哪一侧 | 怎么改 |
-|--------|--------|
-| Python（daemon / CLI / MCP） | `nekoro-browser --port 30500`，或设环境变量 `NEKORO_PORT=30500` |
-| 扩展 | 扩展详情页 → **扩展程序选项** → 填端口 → Save（立即重连，不用重载扩展） |
+```python
+{'ok': True, 'loaded': True,
+ 'notes':   ['example/search.md — Example — 搜索结果页'],
+ 'actions': ['open_first_result(query) — 搜索并打开第一条结果']}
+```
 
-两侧必须一致。客户端不用重复传参：daemon 会把实际端口写进 `<数据目录>/port`，
-所以直接 `echo ... | nekoro-browser` 也能找到跑在非默认端口上的 daemon。
-优先级 `--port` > `NEKORO_PORT` > 该文件 > 默认值。
-
-## 自愈
-
-`src/nekoro_browser/agent_helpers.py` 运行时随时可编辑，每次 `/exec` 自动 reload。Agent 操作失败时往里加缺失的函数，下次调用立即生效，不用重启 daemon、不用重装扩展。
-
-`domain-skills/` 是放站点知识的地方（页面结构、选择器、坑），只收 Markdown，**默认是空的**——每个人自动化的站点不一样。按自己的笔记写工作流，贴进 `agent_helpers.py`，签名约定一致（第一个参数是 `daemon`）。写法见 [`domain-skills/README.md`](domain-skills/README.md)。
+`notes` 只给标题——正文塞进每次导航，等于把一次性的写入成本变成永久的读取成本。
+`actions` 列的是已经可以直接调的函数，agent 调它就行，不必重新拼一遍流程。
+`list_site_actions()` 可查全部已载入的函数，含载入失败的文件。什么该记、什么不该记，
+见 [`domain-skills/README.md`](domain-skills/README.md)。
 
 ## 平台支持
 
@@ -178,7 +173,39 @@ daemon 默认监听 **28417**。要改：
 - **同时只驱动一个「活动标签」。** 多标签可以列举和切换（`list_tabs` / `switch_tab`），但命令总是发往当前活动标签，不做并行会话。
 - **MCP server 串行处理请求。** 一次 `wait_selector(timeout=90)` 期间，同一连接上的其他请求（含 `ping`）会排队等它做完。要并发就开多个客户端连接。
 
-## 故障排查
+<details>
+<summary><b>参考手册</b> —— CLI 参数、配置、故障排查、安全</summary>
+
+### CLI
+
+| 命令 | 作用 |
+|------|------|
+| `nekoro-browser` | 前台启动 daemon |
+| `nekoro-browser setup` | 引导式安装：复制扩展路径，然后一直等到扩展真的连上 |
+| `nekoro-browser --doctor` | 端到端诊断（daemon + 扩展 + SW 是否都活着） |
+| `nekoro-browser --stop` | 停止 daemon |
+| `nekoro-browser --restart` | 停止后重启（前台） |
+| `nekoro-browser --reload-ext` | 命扩展重载 service worker，跑批量任务前刷干净状态 |
+| `nekoro-browser --extension-path` | 打印扩展目录（加载已解压扩展时用） |
+| `nekoro-browser --port N` | daemon 监听 N 端口（默认 28417） |
+| `nekoro-browser -c "code"` | 执行一段代码并返回结果 |
+| `nekoro-browser --timeout N` | 单次执行的超时秒数（默认 120，等页面加载很费时） |
+| `echo "code" \| nekoro-browser` | 管道模式（需 daemon 已运行） |
+
+### 配置
+
+daemon 默认监听 **28417**。要改：
+
+| 哪一侧 | 怎么改 |
+|--------|--------|
+| Python（daemon / CLI / MCP） | `nekoro-browser --port 30500`，或设环境变量 `NEKORO_PORT=30500` |
+| 扩展 | 扩展详情页 → **扩展程序选项** → 填端口 → Save（立即重连，不用重载扩展） |
+
+两侧必须一致。客户端不用重复传参：daemon 会把实际端口写进 `<数据目录>/port`，
+所以直接 `echo ... | nekoro-browser` 也能找到跑在非默认端口上的 daemon。
+优先级 `--port` > `NEKORO_PORT` > 该文件 > 默认值。
+
+### 故障排查
 
 | 现象 | 原因 | 解决 |
 |------|------|------|
@@ -188,7 +215,7 @@ daemon 默认监听 **28417**。要改：
 | 页面没变化 | 扩展未 attach | 打开普通网页（非 chrome://），重启 daemon |
 | 端口占用 | 旧进程残留 | 杀掉占用 28417 的进程，或直接 `nekoro-browser --stop` |
 
-## 安全
+### 安全
 
 daemon 监听 `127.0.0.1`，`/exec` 会执行任意 Python，故传输层加了守卫：
 
@@ -196,6 +223,8 @@ daemon 监听 `127.0.0.1`，`/exec` 会执行任意 Python，故传输层加了�
 - **扩展 → daemon**（`/ws`）：握手 `Origin` 必须是 `chrome-extension://…`；网页对 localhost 发起的 `WebSocket` 带自己的域名 Origin，会被拒。
 
 同用户的本地进程能读令牌文件——这条边界等于操作系统账户，与 browser-harness 的 `chmod 600` 一致。
+
+</details>
 
 ## 反馈
 

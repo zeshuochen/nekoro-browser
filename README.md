@@ -17,6 +17,12 @@ Lightweight browser automation CLI + MCP server. Drives your everyday Chrome thr
 <sub><a href="README.zh-CN.md">中文</a></sub>
 </p>
 
+```bash
+pip install nekoro-browser && nekoro-browser setup   # install, then load the extension
+nekoro-browser                                       # daemon — its own terminal, leave open
+echo "page_info()" | nekoro-browser                  # drive the Chrome you're already logged into
+```
+
 ---
 
 ## Why Not `--remote-debugging-port`?
@@ -138,46 +144,38 @@ Python daemon (127.0.0.1:28417)
 CLI (nekoro-browser)  ·  MCP server (nekoro-browser-mcp)
 ```
 
-`helpers.py` (46 thin wrappers) → CDP commands, each ≤10 lines, none of them aware of any particular website.
+`helpers.py` (47 thin wrappers) → CDP commands, each ≤10 lines, none of them aware of any particular website.
 
 `lifecycle.py` manages the daemon: pid file + process fingerprint (avoids killing a reused pid), self-heal on stale daemon (CDP probe fails → auto cleanup and restart), localhost requests bypass the system proxy.
 
 The extension is hardened against MV3 service worker eviction: a `content_scripts` heartbeat (an independent wake vector living in the page, reconnects and wakes the SW even after it's killed) + `onStartup` (reconnects instantly on Chrome cold start) + reattaches the last-driven tab after a restart instead of drifting to a blank tab.
 
-## CLI
+## Self-Healing and Site Knowledge
 
-| Command | What it does |
-|---------|---------------|
-| `nekoro-browser` | Start the daemon (foreground) |
-| `nekoro-browser setup` | Guided install: extension path + opens chrome://extensions + waits for it to connect |
-| `nekoro-browser --doctor` | End-to-end diagnostic (daemon + extension + SW all alive?) |
-| `nekoro-browser --stop` | Stop the daemon |
-| `nekoro-browser --restart` | Stop and restart (foreground) |
-| `nekoro-browser --reload-ext` | Reload the extension's service worker — run before a batch job for a clean state |
-| `nekoro-browser --extension-path` | Print the extension directory (for "Load unpacked") |
-| `nekoro-browser --port N` | Run the daemon on port N (default 28417) |
-| `nekoro-browser -c "code"` | Run one snippet, print the result |
-| `nekoro-browser --timeout N` | Seconds to allow a snippet (default 120 — page loads are slow) |
-| `echo "code" \| nekoro-browser` | Pipe mode (daemon must already be running) |
+When an agent hits a gap it writes the missing piece and uses it immediately — nothing is
+recompiled, no daemon restart, no extension reload.
 
-## Configuration
+- `src/nekoro_browser/agent_helpers.py` is **scratch paper**: reloaded on every `/exec`, good
+  for a quick experiment. It lives inside the installed package, so an upgrade overwrites it.
+- Anything worth keeping goes in your own skills directory (`NEKORO_DOMAIN_SKILLS`, falling
+  back to `domain-skills/` in the repo), one folder per site holding both kinds of material:
+  `<site>/*.md` for knowledge and `<site>/*.py` for workflows. Scripts are loaded into the
+  `/exec` namespace on every call and can use the built-in helpers directly.
 
-The daemon listens on **28417** by default. To change it:
+The point is that this material **finds the agent instead of waiting to be discovered**.
+`navigate()` and `new_tab()` return two extra fields when the site has any:
 
-| Side | How |
-|------|-----|
-| Python (daemon + CLI + MCP) | `nekoro-browser --port 30500`, or set `NEKORO_PORT=30500` |
-| Extension | Extension details → **Extension options** → set the port → Save (reconnects immediately, no reload) |
+```python
+{'ok': True, 'loaded': True,
+ 'notes':   ['example/search.md — Example — search results'],
+ 'actions': ['open_first_result(query) — search and open the top hit']}
+```
 
-Both sides must agree. Clients don't need the flag repeated: the daemon records its
-actual port in `<data dir>/port`, so a plain `echo ... | nekoro-browser` finds a daemon
-running on a non-default port. Precedence is `--port` > `NEKORO_PORT` > that file > default.
-
-## Self-Healing
-
-`src/nekoro_browser/agent_helpers.py` is editable at runtime and reloaded on every `/exec`. When an agent hits a gap, it appends the missing function there — effective on the next call, no daemon restart, no extension reload.
-
-`domain-skills/` is where site knowledge goes (page structure, selectors, gotchas) — Markdown only, and empty by default since everyone automates different sites. Write a workflow against your notes, drop it into `agent_helpers.py`, same convention (`daemon` as first argument). See [`domain-skills/README.md`](domain-skills/README.md).
+`notes` lists titles only — full text on every navigation would turn a one-time write into a
+permanent read cost. `actions` lists functions that are already callable, so the agent runs
+one instead of rebuilding the flow. `list_site_actions()` shows everything loaded, including
+files that failed to load. Conventions for what to record — and what not to — are in
+[`domain-skills/README.md`](domain-skills/README.md).
 
 ## Platform Support
 
@@ -193,7 +191,39 @@ running on a non-default port. Precedence is `--port` > `NEKORO_PORT` > that fil
 - **One active tab at a time.** Tabs can be listed and switched (`list_tabs` / `switch_tab`), but commands always go to the current active tab — there are no parallel sessions.
 - **The MCP server handles requests serially.** During a `wait_selector(timeout=90)` every other request on that connection (including `ping`) queues behind it. Open separate client connections if you need concurrency.
 
-## Troubleshooting
+<details>
+<summary><b>Reference</b> — CLI flags, configuration, troubleshooting, security</summary>
+
+### CLI
+
+| Command | What it does |
+|---------|---------------|
+| `nekoro-browser` | Start the daemon (foreground) |
+| `nekoro-browser setup` | Guided install: copies the extension path, then waits until the extension actually connects |
+| `nekoro-browser --doctor` | End-to-end diagnostic (daemon + extension + SW all alive?) |
+| `nekoro-browser --stop` | Stop the daemon |
+| `nekoro-browser --restart` | Stop and restart (foreground) |
+| `nekoro-browser --reload-ext` | Reload the extension's service worker — run before a batch job for a clean state |
+| `nekoro-browser --extension-path` | Print the extension directory (for "Load unpacked") |
+| `nekoro-browser --port N` | Run the daemon on port N (default 28417) |
+| `nekoro-browser -c "code"` | Run one snippet, print the result |
+| `nekoro-browser --timeout N` | Seconds to allow a snippet (default 120 — page loads are slow) |
+| `echo "code" \| nekoro-browser` | Pipe mode (daemon must already be running) |
+
+### Configuration
+
+The daemon listens on **28417** by default. To change it:
+
+| Side | How |
+|------|-----|
+| Python (daemon + CLI + MCP) | `nekoro-browser --port 30500`, or set `NEKORO_PORT=30500` |
+| Extension | Extension details → **Extension options** → set the port → Save (reconnects immediately, no reload) |
+
+Both sides must agree. Clients don't need the flag repeated: the daemon records its
+actual port in `<data dir>/port`, so a plain `echo ... | nekoro-browser` finds a daemon
+running on a non-default port. Precedence is `--port` > `NEKORO_PORT` > that file > default.
+
+### Troubleshooting
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
@@ -203,7 +233,7 @@ running on a non-default port. Precedence is `--port` > `NEKORO_PORT` > that fil
 | Page unchanged | Extension not attached to tab | Open a regular (non-chrome://) page, restart daemon |
 | Port in use | Stale process | Kill the process on port 28417, or just run `nekoro-browser --stop` |
 
-## Security
+### Security
 
 The daemon listens on `127.0.0.1` and `/exec` runs arbitrary Python, so the transport is guarded:
 
@@ -211,6 +241,8 @@ The daemon listens on `127.0.0.1` and `/exec` runs arbitrary Python, so the tran
 - **Extension → daemon** (`/ws`): the handshake `Origin` must be `chrome-extension://…`; a web page's `WebSocket` to localhost carries its own origin and is rejected.
 
 Same-user local processes can read the token file — that boundary matches the OS user account, as with browser-harness's `chmod 600`.
+
+</details>
 
 ## Feedback
 
