@@ -18,7 +18,7 @@
 </p>
 
 ```bash
-pip install nekoro-browser && nekoro-browser setup   # 装好，然后引导加载扩展
+uv tool install nekoro-browser && nekoro-browser setup   # 装好，然后引导加载扩展
 nekoro-browser                                       # daemon：单独一个终端，保持打开
 echo "page_info()" | nekoro-browser                  # 直接驱动你已登录的 Chrome
 ```
@@ -32,7 +32,7 @@ Chrome 136 起，`--remote-debugging-port` / `--remote-debugging-pipe` **不再�
 | | CDP WebSocket | playwright-cli | opencli | **nekoro-browser** |
 |------|:--:|:--:|:--:|:--:|
 | 原理 | `--remote-debugging-port` | Playwright 扩展 | OpenCLI 扩展 | 自建扩展 + 持久 WebSocket |
-| 安装 | 一行参数 | `npm i -g`（~200MB） | npm / 桌面应用 | `pip install`（纯标准库，零依赖） |
+| 安装 | 一行参数 | `npm i -g`（~200MB） | npm / 桌面应用 | `uv tool install`（纯标准库，零依赖） |
 | 登录态 | ❌ 独立实例 | ✅ | ✅ | ✅ |
 | 可修改扩展 | — | 需改 Playwright 源码 | 需改 OpenCLI 源码 | ✅ 扩展就在仓库里 |
 | 自愈 | ❌ | ❌ | ❌ | ✅ Agent 运行时编辑 helpers |
@@ -43,10 +43,13 @@ Chrome 136 起，`--remote-debugging-port` / `--remote-debugging-pipe` **不再�
 **1 — 安装**（Python 3.12+，零第三方依赖）
 
 ```bash
-pip install nekoro-browser
+uv tool install nekoro-browser
 ```
 
-<sub>想从源码装：<code>git clone https://github.com/zeshuochen/nekoro-browser && cd nekoro-browser && pip install -e .</code></sub>
+两个命令（`nekoro-browser`、`nekoro-browser-mcp`）装进独立环境，不污染系统 Python。
+没装 [uv](https://docs.astral.sh/uv/) 的话 `pipx install nekoro-browser` 等效。
+
+<sub>从源码装：<code>git clone https://github.com/zeshuochen/nekoro-browser && cd nekoro-browser && uv pip install -e .</code></sub>
 
 **2 — 加载扩展**
 

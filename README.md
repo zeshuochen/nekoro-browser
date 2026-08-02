@@ -18,7 +18,7 @@ Lightweight browser automation CLI + MCP server. Drives your everyday Chrome thr
 </p>
 
 ```bash
-pip install nekoro-browser && nekoro-browser setup   # install, then load the extension
+uv tool install nekoro-browser && nekoro-browser setup   # install, then load the extension
 nekoro-browser                                       # daemon — its own terminal, leave open
 echo "page_info()" | nekoro-browser                  # drive the Chrome you're already logged into
 ```
@@ -32,7 +32,7 @@ Since Chrome 136, `--remote-debugging-port` / `--remote-debugging-pipe` **refuse
 | | CDP WebSocket | playwright-cli | opencli | **nekoro-browser** |
 |------|:--:|:--:|:--:|:--:|
 | Approach | `--remote-debugging-port` | Playwright extension | OpenCLI extension | Custom extension + persistent WebSocket |
-| Install | one flag | `npm i -g` (~200MB) | npm / desktop app | `pip install` (stdlib only, zero deps) |
+| Install | one flag | `npm i -g` (~200MB) | npm / desktop app | `uv tool install` (stdlib only, zero deps) |
 | Login state | ❌ fresh instance | ✅ | ✅ | ✅ |
 | Modify the extension | — | Edit Playwright source | Edit OpenCLI source | ✅ right in this repo |
 | Self-healing | ❌ | ❌ | ❌ | ✅ Agent edits helpers at runtime |
@@ -43,10 +43,14 @@ Since Chrome 136, `--remote-debugging-port` / `--remote-debugging-pipe` **refuse
 **1 — Install** (Python 3.12+, zero third-party dependencies)
 
 ```bash
-pip install nekoro-browser
+uv tool install nekoro-browser
 ```
 
-<sub>From source instead: <code>git clone https://github.com/zeshuochen/nekoro-browser && cd nekoro-browser && pip install -e .</code></sub>
+Installs both commands (`nekoro-browser`, `nekoro-browser-mcp`) into their own environment,
+so nothing lands in your system Python. No [uv](https://docs.astral.sh/uv/)? `pipx install
+nekoro-browser` works the same way.
+
+<sub>From source: <code>git clone https://github.com/zeshuochen/nekoro-browser && cd nekoro-browser && uv pip install -e .</code></sub>
 
 **2 — Load the extension**
 
@@ -250,7 +254,7 @@ Hit a problem, or missing a helper you need? Open an
 [issue](https://github.com/zeshuochen/nekoro-browser/issues).
 For bugs, include the output of `nekoro-browser --doctor`, your Chrome version and OS — saves a round trip.
 
-PRs welcome. Run the tests first: `for f in tests/test_*.py; do python "$f"; done` (CI runs them on all three platforms too).
+PRs welcome. Run the tests first: `for f in tests/test_*.py; do uv run python "$f"; done` (CI runs them on all three platforms too).
 
 ---
 

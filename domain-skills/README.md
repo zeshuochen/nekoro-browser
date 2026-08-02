@@ -15,7 +15,7 @@ NEKORO_DOMAIN_SKILLS=/path/to/my/skills      # or %LOCALAPPDATA%\nekoro-browser\
 ```
 
 Without the variable, nekoro falls back to this directory inside the repo. That works, but
-`pip install -U` can overwrite it and `git pull` will conflict with your edits — keep
+an upgrade can overwrite it and `git pull` will conflict with your edits — keep
 anything you care about outside.
 
 One directory per site, holding both kinds of material:
