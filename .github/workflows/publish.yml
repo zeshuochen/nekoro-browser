@@ -4,7 +4,9 @@ name: publish
 # 前置（一次性，两个目标各配一次——TestPyPI 与 PyPI 是完全独立的账号体系）：
 #   PyPI     https://pypi.org/manage/account/publishing/      → workflow: publish.yml, environment: pypi
 #   TestPyPI https://test.pypi.org/manage/account/publishing/ → workflow: publish.yml, environment: testpypi
-# 没配就触发会以 invalid-publisher 失败（默认目标是 testpypi，先配它）。
+# 没配就触发会以 invalid-publisher 失败。默认目标是 testpypi，但本项目直接发了
+# pypi——产物已在干净 venv 里验证过（wheel 装上、两个 entry point 可跑、扩展在包内），
+# TestPyPI 那一轮的边际价值不抵再开一套账号 + 2FA 的成本。
 # 用 Trusted Publishing 是为了不在仓库里存 API token。
 on:
   workflow_dispatch:
