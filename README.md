@@ -31,44 +31,43 @@ Since Chrome 136, `--remote-debugging-port` / `--remote-debugging-pipe` **refuse
 | Self-healing | ❌ | ❌ | ❌ | ✅ Agent edits helpers at runtime |
 | MCP | ❌ | ✅ (separate `@playwright/mcp`) | ❌ | ✅ built in, 45 tools via `nekoro-browser-mcp` |
 
-## Install
+## Quick Start
+
+**1 — Install** (Python 3.12+, zero third-party dependencies)
 
 ```bash
 git clone https://github.com/zeshuochen/nekoro-browser
 cd nekoro-browser
-pip install -e .       # registers the `nekoro-browser` command; or ./install.sh, .\install.ps1
+pip install -e .
 ```
 
-Python 3.12+, zero third-party dependencies (stdlib only).
-
-Then load the Chrome extension — `setup` walks you through it:
+**2 — Load the extension**
 
 ```bash
 nekoro-browser setup
 ```
 
-It copies the extension path to your clipboard, opens `chrome://extensions/`, and waits
-until the extension actually connects, so you know it worked. The one manual step is
-Chrome's: turn on **Developer mode**, click **Load unpacked**, pick the directory it gave you.
-(Chrome has no API to install an unpacked extension into a running browser — that step
-can't be automated.)
+`setup` copies the extension directory to your clipboard, opens `chrome://extensions/`,
+and then waits until the extension actually connects — so you find out it worked without
+guessing. One step stays manual because Chrome has no API for it: turn on **Developer
+mode**, click **Load unpacked**, pick the directory it handed you.
 
-## Quick Start
-
-> ⚠️ **Load the extension first, then start the daemon.** Wrong order = the daemon waits ~20s, then exits with "extension not connected".
-
-**Terminal 1** — start the daemon (keep it running):
+**3 — Start the daemon** — it stays in the foreground, so give it its own terminal
 
 ```bash
 nekoro-browser
 ```
 
-**Terminal 2** — verify it works:
+**4 — Drive the browser** from anywhere else
 
 ```bash
 echo "page_info()" | nekoro-browser
 # → {"ok": true, "result": {"title": "...", "url": "..."}}
 ```
+
+That's it. If step 4 says the daemon isn't running, or a command times out, run
+`nekoro-browser --doctor` — it checks the daemon, the extension and the service worker
+separately and tells you which one is down.
 
 ## Examples
 

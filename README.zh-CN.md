@@ -31,42 +31,41 @@ Chrome 136 起，`--remote-debugging-port` / `--remote-debugging-pipe` **不再�
 | 自愈 | ❌ | ❌ | ❌ | ✅ Agent 运行时编辑 helpers |
 | MCP | ❌ | ✅（另装 `@playwright/mcp`） | ❌ | ✅ 内置 45 个工具，`nekoro-browser-mcp` |
 
-## 安装
+## 快速开始
+
+**1 — 安装**（Python 3.12+，零第三方依赖）
 
 ```bash
 git clone https://github.com/zeshuochen/nekoro-browser
 cd nekoro-browser
-pip install -e .       # 注册 nekoro-browser 命令；也可 ./install.sh 或 .\install.ps1
+pip install -e .
 ```
 
-Python 3.12+，零第三方依赖（纯标准库）。
-
-然后加载 Chrome 扩展 —— `setup` 会带着你走：
+**2 — 加载扩展**
 
 ```bash
 nekoro-browser setup
 ```
 
-它把扩展路径复制到剪贴板、打开 `chrome://extensions/`、然后一直等到扩展真的连上为止，
-成没成当场告诉你。唯一要手动的是 Chrome 那一步：开「开发者模式」→「加载已解压的扩展程序」
-→ 选它给你的目录。（Chrome 没有任何接口能把未打包扩展装进正在运行的浏览器，这步自动不了。）
+`setup` 会把扩展目录复制到剪贴板、打开 `chrome://extensions/`，然后一直等到扩展真的
+连上为止——不用自己猜装没装成。只有一步必须手动，因为 Chrome 没有对应接口：开
+**开发者模式** →「**加载已解压的扩展程序**」→ 选它给你的那个目录。
 
-## 快速开始
-
-> ⚠️ **先加载扩展，再启动 daemon。** 顺序反了 daemon 会等约 20 秒后报「扩展没连上」退出。
-
-**终端 1** — 启动 daemon（保持打开）：
+**3 — 启动 daemon** —— 前台运行，给它单独一个终端
 
 ```bash
 nekoro-browser
 ```
 
-**终端 2** — 验证：
+**4 — 在别处驱动浏览器**
 
 ```bash
 echo "page_info()" | nekoro-browser
 # → {"ok": true, "result": {"title": "...", "url": "..."}}
 ```
+
+就这些。第 4 步如果报 daemon 没运行、或者命令超时，跑 `nekoro-browser --doctor`——
+它会分别检查 daemon、扩展、service worker，直接告诉你是哪一环挂了。
 
 ## 示例
 

@@ -58,8 +58,6 @@ include = [
     "extension",
     "domain-skills",
     "tests",
-    "install.sh",
-    "install.ps1",
     "README.md",
     "README.zh-CN.md",
     "SKILL.md",
