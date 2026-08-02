@@ -155,7 +155,7 @@ daemon 默认监听 **28417**。要改：
 
 `src/nekoro_browser/agent_helpers.py` 运行时随时可编辑，每次 `/exec` 自动 reload。Agent 操作失败时往里加缺失的函数，下次调用立即生效，不用重启 daemon、不用重装扩展。
 
-`domain-skills/` 里的站点专属函数（如抖音的 `douyin_like`）**不会自动加载**——需要时把它们贴进 `agent_helpers.py`，签名约定一致（第一个参数是 `daemon`）。
+`domain-skills/` 里放的是站点知识（页面结构、选择器、坑），不是现成函数——按知识自己写工作流，写完贴进 `agent_helpers.py`，签名约定一致（第一个参数是 `daemon`）。
 
 ## 平台支持
 

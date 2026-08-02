@@ -186,19 +186,13 @@ cat domain-skills/douyin/creator-stats.md
 cat domain-skills/wechat-channels/post-list.md
 ```
 
-厚逻辑（站点工作流）放 `domain-skills/` 目录。
+`domain-skills/` 目录只放站点知识文档，不放可执行代码。
 
 ### 抖音 (douyin/)
 
-⚠️ **domain-skills 里的函数不在 daemon 命名空间里**——exec 环境只合并 `helpers.py`
-和 `agent_helpers.py`。要用 `domain-skills/douyin/actions.py` 里的函数，先把它们贴进
-`src/nekoro_browser/agent_helpers.py`（签名约定相同，第一个参数是 `daemon`），
-下一次 `/exec` 自动 reload 就能直接调。
-
-| 函数 | 用法 | 说明 |
-|------|------|------|
-| `douyin_like("用户名")` | `douyin_like("籽岷")` | 搜索用户并点赞第一个视频（需先装载） |
-| `douyin_press(key)` | `douyin_press("z")` | 按抖音键盘快捷键（需先装载） |
+`domain-skills/` 里只有站点知识（页面结构、选择器、坑），没有现成函数——
+需要什么工作流自己按知识写，写完贴进 `src/nekoro_browser/agent_helpers.py`
+（第一个参数是 `daemon`），下一次 `/exec` 自动 reload 就能调。
 
 抖音键盘快捷键：`z`=点赞 `x`=评论 `c`=收藏 `G`=关注 `f`=首页 `b`=弹幕 `esc`=退出
 

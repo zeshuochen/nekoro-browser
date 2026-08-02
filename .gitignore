@@ -21,9 +21,5 @@ uv.lock
 .DS_Store
 Thumbs.db
 
-# Local automation scripts (do not commit)
-scripts/*.ps1
-scripts/*.py
-scripts/*.sh
-scripts/*.txt
-!scripts/.gitkeep
+# 本地一次性脚本（作者自用，不进仓库；目录本身也不跟踪）
+scripts/

@@ -167,7 +167,7 @@ running on a non-default port. Precedence is `--port` > `NEKORO_PORT` > that fil
 
 `src/nekoro_browser/agent_helpers.py` is editable at runtime and reloaded on every `/exec`. When an agent hits a gap, it appends the missing function there — effective on the next call, no daemon restart, no extension reload.
 
-Site-specific functions under `domain-skills/` (e.g. Douyin's `douyin_like`) are **not auto-loaded** — paste the ones you need into `agent_helpers.py`; the convention is identical (`daemon` as first argument).
+`domain-skills/` holds site knowledge (page structure, selectors, gotchas), not ready-made functions — write the workflow you need against that knowledge and drop it into `agent_helpers.py`; the convention is the same (`daemon` as first argument).
 
 ## Platform Support
 
