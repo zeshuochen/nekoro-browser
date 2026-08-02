@@ -16,7 +16,11 @@ nekoro-browser --stop          # 停止 daemon
 nekoro-browser --restart       # 停止后重启（前台）
 nekoro-browser --reload-ext    # 命扩展重载 service worker（跑批量任务前刷干净状态）
 nekoro-browser --extension-path # 打印扩展目录（chrome://extensions 加载已解压扩展时用）
+nekoro-browser --port 30500     # 换端口（默认 28417；等价于设 NEKORO_PORT）
 ```
+
+端口两侧都要改：Python 侧用 `--port` / `NEKORO_PORT`，扩展侧在扩展选项页里设。
+客户端不必重复传参——daemon 把实际端口写进 `<数据目录>/port`，管道模式会自己读。
 
 ### MCP（非 CLI 客户端）
 
@@ -215,5 +219,5 @@ cat domain-skills/wechat-channels/post-list.md
 | 问题 | 解决 |
 |------|------|
 | `Extension not connected` | 确保扩展已安装并在 chrome://extensions 中启用 |
-| `Address already in use` | 检查端口 28417 是否被旧进程占用；先 `nekoro-browser --stop`，或直接杀掉占用该端口的进程 |
+| `Address already in use` | 端口被占：先 `nekoro-browser --stop`，或杀掉占用进程，或换端口 `--port N`（扩展侧也要在选项页改成同一个） |
 | CDP 命令超时 | 扩展 service worker 可能睡死/卡住；`nekoro-browser --doctor` 定位，`--reload-ext` 或 chrome://extensions 手动重载 |

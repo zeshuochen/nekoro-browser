@@ -32,8 +32,12 @@ nekoro-browser --doctor
 echo "page_info()" | nekoro-browser
 ```
 
-daemon 监听 `127.0.0.1:28417`（选此端口是为了不与同类工具 `@jackwener/opencli` 的
+daemon 默认监听 `127.0.0.1:28417`（选此端口是为了不与同类工具 `@jackwener/opencli` 的
 19825 撞车，若你机器上也装了 OpenCLI，两者可共存但同一时刻按需只启一个 daemon）。
+
+改端口：Python 侧 `nekoro-browser --port 30500` 或环境变量 `NEKORO_PORT`，
+扩展侧在扩展详情页的「扩展程序选项」里设成同一个。客户端不用重复传参——
+daemon 把实际端口写进 `<数据目录>/port`，管道模式自己会读。
 
 ## 每次调用前
 

@@ -61,7 +61,7 @@ include = [
     "install.sh",
     "install.ps1",
     "README.md",
-    "README_EN.md",
+    "README.zh-CN.md",
     "SKILL.md",
     "AGENTS.md",
     "LICENSE",
