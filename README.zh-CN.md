@@ -41,10 +41,15 @@ pip install -e .       # 注册 nekoro-browser 命令；也可 ./install.sh 或 
 
 Python 3.12+，零第三方依赖（纯标准库）。
 
-加载 Chrome 扩展：
-1. 打开 `chrome://extensions/`，开启「开发者模式」
-2. 「加载已解压的扩展程序」→ 选择 `extension/` 目录（`nekoro-browser --extension-path` 会打印它的绝对路径）
-3. 确认扩展无报错
+然后加载 Chrome 扩展 —— `setup` 会带着你走：
+
+```bash
+nekoro-browser setup
+```
+
+它把扩展路径复制到剪贴板、打开 `chrome://extensions/`、然后一直等到扩展真的连上为止，
+成没成当场告诉你。唯一要手动的是 Chrome 那一步：开「开发者模式」→「加载已解压的扩展程序」
+→ 选它给你的目录。（Chrome 没有任何接口能把未打包扩展装进正在运行的浏览器，这步自动不了。）
 
 ## 快速开始
 
@@ -129,6 +134,7 @@ CLI (nekoro-browser)  ·  MCP server (nekoro-browser-mcp)
 | 命令 | 作用 |
 |------|------|
 | `nekoro-browser` | 前台启动 daemon |
+| `nekoro-browser setup` | 引导式安装：给出扩展路径 + 打开 chrome://extensions + 等扩展连上并确认 |
 | `nekoro-browser --doctor` | 端到端诊断（daemon + 扩展 + SW 是否都活着） |
 | `nekoro-browser --stop` | 停止 daemon |
 | `nekoro-browser --restart` | 停止后重启（前台） |

@@ -79,6 +79,121 @@ def extension_dir():
     return None
 
 
+def _copy_to_clipboard(text: str) -> bool:
+    """尽力而为地复制到剪贴板。没有可用工具就返回 False，不报错——
+    路径同时也打印在屏幕上，复制只是省一次手动选中。"""
+    import subprocess
+    if sys.platform == "win32":
+        cands = [["clip"]]
+    elif sys.platform == "darwin":
+        cands = [["pbcopy"]]
+    else:
+        cands = [["wl-copy"], ["xclip", "-selection", "clipboard"],
+                 ["xsel", "--clipboard", "--input"]]
+    for cmd in cands:
+        try:
+            subprocess.run(cmd, input=text.encode(), timeout=5, check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True
+        except (OSError, subprocess.SubprocessError):
+            continue
+    return False
+
+
+def _open_extensions_page() -> bool:
+    """打开 chrome://extensions。webbrowser 模块不行——默认浏览器未必是 Chrome，
+    而且 chrome:// 这类内部页只有 Chrome 自己肯开，所以直接调 Chrome 可执行文件。"""
+    import subprocess
+    url = "chrome://extensions/"
+    if sys.platform == "win32":
+        cands = [["cmd", "/c", "start", "", "chrome", url]]
+    elif sys.platform == "darwin":
+        cands = [["open", "-a", "Google Chrome", url]]
+    else:
+        cands = [["google-chrome", url], ["chromium", url], ["chromium-browser", url]]
+    for cmd in cands:
+        try:
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True
+        except (OSError, subprocess.SubprocessError):
+            continue
+    return False
+
+
+async def _wait_for_extension(port, timeout: float = 180.0) -> bool:
+    """临时起一个 bridge 等扩展连上来——扩展只有在有人监听时才连得上，
+    所以「装完了没」这件事没法离线判断，必须真的监听一次。"""
+    from .daemon import Daemon
+    d = Daemon(port=port)
+    await d.bridge.start()
+    d.bridge.set_token(auth.issue_token())
+    try:
+        deadline = time.monotonic() + timeout
+        while True:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return False
+            if await d.bridge.wait_for_extension(min(15.0, left)):
+                return True
+            print(f"      …still waiting ({int(deadline - time.monotonic())}s left)",
+                  file=sys.stderr)
+    finally:
+        await d.bridge.stop()
+
+
+def _setup(port=None) -> int:
+    """引导式安装：路径给到手 + 页面打开 + 实时确认扩展是否连上。
+
+    扩展这一步没法自动化——Chrome 不提供任何把未打包扩展装进正在运行的浏览器的
+    接口（`--load-extension` 要重启 Chrome 且新版会弹停用提示）。能做的是把
+    人工动作压到「拖一下目录」，其余全自动，并且当场告诉用户成没成。
+    """
+    import platform
+    print("nekoro-browser setup\n" + "=" * 46, file=sys.stderr)
+    print(f"[1/4] Python {platform.python_version()} · "
+          f"nekoro-browser {__version__} installed", file=sys.stderr)
+
+    ext = extension_dir()
+    if ext is None:
+        print("[2/4] FAILED: extension directory not found in this install.\n"
+              "      Reinstall from a clone: pip install -e .", file=sys.stderr)
+        return 1
+    copied = _copy_to_clipboard(str(ext))
+    print(f"[2/4] Extension directory{' (copied to clipboard)' if copied else ''}:\n"
+          f"      {ext}", file=sys.stderr)
+
+    opened = _open_extensions_page()
+    print(f"[3/4] {'Opened' if opened else 'Please open'} chrome://extensions/\n"
+          "      Turn on \"Developer mode\", click \"Load unpacked\", "
+          "pick the directory above.", file=sys.stderr)
+
+    print("[4/4] Waiting for the extension to connect "
+          f"(port {config.client_port(port)}, Ctrl-C to skip)…", file=sys.stderr)
+    if _alive():
+        # 已经有 daemon 在跑，别去抢端口，直接问它扩展活没活
+        ok = _healthy()
+    else:
+        try:
+            ok = asyncio.run(_wait_for_extension(port))
+        except KeyboardInterrupt:
+            print("\n      Skipped.", file=sys.stderr)
+            return 1
+
+    print("=" * 46, file=sys.stderr)
+    if ok:
+        print("Extension connected. Setup complete.\n"
+              "  Start the daemon:  nekoro-browser\n"
+              "  Then, elsewhere:   echo \"page_info()\" | nekoro-browser",
+              file=sys.stderr)
+        return 0
+    print("Extension did not connect.\n"
+          "  - Is it loaded AND enabled in chrome://extensions/ ?\n"
+          "  - Unpacked extensions get disabled by Chrome after updates — re-enable it.\n"
+          "  - If you changed the port, set the same one in the extension's options page.\n"
+          "  Then re-run: nekoro-browser setup", file=sys.stderr)
+    return 1
+
+
 def _reload_ext() -> int:
     """--reload-ext：命扩展重载 service worker，拿干净状态（治 alive-stale）。
     据实返回退出码：无 daemon → 1（且不发 exec）；请求成功 → 0；失败 → 1。
@@ -96,6 +211,9 @@ def _reload_ext() -> int:
 
 def main():
     p = argparse.ArgumentParser(prog="nekoro-browser")
+    p.add_argument("command", nargs="?", choices=["setup"], default=None,
+                   help="setup：引导式安装（给出扩展目录、打开 chrome://extensions、"
+                        "等扩展连上并当场确认）")
     p.add_argument("--version", action="version", version=f"nekoro-browser {__version__}")
     p.add_argument("--doctor", action="store_true")
     p.add_argument("--stop", action="store_true", help="停止正在运行的 daemon")
@@ -115,6 +233,9 @@ def main():
         _EXPLICIT_PORT = args.port
         from . import lifecycle
         lifecycle.set_port(args.port)   # stop/restart 要打到同一个 daemon
+
+    if args.command == "setup":
+        sys.exit(_setup(args.port))
 
     if args.extension_path:
         d = extension_dir()

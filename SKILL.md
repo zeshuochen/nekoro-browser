@@ -9,6 +9,7 @@ nekoro-browser 是浏览器自动化 CLI，通过 Chrome 扩展的 `chrome.debug
 ### 启动和状态
 
 ```bash
+nekoro-browser setup           # 引导式安装（首次用；给路径+开页面+等扩展连上）
 nekoro-browser                 # 前台启动 daemon
 nekoro-browser --doctor        # 端到端诊断（daemon + 扩展 + SW 是否都活着）
 nekoro-browser --version       # 版本

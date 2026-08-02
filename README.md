@@ -41,10 +41,17 @@ pip install -e .       # registers the `nekoro-browser` command; or ./install.sh
 
 Python 3.12+, zero third-party dependencies (stdlib only).
 
-Load the Chrome extension:
-1. Open `chrome://extensions/`, enable "Developer mode"
-2. "Load unpacked" → select the `extension/` directory (`nekoro-browser --extension-path` prints its absolute path)
-3. Verify no errors
+Then load the Chrome extension — `setup` walks you through it:
+
+```bash
+nekoro-browser setup
+```
+
+It copies the extension path to your clipboard, opens `chrome://extensions/`, and waits
+until the extension actually connects, so you know it worked. The one manual step is
+Chrome's: turn on **Developer mode**, click **Load unpacked**, pick the directory it gave you.
+(Chrome has no API to install an unpacked extension into a running browser — that step
+can't be automated.)
 
 ## Quick Start
 
@@ -141,6 +148,7 @@ The extension is hardened against MV3 service worker eviction: a `content_script
 | Command | What it does |
 |---------|---------------|
 | `nekoro-browser` | Start the daemon (foreground) |
+| `nekoro-browser setup` | Guided install: extension path + opens chrome://extensions + waits for it to connect |
 | `nekoro-browser --doctor` | End-to-end diagnostic (daemon + extension + SW all alive?) |
 | `nekoro-browser --stop` | Stop the daemon |
 | `nekoro-browser --restart` | Stop and restart (foreground) |
