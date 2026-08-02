@@ -12,6 +12,8 @@ import json
 import logging
 import math
 
+from . import site_notes
+
 logger = logging.getLogger(__name__)
 
 
@@ -59,7 +61,7 @@ async def new_tab(daemon, url: str = "about:blank", timeout: float = 15.0) -> di
         # 扩展 waitTabLoad 返回字符串 'complete'|'timeout'|'no-tab'，只有 complete 算真加载完
         loaded = ((r or {}).get("load") == "complete")
         await daemon.switch_tab(tab_id)          # attach debugger + 切活动指针
-        return {"ok": True, "tabId": tab_id, "loaded": loaded}
+        return site_notes.attach({"ok": True, "tabId": tab_id, "loaded": loaded}, url)
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -107,7 +109,8 @@ async def navigate(daemon, url: str, wait: bool = True, timeout: float = 15.0) -
             # （stale-complete 竞态）。150ms 远小于旧的硬编码 3s。
             await asyncio.sleep(0.15)
             loaded = (await wait_for_load(daemon, timeout)).get("ok", False)
-        return {"ok": True, "result": res, "loaded": loaded}
+        # 有该站点的笔记就顺手带上——指望 agent 自己去 ls domain-skills 是不现实的
+        return site_notes.attach({"ok": True, "result": res, "loaded": loaded}, url)
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
