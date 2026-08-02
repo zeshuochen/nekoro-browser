@@ -14,7 +14,8 @@ allowed-tools: Bash(nekoro-browser:*) Bash(python:*) Read Edit Write
 ## 前置条件
 
 ```bash
-pip install -e .    # 或 uv pip install -e .，注册 nekoro-browser 命令
+pip install nekoro-browser        # 已上架 PyPI
+# 或从源码：pip install -e .（在 clone 出来的仓库根目录）
 ```
 
 加载 Chrome 扩展：`chrome://extensions` → 开发者模式 → 加载已解压的扩展程序 → 选
