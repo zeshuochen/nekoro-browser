@@ -52,7 +52,8 @@ minutes — until the extension actually connects, so you find out it worked ins
 guessing. Meanwhile you do the part Chrome reserves for humans: open `chrome://extensions/`,
 turn on **Developer mode**, click **Load unpacked**, paste the directory.
 
-**3 — Start the daemon** — it stays in the foreground, so give it its own terminal
+**3 — Start the daemon** — give it its own terminal and **leave it open**; it runs in the
+foreground and closing that window stops it
 
 ```bash
 nekoro-browser
@@ -155,6 +156,7 @@ The extension is hardened against MV3 service worker eviction: a `content_script
 | `nekoro-browser --extension-path` | Print the extension directory (for "Load unpacked") |
 | `nekoro-browser --port N` | Run the daemon on port N (default 28417) |
 | `nekoro-browser -c "code"` | Run one snippet, print the result |
+| `nekoro-browser --timeout N` | Seconds to allow a snippet (default 120 — page loads are slow) |
 | `echo "code" \| nekoro-browser` | Pipe mode (daemon must already be running) |
 
 ## Configuration

@@ -51,7 +51,7 @@ nekoro-browser setup
 装没装成它当场告诉你，不用自己猜。同时你去做 Chrome 只留给人做的那步：打开
 `chrome://extensions/` → 开**开发者模式** →「**加载已解压的扩展程序**」→ 粘贴目录。
 
-**3 — 启动 daemon** —— 前台运行，给它单独一个终端
+**3 — 启动 daemon** —— 给它单独一个终端并**保持打开**；它是前台进程，关掉窗口就等于停掉它
 
 ```bash
 nekoro-browser
@@ -141,6 +141,7 @@ CLI (nekoro-browser)  ·  MCP server (nekoro-browser-mcp)
 | `nekoro-browser --extension-path` | 打印扩展目录（加载已解压扩展时用） |
 | `nekoro-browser --port N` | daemon 监听 N 端口（默认 28417） |
 | `nekoro-browser -c "code"` | 执行一段代码并返回结果 |
+| `nekoro-browser --timeout N` | 单次执行的超时秒数（默认 120，等页面加载很费时） |
 | `echo "code" \| nekoro-browser` | 管道模式（需 daemon 已运行） |
 
 ## 配置

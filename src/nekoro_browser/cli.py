@@ -24,6 +24,11 @@ from . import config
 # 这样 MCP server 先起、daemon 后起也能连上，不会锁死在导入时的那个值。
 _EXPLICIT_PORT = None
 
+# 执行代码的 HTTP 超时。30 秒是原来的写死值，而"开页面 + 等水合"这种再正常
+# 不过的流程就要几十秒——第一条真实测试命令就撞上了。给个宽松默认值 + --timeout。
+DEFAULT_EXEC_TIMEOUT = 120.0
+_EXEC_TIMEOUT = DEFAULT_EXEC_TIMEOUT
+
 
 def _url() -> str:
     return config.client_url(_EXPLICIT_PORT)
@@ -184,8 +189,9 @@ def _setup(port=None) -> int:
     print("=" * 46, file=sys.stderr)
     if ok:
         print("Extension connected. Setup complete.\n"
-              "  Start the daemon:  nekoro-browser\n"
-              "  Then, elsewhere:   echo \"page_info()\" | nekoro-browser",
+              "  1. Start the daemon:  nekoro-browser\n"
+              "     It runs in the foreground — leave that terminal open.\n"
+              "  2. From another terminal:  echo \"page_info()\" | nekoro-browser",
               file=sys.stderr)
         return 0
     print("Extension did not connect.\n"
@@ -203,7 +209,7 @@ def _reload_ext() -> int:
     if not _alive():
         print("No daemon running.", file=sys.stderr)
         return 1
-    r = _post("/exec", "await reload_extension()")
+    r = _post("/exec", "await reload_extension()", timeout=_EXEC_TIMEOUT)
     if r.get("ok"):
         print("Extension reload requested.", file=sys.stderr)
         return 0
@@ -227,8 +233,15 @@ def main():
     p.add_argument("--port", type=int, default=None,
                    help=f"daemon 端口（默认 {config.DEFAULT_PORT}；也可设环境变量 "
                         f"{config.ENV_VAR}）。扩展侧的端口在扩展选项页里改")
+    p.add_argument("--timeout", type=float, default=None,
+                   help=f"执行代码的超时秒数（默认 {DEFAULT_EXEC_TIMEOUT:.0f}）。"
+                        "等待页面加载/水合的脚本可能需要更长")
     p.add_argument("-c", "--exec", type=str, default=None)
     args = p.parse_args()
+
+    if args.timeout is not None and args.timeout > 0:
+        global _EXEC_TIMEOUT
+        _EXEC_TIMEOUT = args.timeout
 
     if args.port is not None:
         global _EXPLICIT_PORT
@@ -278,7 +291,7 @@ def main():
     if args.doctor:
         _doctor(); return
     if args.exec:
-        r = _post("/exec", args.exec)
+        r = _post("/exec", args.exec, timeout=_EXEC_TIMEOUT)
         sys.stdout.write(json.dumps(r, default=str) + "\n")
         if not r.get("ok"):
             sys.exit(1)
@@ -290,7 +303,7 @@ def main():
         if code:
             if not _alive():
                 sys.stderr.write("Daemon not running. Start: nekoro-browser\n"); sys.exit(1)
-            r = _post("/exec", code)
+            r = _post("/exec", code, timeout=_EXEC_TIMEOUT)
             sys.stdout.write(json.dumps(r, default=str) + "\n")
             if not r.get("ok"):
                 sys.exit(1)

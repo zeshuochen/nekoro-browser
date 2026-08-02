@@ -18,6 +18,7 @@ nekoro-browser --restart       # 停止后重启（前台）
 nekoro-browser --reload-ext    # 命扩展重载 service worker（跑批量任务前刷干净状态）
 nekoro-browser --extension-path # 打印扩展目录（chrome://extensions 加载已解压扩展时用）
 nekoro-browser --port 30500     # 换端口（默认 28417；等价于设 NEKORO_PORT）
+nekoro-browser --timeout 300    # 单次执行超时（默认 120s；等页面加载/水合可能要更久）
 ```
 
 端口两侧都要改：Python 侧用 `--port` / `NEKORO_PORT`，扩展侧在扩展选项页里设。
