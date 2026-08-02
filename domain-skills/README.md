@@ -1,23 +1,27 @@
 # domain-skills
 
-Site-specific knowledge — page structure, selectors, quirks — for sites that took real
-time to figure out. **Documentation only, no executable code**: the daemon's namespace is
-`helpers.py` + `agent_helpers.py`, and nothing here is imported automatically.
+**Empty on purpose — this is where your own site notes go.**
 
-The split is deliberate. `helpers.py` stays thin (every function is one CDP call, ≤10
-lines) and site-specific workflows live here as notes an agent reads before acting, rather
-than as a growing pile of per-site functions nobody else can use. When you need a
-workflow, write it against these notes and drop it into
-`src/nekoro_browser/agent_helpers.py` — it hot-reloads on the next `/exec`, no restart.
+Everyone automates different sites, so nekoro ships no site knowledge. The convention is
+the useful part: page structure, selectors and quirks live here as Markdown an agent reads
+before acting, and never as executable code. The daemon's namespace is only
+`helpers.py` + `agent_helpers.py`; nothing in this directory is imported.
 
-Current notes happen to cover Chinese platforms, because that is what the author
-automates. They are examples of the convention as much as they are useful in themselves:
+That split is what keeps `helpers.py` thin — every helper is one CDP call in ≤10 lines,
+and none of them know about any particular website. When you need a workflow for a site,
+write it against your notes and drop it into `src/nekoro_browser/agent_helpers.py`, which
+hot-reloads on the next `/exec` (no daemon restart, no extension reload).
 
-| File | What it covers |
-|------|----------------|
-| `douyin/video-interaction.md` | React RSC hydration timing, why direct `/video/` URLs render logged-out, like-button has no text label, keyboard shortcuts |
-| `douyin/creator-stats.md` | Creator dashboard URLs, follower-count regexes, innerText layout, the ~6-day data lag |
-| `wechat-channels/post-list.md` | Post list iframe structure, number formats |
+## Adding a site
 
-Adding your own site is just a Markdown file. Write down what cost you an hour to
-discover; skip what is obvious from the page.
+Create `domain-skills/<site>/<topic>.md` and write down what cost you an hour to figure
+out. Skip what is obvious from looking at the page. Things worth recording:
+
+- URLs that behave differently than expected (e.g. a direct link rendering logged-out)
+- Selectors for elements with no stable text or test id
+- How long the app takes to hydrate, and what to wait on instead of a fixed sleep
+- Keyboard shortcuts the site implements — usually more reliable than clicking
+- Response shapes for the XHR/fetch endpoints you care about
+
+Then point your agent at the directory. `SKILL.md` already tells agents to check
+`domain-skills/<site>/` before rediscovering known quirks.

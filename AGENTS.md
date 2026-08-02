@@ -33,8 +33,8 @@ install + quick start for humans.
 An agent operating nekoro-browser edits two places:
 - `src/nekoro_browser/agent_helpers.py` — task-specific browser helpers the agent adds
   at runtime; hot-reloaded via `reload_agent_helpers()`, no daemon restart needed
-- `domain-skills/` — site-specific playbooks the agent writes and reads. Functions in
-  there are NOT auto-loaded; paste what you need into `agent_helpers.py` first.
+- `domain-skills/` — Markdown notes on specific sites, written and read by the agent.
+  Empty by default and never imported; workflows go in `agent_helpers.py`.
 
 # Testing
 `tests/*.py` are stdlib-style, not pytest: `assert` + a final `print("ALL OK")`, run via

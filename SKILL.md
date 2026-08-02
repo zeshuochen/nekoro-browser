@@ -38,7 +38,7 @@ nekoro-browser -c "print(await page_info())"
 
 # 多步 (heredoc)
 nekoro-browser <<'PY'
-await new_tab("https://douyin.com")
+await new_tab("https://example.com")
 await wait_for_load()
 print(await page_info())
 PY
@@ -179,30 +179,17 @@ echo "await page_info()" | nekoro-browser
 
 ## 领域技能 (domain-skills)
 
-遇到特定网站先查 `domain-skills/<site>/`，不要重新发现已知规律。
+`domain-skills/<site>/*.md` 放站点知识（页面结构、选择器、坑）。**仓库里默认是空的**——
+每个人自动化的站点不同，自己按需要写。遇到特定站点先查一眼，别重新踩已知的坑：
 
 ```bash
 ls domain-skills/
-cat domain-skills/douyin/creator-stats.md
-cat domain-skills/wechat-channels/post-list.md
 ```
 
-`domain-skills/` 目录只放站点知识文档，不放可执行代码。
-
-### 抖音 (douyin/)
-
-`domain-skills/` 里只有站点知识（页面结构、选择器、坑），没有现成函数——
-需要什么工作流自己按知识写，写完贴进 `src/nekoro_browser/agent_helpers.py`
-（第一个参数是 `daemon`），下一次 `/exec` 自动 reload 就能调。
-
-抖音键盘快捷键：`z`=点赞 `x`=评论 `c`=收藏 `G`=关注 `f`=首页 `b`=弹幕 `esc`=退出
-
-页面结构和交互坑见 `domain-skills/douyin/video-interaction.md`，
-创作者中心数据爬取见 `domain-skills/douyin/creator-stats.md`。
-
-### 视频号 (wechat-channels/post-list.md)
-
-作品列表和粉丝统计爬取指南见 `domain-skills/wechat-channels/post-list.md`。
+只放 Markdown 文档，不放可执行代码：exec 命名空间只合并 `helpers.py` 和
+`agent_helpers.py`，这个目录不会被导入。需要站点工作流就照文档自己写，
+写完贴进 `src/nekoro_browser/agent_helpers.py`（第一个参数是 `daemon`），
+下一次 `/exec` 自动 reload 即可调用。写法见 `domain-skills/README.md`。
 
 ## 自愈机制
 

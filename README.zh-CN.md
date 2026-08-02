@@ -122,7 +122,7 @@ Python daemon (127.0.0.1:28417)
 CLI (nekoro-browser)  ·  MCP server (nekoro-browser-mcp)
 ```
 
-`helpers.py`（46 个）→ CDP 薄封装，每个 ≤10 行。厚逻辑在 `domain-skills/`。
+`helpers.py`（46 个）→ CDP 薄封装，每个 ≤10 行，且都不认识任何具体网站。
 
 `lifecycle.py` 管 daemon 生命周期：pid 文件 + 进程指纹防误杀、僵尸自愈（CDP 探活失败自动清理重启）、localhost 请求绕过系统代理。
 
@@ -160,7 +160,7 @@ daemon 默认监听 **28417**。要改：
 
 `src/nekoro_browser/agent_helpers.py` 运行时随时可编辑，每次 `/exec` 自动 reload。Agent 操作失败时往里加缺失的函数，下次调用立即生效，不用重启 daemon、不用重装扩展。
 
-`domain-skills/` 里放的是站点知识（页面结构、选择器、坑），不是现成函数——按知识自己写工作流，写完贴进 `agent_helpers.py`，签名约定一致（第一个参数是 `daemon`）。
+`domain-skills/` 是放站点知识的地方（页面结构、选择器、坑），只收 Markdown，**默认是空的**——每个人自动化的站点不一样。按自己的笔记写工作流，贴进 `agent_helpers.py`，签名约定一致（第一个参数是 `daemon`）。写法见 [`domain-skills/README.md`](domain-skills/README.md)。
 
 ## 平台支持
 

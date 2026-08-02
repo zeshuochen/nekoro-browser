@@ -136,7 +136,7 @@ Python daemon (127.0.0.1:28417)
 CLI (nekoro-browser)  ·  MCP server (nekoro-browser-mcp)
 ```
 
-`helpers.py` (46 thin wrappers) → CDP commands, each ≤10 lines. Thick logic lives in `domain-skills/`.
+`helpers.py` (46 thin wrappers) → CDP commands, each ≤10 lines, none of them aware of any particular website.
 
 `lifecycle.py` manages the daemon: pid file + process fingerprint (avoids killing a reused pid), self-heal on stale daemon (CDP probe fails → auto cleanup and restart), localhost requests bypass the system proxy.
 
@@ -174,7 +174,7 @@ running on a non-default port. Precedence is `--port` > `NEKORO_PORT` > that fil
 
 `src/nekoro_browser/agent_helpers.py` is editable at runtime and reloaded on every `/exec`. When an agent hits a gap, it appends the missing function there — effective on the next call, no daemon restart, no extension reload.
 
-`domain-skills/` holds site knowledge (page structure, selectors, gotchas), not ready-made functions — write the workflow you need against that knowledge and drop it into `agent_helpers.py`; the convention is the same (`daemon` as first argument).
+`domain-skills/` is where site knowledge goes (page structure, selectors, gotchas) — Markdown only, and empty by default since everyone automates different sites. Write a workflow against your notes, drop it into `agent_helpers.py`, same convention (`daemon` as first argument). See [`domain-skills/README.md`](domain-skills/README.md).
 
 ## Platform Support
 
