@@ -6,6 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/zeshuochen/nekoro-browser/actions/workflows/tests.yml"><img src="https://github.com/zeshuochen/nekoro-browser/actions/workflows/tests.yml/badge.svg" alt="tests"></a>
+  <a href="https://pypi.org/project/nekoro-browser/"><img src="https://img.shields.io/pypi/v/nekoro-browser" alt="PyPI"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="Python 3.12+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License"></a>
   <a href="#mcp-cursor--cline--claude-desktop"><img src="https://img.shields.io/badge/MCP-supported-8A2BE2" alt="MCP supported"></a>
@@ -29,17 +30,17 @@ Since Chrome 136, `--remote-debugging-port` / `--remote-debugging-pipe` **refuse
 | Login state | ❌ fresh instance | ✅ | ✅ | ✅ |
 | Modify the extension | — | Edit Playwright source | Edit OpenCLI source | ✅ right in this repo |
 | Self-healing | ❌ | ❌ | ❌ | ✅ Agent edits helpers at runtime |
-| MCP | ❌ | ✅ (separate `@playwright/mcp`) | ❌ | ✅ built in, 45 tools via `nekoro-browser-mcp` |
+| MCP | ❌ | ✅ (separate `@playwright/mcp`) | ❌ | ✅ built in, 46 tools via `nekoro-browser-mcp` |
 
 ## Quick Start
 
 **1 — Install** (Python 3.12+, zero third-party dependencies)
 
 ```bash
-git clone https://github.com/zeshuochen/nekoro-browser
-cd nekoro-browser
-pip install -e .
+pip install nekoro-browser
 ```
+
+<sub>From source instead: <code>git clone https://github.com/zeshuochen/nekoro-browser && cd nekoro-browser && pip install -e .</code></sub>
 
 **2 — Load the extension**
 
@@ -99,7 +100,7 @@ All helpers are documented in [SKILL.md](SKILL.md).
 
 ## MCP (Cursor / Cline / Claude Desktop)
 
-Every function in `helpers.py` is reflected into an MCP tool (45 today) — no glue code:
+Every function in `helpers.py` is reflected into an MCP tool (46 today) — no glue code:
 
 ```json
 {

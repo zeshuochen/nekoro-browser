@@ -6,6 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/zeshuochen/nekoro-browser/actions/workflows/tests.yml"><img src="https://github.com/zeshuochen/nekoro-browser/actions/workflows/tests.yml/badge.svg" alt="tests"></a>
+  <a href="https://pypi.org/project/nekoro-browser/"><img src="https://img.shields.io/pypi/v/nekoro-browser" alt="PyPI"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="Python 3.12+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License"></a>
   <a href="#mcp给-cursor--cline--claude-desktop-用"><img src="https://img.shields.io/badge/MCP-supported-8A2BE2" alt="MCP supported"></a>
@@ -29,17 +30,17 @@ Chrome 136 起，`--remote-debugging-port` / `--remote-debugging-pipe` **不再�
 | 登录态 | ❌ 独立实例 | ✅ | ✅ | ✅ |
 | 可修改扩展 | — | 需改 Playwright 源码 | 需改 OpenCLI 源码 | ✅ 扩展就在仓库里 |
 | 自愈 | ❌ | ❌ | ❌ | ✅ Agent 运行时编辑 helpers |
-| MCP | ❌ | ✅（另装 `@playwright/mcp`） | ❌ | ✅ 内置 45 个工具，`nekoro-browser-mcp` |
+| MCP | ❌ | ✅（另装 `@playwright/mcp`） | ❌ | ✅ 内置 46 个工具，`nekoro-browser-mcp` |
 
 ## 快速开始
 
 **1 — 安装**（Python 3.12+，零第三方依赖）
 
 ```bash
-git clone https://github.com/zeshuochen/nekoro-browser
-cd nekoro-browser
-pip install -e .
+pip install nekoro-browser
 ```
+
+<sub>想从源码装：<code>git clone https://github.com/zeshuochen/nekoro-browser && cd nekoro-browser && pip install -e .</code></sub>
 
 **2 — 加载扩展**
 
@@ -96,7 +97,7 @@ PY
 
 ## MCP（给 Cursor / Cline / Claude Desktop 用）
 
-`helpers.py` 里的函数会被反射成 MCP 工具（当前 45 个），不用改一行代码：
+`helpers.py` 里的函数会被反射成 MCP 工具（当前 46 个），不用改一行代码：
 
 ```json
 {
