@@ -82,6 +82,10 @@ async def _exec_namespace_binding(d):
     # 协程 helper 仍然是绑好 daemon 的（调用方不传 daemon）
     r = await d._on_exec("sleep(0)")
     assert r["ok"], r
+    # 注入核心 helper 到 agent_helpers 后，不能把它们再绑一次 daemon——
+    # 同步的 list_helpers 会因此 TypeError（这个错犯过两次了）
+    r = await d._on_exec("len(list_helpers())")
+    assert r["ok"] and r["result"] > 40, r
 
 
 if __name__ == "__main__":

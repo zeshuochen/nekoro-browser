@@ -120,8 +120,14 @@ class Daemon:
                 continue
             v[name] = partial(obj, self) if asyncio.iscoroutinefunction(obj) else obj
         for name, obj in vars(ah).items():
-            if not name.startswith("_") and callable(obj):
-                v[name] = partial(obj, self)
+            if name.startswith("_") or not callable(obj):
+                continue
+            # 只绑 agent_helpers 自己定义的：注入进去的核心 helper 上面已经绑过，
+            # 再绑一次会把 list_helpers 这类同步函数也塞上 daemon → TypeError。
+            # （M3 就是这个错，别用注入把它复活。）
+            if getattr(obj, "__module__", None) != ah.__name__:
+                continue
+            v[name] = partial(obj, self) if asyncio.iscoroutinefunction(obj) else obj
         stdout_buf = io.StringIO()
         try:
             with contextlib.redirect_stdout(stdout_buf):
