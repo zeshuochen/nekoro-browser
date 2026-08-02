@@ -39,6 +39,8 @@ cd nekoro-browser
 pip install -e .       # registers the `nekoro-browser` command; or ./install.sh, .\install.ps1
 ```
 
+Python 3.12+, zero third-party dependencies (stdlib only).
+
 Load the Chrome extension:
 1. Open `chrome://extensions/`, enable "Developer mode"
 2. "Load unpacked" → select the `extension/` directory (`nekoro-browser --extension-path` prints its absolute path)
@@ -185,6 +187,14 @@ The daemon listens on `127.0.0.1` and `/exec` runs arbitrary Python, so the tran
 - **Extension → daemon** (`/ws`): the handshake `Origin` must be `chrome-extension://…`; a web page's `WebSocket` to localhost carries its own origin and is rejected.
 
 Same-user local processes can read the token file — that boundary matches the OS user account, as with browser-harness's `chmod 600`.
+
+## Feedback
+
+Hit a problem, or missing a helper you need? Open an
+[issue](https://github.com/zeshuochen/nekoro-browser/issues).
+For bugs, include the output of `nekoro-browser --doctor`, your Chrome version and OS — saves a round trip.
+
+PRs welcome. Run the tests first: `for f in tests/test_*.py; do python "$f"; done` (CI runs them on all three platforms too).
 
 ---
 

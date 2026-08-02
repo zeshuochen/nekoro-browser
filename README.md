@@ -39,6 +39,8 @@ cd nekoro-browser
 pip install -e .       # 注册 nekoro-browser 命令；也可 ./install.sh 或 .\install.ps1
 ```
 
+Python 3.12+，零第三方依赖（纯标准库）。
+
 加载 Chrome 扩展：
 1. 打开 `chrome://extensions/`，开启「开发者模式」
 2. 「加载已解压的扩展程序」→ 选择 `extension/` 目录（`nekoro-browser --extension-path` 会打印它的绝对路径）
@@ -173,6 +175,13 @@ daemon 监听 `127.0.0.1`，`/exec` 会执行任意 Python，故传输层加了�
 - **扩展 → daemon**（`/ws`）：握手 `Origin` 必须是 `chrome-extension://…`；网页对 localhost 发起的 `WebSocket` 带自己的域名 Origin，会被拒。
 
 同用户的本地进程能读令牌文件——这条边界等于操作系统账户，与 browser-harness 的 `chmod 600` 一致。
+
+## 反馈
+
+用着有问题、或者想要的 helper 没有，开个 [issue](https://github.com/zeshuochen/nekoro-browser/issues)。
+提 bug 时带上 `nekoro-browser --doctor` 的输出、Chrome 版本和操作系统，能省一轮来回。
+
+PR 欢迎。改动前先跑一遍测试：`for f in tests/test_*.py; do python "$f"; done`（三平台 CI 也会跑）。
 
 ---
 
