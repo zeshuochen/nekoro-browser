@@ -47,10 +47,10 @@ pip install -e .
 nekoro-browser setup
 ```
 
-`setup` copies the extension directory to your clipboard, opens `chrome://extensions/`,
-and then waits until the extension actually connects — so you find out it worked without
-guessing. One step stays manual because Chrome has no API for it: turn on **Developer
-mode**, click **Load unpacked**, pick the directory it handed you.
+`setup` copies the extension directory to your clipboard and then waits — up to three
+minutes — until the extension actually connects, so you find out it worked instead of
+guessing. Meanwhile you do the part Chrome reserves for humans: open `chrome://extensions/`,
+turn on **Developer mode**, click **Load unpacked**, paste the directory.
 
 **3 — Start the daemon** — it stays in the foreground, so give it its own terminal
 

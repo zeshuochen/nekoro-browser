@@ -100,26 +100,6 @@ def _copy_to_clipboard(text: str) -> bool:
     return False
 
 
-def _open_extensions_page() -> bool:
-    """打开 chrome://extensions。webbrowser 模块不行——默认浏览器未必是 Chrome，
-    而且 chrome:// 这类内部页只有 Chrome 自己肯开，所以直接调 Chrome 可执行文件。"""
-    import subprocess
-    url = "chrome://extensions/"
-    if sys.platform == "win32":
-        cands = [["cmd", "/c", "start", "", "chrome", url]]
-    elif sys.platform == "darwin":
-        cands = [["open", "-a", "Google Chrome", url]]
-    else:
-        cands = [["google-chrome", url], ["chromium", url], ["chromium-browser", url]]
-    for cmd in cands:
-        try:
-            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            return True
-        except (OSError, subprocess.SubprocessError):
-            continue
-    return False
-
-
 async def _wait_for_extension(port, timeout: float = 180.0) -> bool:
     """临时起一个 bridge 等扩展连上来——扩展只有在有人监听时才连得上，
     所以「装完了没」这件事没法离线判断，必须真的监听一次。"""
@@ -141,12 +121,32 @@ async def _wait_for_extension(port, timeout: float = 180.0) -> bool:
         await d.bridge.stop()
 
 
-def _setup(port=None) -> int:
-    """引导式安装：路径给到手 + 页面打开 + 实时确认扩展是否连上。
+def _poll_running_daemon(timeout: float = 180.0) -> bool:
+    """端口已被现成的 daemon 占着时的等待路径。
 
-    扩展这一步没法自动化——Chrome 不提供任何把未打包扩展装进正在运行的浏览器的
-    接口（`--load-extension` 要重启 Chrome 且新版会弹停用提示）。能做的是把
-    人工动作压到「拖一下目录」，其余全自动，并且当场告诉用户成没成。
+    这时不能自己 bind 去等，只能反复问那个 daemon「扩展活了没」。
+    必须轮询而不是探一次就走——用户正要去 Chrome 里加载扩展，一次性检查
+    必然失败，等于没等（这是 setup 第一版的真实 bug）。
+    """
+    deadline = time.monotonic() + timeout
+    next_note = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        if _healthy(timeout=5):
+            return True
+        if time.monotonic() >= next_note:
+            print(f"      …still waiting ({int(deadline - time.monotonic())}s left)",
+                  file=sys.stderr)
+            next_note = time.monotonic() + 15
+        time.sleep(2)
+    return False
+
+
+def _setup(port=None) -> int:
+    """引导式安装：路径给到手 + 说清要点哪里 + 实时确认扩展是否连上。
+
+    扩展这一步没法自动化——Chrome 既不提供把未打包扩展装进正在运行浏览器的接口，
+    也不接受命令行传来的 chrome:// URL。能做的是把人工动作压到「粘路径、点一下」，
+    其余全自动，并且**真的等到**扩展连上再下结论。
     """
     import platform
     print("nekoro-browser setup\n" + "=" * 46, file=sys.stderr)
@@ -162,22 +162,24 @@ def _setup(port=None) -> int:
     print(f"[2/4] Extension directory{' (copied to clipboard)' if copied else ''}:\n"
           f"      {ext}", file=sys.stderr)
 
-    opened = _open_extensions_page()
-    print(f"[3/4] {'Opened' if opened else 'Please open'} chrome://extensions/\n"
-          "      Turn on \"Developer mode\", click \"Load unpacked\", "
-          "pick the directory above.", file=sys.stderr)
+    # 不自动开页面：Chrome 会拒绝命令行传来的 chrome:// URL，转给已运行实例后
+    # 只会开出一个空白新标签——既没帮上忙，还得谎称"Opened"。直接说清要做什么。
+    print("[3/4] In Chrome, open  chrome://extensions/\n"
+          "      → turn on \"Developer mode\"  → \"Load unpacked\"  "
+          "→ pick the directory above", file=sys.stderr)
 
     print("[4/4] Waiting for the extension to connect "
           f"(port {config.client_port(port)}, Ctrl-C to skip)…", file=sys.stderr)
-    if _alive():
-        # 已经有 daemon 在跑，别去抢端口，直接问它扩展活没活
-        ok = _healthy()
-    else:
-        try:
+    try:
+        if _alive():
+            # 已有 daemon 占着端口，不能再 bind；改成反复问它扩展活没活
+            print("      (a daemon is already running — polling it)", file=sys.stderr)
+            ok = _poll_running_daemon()
+        else:
             ok = asyncio.run(_wait_for_extension(port))
-        except KeyboardInterrupt:
-            print("\n      Skipped.", file=sys.stderr)
-            return 1
+    except KeyboardInterrupt:
+        print("\n      Skipped.", file=sys.stderr)
+        return 1
 
     print("=" * 46, file=sys.stderr)
     if ok:
