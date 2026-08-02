@@ -184,9 +184,9 @@ echo "await page_info()" | nekoro-browser
 默认回落到仓库内的 `domain-skills/`）。**仓库里默认是空的** —— 每个人自动化的站点不同。
 
 ```
-<skills 根>/douyin/
-    video-interaction.md    ← 知识：navigate 时自动送标题
-    actions.py              ← 流程：每次 /exec 自动载入命名空间
+<skills 根>/<site>/
+    <topic>.md      ← 知识：navigate 时自动送标题
+    actions.py      ← 流程：每次 /exec 自动载入命名空间
 ```
 
 ### 路由：先看有没有现成的，再决定怎么做
@@ -195,8 +195,8 @@ echo "await page_info()" | nekoro-browser
 
 ```python
 {'ok': True, 'loaded': True,
- 'notes':   ['douyin/video-interaction.md — 抖音 — 视频页交互'],
- 'actions': ['douyin_like(username, video_index) — 搜索用户并给第一个视频点赞']}
+ 'notes':   ['example/search.md — Example — 搜索结果页'],
+ 'actions': ['open_first_result(query) — 搜索并打开第一条结果']}
 ```
 
 **看到 `actions` 就直接调那个函数**（已在命名空间里），别从零推导一遍。

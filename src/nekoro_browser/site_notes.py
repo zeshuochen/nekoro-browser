@@ -10,9 +10,8 @@
 Agent 看到清单后自己决定读哪一份。
 
 匹配规则：`domain-skills/` 下的目录名只要出现在 hostname 里就算命中，
-所以 `douyin/` 能覆盖 `www.douyin.com` 和 `creator.douyin.com`。
-域名和目录名对不上时（如视频号 `channels.weixin.qq.com`），
-直接把目录命名成域名片段即可。
+所以 `example/` 能同时覆盖 `www.example.com` 和 `admin.example.com`。
+域名里没有合适的词可用时，把目录命名成域名的任一可辨识片段即可。
 """
 
 import os
@@ -139,7 +138,7 @@ def load_functions():
 
 
 def notes_for(url: str) -> list[str]:
-    """返回该 URL 命中的笔记清单，形如 `douyin/creator-stats.md — 抖音创作者中心`。
+    """返回该 URL 命中的笔记清单，形如 `example/search.md — Example — 搜索结果页`。
 
     任何异常都吞掉返回空列表：笔记查询失败绝不能连累导航本身。
     """

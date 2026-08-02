@@ -22,16 +22,16 @@ One directory per site, holding both kinds of material:
 
 ```
 <skills root>/
-  douyin/
-    video-interaction.md    ← knowledge  (surfaced on navigate)
-    actions.py              ← workflows  (loaded into every /exec)
-  github/
+  example/
+    search.md       ← knowledge  (surfaced on navigate)
+    actions.py      ← workflows  (loaded into every /exec)
+  another-site/
     notes.md
 ```
 
-A directory matches when its name appears in the hostname, so `douyin/` covers
-`www.douyin.com` and `creator.douyin.com` alike. If the domain doesn't contain a natural
-word, name the directory after a piece of the domain instead.
+A directory matches when its name appears in the hostname, so `example/` covers
+`www.example.com` and `admin.example.com` alike. If the domain has no natural word to key
+on, name the directory after whatever fragment is distinctive.
 
 ## How it reaches the agent
 
@@ -39,21 +39,21 @@ word, name the directory after a piece of the domain instead.
 
 ```python
 {'ok': True, 'loaded': True,
- 'notes':   ['douyin/video-interaction.md — Douyin — video page'],
- 'actions': ['douyin_like(username, video_index) — like a creator's first video']}
+ 'notes':   ['example/search.md — Example — search results'],
+ 'actions': ['open_first_result(query) — search and open the top hit']}
 ```
 
 `notes` lists **titles only**, never file contents — full text on every navigation would
 turn a one-time write into a permanent read cost. Read the file when a title looks
 relevant. `actions` lists callable functions; they are already in the `/exec` namespace,
-so call them directly. `list_site_actions()` shows everything loaded plus any file that
-failed to load.
+so call them directly instead of rebuilding the flow. `list_site_actions()` shows
+everything loaded plus any file that failed to load.
 
 ## Which one to write
 
 | What repeats | Where it goes | Why |
 |--------------|---------------|-----|
-| The **site**, with a different task each time | `<site>/*.md` | Notes generalize across tasks; a function that likes a video is useless when you need to comment |
+| The **site**, with a different task each time | `<site>/*.md` | Notes generalize across tasks; a function that performs one action is useless when you need a different one |
 | The **task**, run over and over | `<site>/*.py` | Executable, no re-derivation |
 
 Write notes by default. Promote to a function once the same task has come up **two or
@@ -90,37 +90,36 @@ to verify success. Keep files small and give them honest titles: **the title is 
 part surfaced on navigation**, so it is the index.
 
 ```markdown
-# Douyin — video page
+# Example — search results
 
-## Liking
+## Opening a result
 
-**Click the heart in the action bar; don't use the keyboard shortcut.**
-- Verify: heart fill changes from `currentColor` to `rgb(254,44,85)`
-- Don't diff the like count: `1.8万` is rounded, so +1 leaves the text unchanged and
-  every high-count video reports failure
-- ~~Shortcut `z`~~ stopped working 2026-08: the tooltip still advertises it, but nothing
-  happens while `activeElement` is `BODY`; it needs the player focused. Don't retry it.
+**Click the result card; don't navigate to the item URL directly.**
+- Verify: the URL gains `?item=<id>` and the detail panel renders
+- ~~Direct `/item/<id>` links~~ stopped working 2026-05: they render the logged-out page
+  with no interactive UI. Don't retry that route.
 
-## Opening a video
+## Reacting to an item
 
-**Click the card from search or profile pages; never navigate to the URL.**
-- A direct `/video/<id>` renders the logged-out page with no interactive UI
-- After clicking, the URL becomes `?modal_id=<id>` and the session is preserved
+**Click the button and check the icon state, not the counter.**
+- Verify: icon fill changes from the neutral colour to the active one
+- Don't diff a displayed counter to confirm success — rounded counts (`12.3k`) don't move
+  when you add one, so every popular item reports failure
 ```
 
 Two rules earned the hard way:
 
 **Always record how you verified it.** Dates are optional — you re-test on use anyway, and
 age is a weak proxy for truth. What actually saves time is knowing what success looks like:
-when a note fails, a verification signal tells you instantly whether the note is wrong or
+when a step fails, a verification signal tells you immediately whether the note is wrong or
 your execution is.
 
 **Mark dead facts, don't delete them.** Knowing a path is closed is worth as much as
-knowing one is open — without the note above, the next agent burns the same minutes
-rediscovering that `z` does nothing. This is the one case where a date earns its keep,
+knowing one is open — delete the line and the next agent burns the same minutes
+rediscovering that it leads nowhere. This is the one case where a date earns its keep,
 because it describes a change.
 
 ## What not to write
 
-Anything visible from the page itself. Task-specific parameters — the search term, the
-ID you happened to use. Anything you didn't verify.
+Anything visible from the page itself. Task-specific parameters — the search term, the ID
+you happened to use, your own account's numbers. Anything you didn't verify.
