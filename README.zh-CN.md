@@ -1,26 +1,36 @@
 <p align="center">
-  <img src="extension/icons/icon-128.png" width="80" alt="nekoro-browser">
+  <img src="https://raw.githubusercontent.com/zeshuochen/nekoro-browser/master/docs/banner.svg" width="820" alt="nekoro-browser — 浏览器自动化 CLI + MCP server">
 </p>
 
-<h1 align="center">nekoro-browser</h1>
-
 <p align="center">
-  <a href="https://github.com/zeshuochen/nekoro-browser/actions/workflows/tests.yml"><img src="https://github.com/zeshuochen/nekoro-browser/actions/workflows/tests.yml/badge.svg" alt="tests"></a>
-  <a href="https://pypi.org/project/nekoro-browser/"><img src="https://img.shields.io/pypi/v/nekoro-browser" alt="PyPI"></a>
-  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="Python 3.12+"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License"></a>
-  <a href="#mcp任何-mcp-客户端"><img src="https://img.shields.io/badge/MCP-supported-8A2BE2" alt="MCP supported"></a>
+  <a href="https://github.com/zeshuochen/nekoro-browser/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/zeshuochen/nekoro-browser/tests.yml?branch=master&style=flat-square&label=tests" alt="tests"></a>
+  <a href="https://pypi.org/project/nekoro-browser/"><img src="https://img.shields.io/pypi/v/nekoro-browser?style=flat-square" alt="PyPI"></a>
+  <a href="https://pypi.org/project/nekoro-browser/"><img src="https://img.shields.io/pypi/dm/nekoro-browser?style=flat-square&label=downloads" alt="PyPI downloads"></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/pypi/pyversions/nekoro-browser?style=flat-square" alt="Python versions"></a>
+  <a href="https://github.com/zeshuochen/nekoro-browser/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License"></a>
+  <a href="#mcp任何-mcp-客户端"><img src="https://img.shields.io/badge/MCP-supported-8A2BE2?style=flat-square" alt="MCP supported"></a>
 </p>
 
 <p align="center">
 轻量浏览器自动化 CLI + MCP server。通过 Chrome 扩展操控日常浏览器 — <b>保留登录态</b>，<b>零端口</b>，<b>零弹窗</b>。<br>
-<sub><a href="README.md">English</a></sub>
+<sub><a href="https://github.com/zeshuochen/nekoro-browser/blob/master/README.md">English</a></sub>
+</p>
+
+<p align="center">
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#示例">示例</a> ·
+  <a href="#mcp任何-mcp-客户端">MCP</a> ·
+  <a href="#api">API</a> ·
+  <a href="#架构">架构</a> ·
+  <a href="#自愈与站点知识">站点知识</a> ·
+  <a href="#已知限制">已知限制</a> ·
+  <a href="#参考手册">参考手册</a>
 </p>
 
 ```bash
 uv tool install nekoro-browser && nekoro-browser setup   # 装好，然后引导加载扩展
-nekoro-browser                                       # daemon：单独一个终端，保持打开
-echo "page_info()" | nekoro-browser                  # 直接驱动你已登录的 Chrome
+nekoro-browser                                           # daemon：单独一个终端，保持打开
+echo "page_info()" | nekoro-browser                      # 直接驱动你已登录的 Chrome
 ```
 
 ---
@@ -103,7 +113,9 @@ await click_index(12)
 PY
 ```
 
-全部 helper 见 [SKILL.md](SKILL.md)。
+全部 helper 见 [SKILL.md](https://github.com/zeshuochen/nekoro-browser/blob/master/SKILL.md)。
+
+---
 
 ## MCP（任何 MCP 客户端）
 
@@ -164,7 +176,38 @@ command = "nekoro-browser-mcp"
 以及：导航到你写过笔记或脚本的站点时，它们会**跟着工具结果一起送过来** ——
 见[自愈与站点知识](#自愈与站点知识)。
 
+## API
+
+| 分类 | 命令 |
+|------|------|
+| 导航 | `navigate(url)`、`new_tab(url)`、`list_tabs()`、`switch_tab(id)`、`close_tab(id)` |
+| 页面信息 | `page_info()`、`page_html()`、`page_text()`、`get_markdown()`、`state()` |
+| JavaScript | `js(code)`、`cdp(method, **p)`、`cdp_batch(*cmds)` |
+| 交互 | `click_selector(sel)`、`click_index(n)`、`click_at_xy(x,y)`、`type_text(t)`、`fill_input(sel,t)`、`press_key(k)`、`upload_file(sel,path)` |
+| 弹窗 | `dialog_off()`、`get_last_dialog()` |
+| 等待 | `wait_for_load()`、`wait_selector(sel)`、`wait_for_network_idle()`、`sleep(s)` |
+| 截图 | `capture_screenshot()`、`capture_screenshot("jpeg", 90)` |
+
+---
+
 ## 架构
+
+```mermaid
+flowchart TD
+    A["Chrome 标签页 — 你的 profile，你的登录态"]
+    B["扩展 background.js<br/>chrome.debugger / CDP"]
+    C["Python daemon<br/>127.0.0.1:28417"]
+    D["CLI<br/>nekoro-browser"]
+    E["MCP server<br/>nekoro-browser-mcp"]
+
+    A <-->|CDP| B
+    B <-->|"持久 WebSocket"| C
+    D -->|"HTTP /exec · 令牌鉴权"| C
+    E -->|"HTTP /exec · 令牌鉴权"| C
+```
+
+<details>
+<summary>同一张图的纯文本版（给不渲染 Mermaid 的地方，比如 PyPI）</summary>
 
 ```
 Chrome 扩展 (background.js) —— chrome.debugger / CDP
@@ -173,6 +216,8 @@ Python daemon (127.0.0.1:28417)
         ↕ HTTP /exec（令牌鉴权）
 CLI (nekoro-browser)  ·  MCP server (nekoro-browser-mcp)
 ```
+
+</details>
 
 `helpers.py`（47 个）→ CDP 薄封装，每个 ≤10 行，且都不认识任何具体网站。
 
@@ -202,7 +247,9 @@ Agent 遇到缺口时当场补、当场用——不重新编译，不重启 daem
 `notes` 只给标题——正文塞进每次导航，等于把一次性的写入成本变成永久的读取成本。
 `actions` 列的是已经可以直接调的函数，agent 调它就行，不必重新拼一遍流程。
 `list_site_actions()` 可查全部已载入的函数，含载入失败的文件。什么该记、什么不该记，
-见 [`domain-skills/README.md`](domain-skills/README.md)。
+见 [`domain-skills/README.md`](https://github.com/zeshuochen/nekoro-browser/blob/master/domain-skills/README.md)。
+
+---
 
 ## 平台支持
 
@@ -218,8 +265,12 @@ Agent 遇到缺口时当场补、当场用——不重新编译，不重启 daem
 - **同时只驱动一个「活动标签」。** 多标签可以列举和切换（`list_tabs` / `switch_tab`），但命令总是发往当前活动标签，不做并行会话。
 - **MCP server 串行处理请求。** 一次 `wait_selector(timeout=90)` 期间，同一连接上的其他请求（含 `ping`）会排队等它做完。要并发就开多个客户端连接。
 
+---
+
+## 参考手册
+
 <details>
-<summary><b>参考手册</b> —— CLI 参数、配置、故障排查、安全</summary>
+<summary><b>CLI 参数、配置、故障排查、安全</b> —— 点开展开</summary>
 
 ### CLI
 
@@ -271,12 +322,14 @@ daemon 监听 `127.0.0.1`，`/exec` 会执行任意 Python，故传输层加了�
 
 </details>
 
+---
+
 ## 反馈
 
 用着有问题、或者想要的 helper 没有，开个 [issue](https://github.com/zeshuochen/nekoro-browser/issues)。
 提 bug 时带上 `nekoro-browser --doctor` 的输出、Chrome 版本和操作系统，能省一轮来回。
 
-PR 欢迎。改动前先跑一遍测试：`for f in tests/test_*.py; do python "$f"; done`（三平台 CI 也会跑）。
+PR 欢迎。改动前先跑一遍测试：`for f in tests/test_*.py; do uv run python "$f"; done`（三平台 CI 也会跑）。
 
 ---
 

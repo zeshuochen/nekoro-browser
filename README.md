@@ -1,26 +1,36 @@
 <p align="center">
-  <img src="extension/icons/icon-128.png" width="80" alt="nekoro-browser">
+  <img src="https://raw.githubusercontent.com/zeshuochen/nekoro-browser/master/docs/banner.svg" width="820" alt="nekoro-browser — browser automation CLI + MCP server">
 </p>
 
-<h1 align="center">nekoro-browser</h1>
-
 <p align="center">
-  <a href="https://github.com/zeshuochen/nekoro-browser/actions/workflows/tests.yml"><img src="https://github.com/zeshuochen/nekoro-browser/actions/workflows/tests.yml/badge.svg" alt="tests"></a>
-  <a href="https://pypi.org/project/nekoro-browser/"><img src="https://img.shields.io/pypi/v/nekoro-browser" alt="PyPI"></a>
-  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="Python 3.12+"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License"></a>
-  <a href="#mcp-any-mcp-client"><img src="https://img.shields.io/badge/MCP-supported-8A2BE2" alt="MCP supported"></a>
+  <a href="https://github.com/zeshuochen/nekoro-browser/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/zeshuochen/nekoro-browser/tests.yml?branch=master&style=flat-square&label=tests" alt="tests"></a>
+  <a href="https://pypi.org/project/nekoro-browser/"><img src="https://img.shields.io/pypi/v/nekoro-browser?style=flat-square" alt="PyPI"></a>
+  <a href="https://pypi.org/project/nekoro-browser/"><img src="https://img.shields.io/pypi/dm/nekoro-browser?style=flat-square&label=downloads" alt="PyPI downloads"></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/pypi/pyversions/nekoro-browser?style=flat-square" alt="Python versions"></a>
+  <a href="https://github.com/zeshuochen/nekoro-browser/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License"></a>
+  <a href="#mcp-any-mcp-client"><img src="https://img.shields.io/badge/MCP-supported-8A2BE2?style=flat-square" alt="MCP supported"></a>
 </p>
 
 <p align="center">
 Lightweight browser automation CLI + MCP server. Drives your everyday Chrome through an extension — <b>keeps your login state</b>, <b>no debug port</b>, <b>no banners</b>.<br>
-<sub><a href="README.zh-CN.md">中文</a></sub>
+<sub><a href="https://github.com/zeshuochen/nekoro-browser/blob/master/README.zh-CN.md">中文</a></sub>
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick Start</a> ·
+  <a href="#examples">Examples</a> ·
+  <a href="#mcp-any-mcp-client">MCP</a> ·
+  <a href="#api">API</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="#self-healing-and-site-knowledge">Site Knowledge</a> ·
+  <a href="#known-limitations">Limitations</a> ·
+  <a href="#reference">Reference</a>
 </p>
 
 ```bash
 uv tool install nekoro-browser && nekoro-browser setup   # install, then load the extension
-nekoro-browser                                       # daemon — its own terminal, leave open
-echo "page_info()" | nekoro-browser                  # drive the Chrome you're already logged into
+nekoro-browser                                           # daemon — its own terminal, leave open
+echo "page_info()" | nekoro-browser                      # drive the Chrome you're logged into
 ```
 
 ---
@@ -107,7 +117,9 @@ await click_index(12)
 PY
 ```
 
-All helpers are documented in [SKILL.md](SKILL.md).
+All helpers are documented in [SKILL.md](https://github.com/zeshuochen/nekoro-browser/blob/master/SKILL.md).
+
+---
 
 ## MCP (any MCP client)
 
@@ -183,7 +195,26 @@ ride along in the tool result — see [Self-Healing and Site Knowledge](#self-he
 | Waiting | `wait_for_load()`, `wait_selector(sel)`, `wait_for_network_idle()`, `sleep(s)` |
 | Screenshots | `capture_screenshot()`, `capture_screenshot("jpeg", 90)` |
 
+---
+
 ## Architecture
+
+```mermaid
+flowchart TD
+    A["Chrome tab — your profile, your logins"]
+    B["Extension background.js<br/>chrome.debugger / CDP"]
+    C["Python daemon<br/>127.0.0.1:28417"]
+    D["CLI<br/>nekoro-browser"]
+    E["MCP server<br/>nekoro-browser-mcp"]
+
+    A <-->|CDP| B
+    B <-->|persistent WebSocket| C
+    D -->|"HTTP /exec · token auth"| C
+    E -->|"HTTP /exec · token auth"| C
+```
+
+<details>
+<summary>Same diagram as plain text (for renderers without Mermaid, e.g. PyPI)</summary>
 
 ```
 Chrome extension (background.js) —— chrome.debugger / CDP
@@ -192,6 +223,8 @@ Python daemon (127.0.0.1:28417)
         ↕ HTTP /exec (token auth)
 CLI (nekoro-browser)  ·  MCP server (nekoro-browser-mcp)
 ```
+
+</details>
 
 `helpers.py` (47 thin wrappers) → CDP commands, each ≤10 lines, none of them aware of any particular website.
 
@@ -224,7 +257,9 @@ The point is that this material **finds the agent instead of waiting to be disco
 permanent read cost. `actions` lists functions that are already callable, so the agent runs
 one instead of rebuilding the flow. `list_site_actions()` shows everything loaded, including
 files that failed to load. Conventions for what to record — and what not to — are in
-[`domain-skills/README.md`](domain-skills/README.md).
+[`domain-skills/README.md`](https://github.com/zeshuochen/nekoro-browser/blob/master/domain-skills/README.md).
+
+---
 
 ## Platform Support
 
@@ -240,8 +275,12 @@ files that failed to load. Conventions for what to record — and what not to �
 - **One active tab at a time.** Tabs can be listed and switched (`list_tabs` / `switch_tab`), but commands always go to the current active tab — there are no parallel sessions.
 - **The MCP server handles requests serially.** During a `wait_selector(timeout=90)` every other request on that connection (including `ping`) queues behind it. Open separate client connections if you need concurrency.
 
+---
+
+## Reference
+
 <details>
-<summary><b>Reference</b> — CLI flags, configuration, troubleshooting, security</summary>
+<summary><b>CLI flags, configuration, troubleshooting, security</b> — click to expand</summary>
 
 ### CLI
 
@@ -292,6 +331,8 @@ The daemon listens on `127.0.0.1` and `/exec` runs arbitrary Python, so the tran
 Same-user local processes can read the token file — that boundary matches the OS user account, as with browser-harness's `chmod 600`.
 
 </details>
+
+---
 
 ## Feedback
 

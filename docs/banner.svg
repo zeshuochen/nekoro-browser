@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 240" width="960" height="240" role="img" aria-label="nekoro-browser — browser automation CLI + MCP server">
+  <defs>
+    <linearGradient id="card" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#161a2e"/>
+      <stop offset="100%" stop-color="#0f1220"/>
+    </linearGradient>
+    <clipPath id="mark">
+      <rect x="60" y="52" width="136" height="136" rx="32"/>
+    </clipPath>
+  </defs>
+
+  <rect width="960" height="240" rx="26" fill="url(#card)"/>
+  <rect x="1" y="1" width="958" height="238" rx="25" fill="none" stroke="#2a3350" stroke-width="2"/>
+
+  <!-- logo mark: cat ears + terminal window, scaled from extension/icons/logo.svg -->
+  <g clip-path="url(#mark)">
+    <rect x="60" y="52" width="136" height="136" fill="#1a1a2e"/>
+    <g transform="translate(60,52) scale(0.265625)">
+      <polygon points="80,180 160,40 200,160" fill="#3b82f6" opacity="0.9"/>
+      <polygon points="312,160 352,40 432,180" fill="#3b82f6" opacity="0.9"/>
+      <polygon points="110,170 160,80 185,165" fill="#1a1a2e"/>
+      <polygon points="327,165 352,80 402,170" fill="#1a1a2e"/>
+      <rect x="120" y="140" width="272" height="260" rx="20" fill="#16213e" stroke="#3b82f6" stroke-width="10"/>
+      <circle cx="150" cy="175" r="10" fill="#ef4444"/>
+      <circle cx="180" cy="175" r="10" fill="#f59e0b"/>
+      <circle cx="210" cy="175" r="10" fill="#22c55e"/>
+      <text x="150" y="250" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="76" font-weight="bold" fill="#3b82f6">&gt;_</text>
+      <polygon points="245,378 256,395 267,378" fill="#f472b6"/>
+    </g>
+  </g>
+
+  <!-- wordmark -->
+  <text x="232" y="106" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="44" font-weight="700" fill="#e8ecf8">nekoro-browser</text>
+  <text x="234" y="142" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif" font-size="18" fill="#94a3b8">Browser automation CLI + MCP server for the Chrome you already use</text>
+
+  <!-- pill row -->
+  <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif" font-size="14">
+    <rect x="233" y="166" width="138" height="30" rx="15" fill="#1b2440" stroke="#2f3b5e"/>
+    <text x="302" y="186" fill="#93b4f5" text-anchor="middle">keeps your login</text>
+
+    <rect x="381" y="166" width="128" height="30" rx="15" fill="#1b2440" stroke="#2f3b5e"/>
+    <text x="445" y="186" fill="#93b4f5" text-anchor="middle">no debug port</text>
+
+    <rect x="519" y="166" width="112" height="30" rx="15" fill="#1b2440" stroke="#2f3b5e"/>
+    <text x="575" y="186" fill="#93b4f5" text-anchor="middle">no banners</text>
+
+    <rect x="641" y="166" width="126" height="30" rx="15" fill="#1b2440" stroke="#2f3b5e"/>
+    <text x="704" y="186" fill="#93b4f5" text-anchor="middle">46 MCP tools</text>
+  </g>
+
+  <!-- prompt accent -->
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15">
+    <text x="800" y="112" fill="#3b82f6">$</text>
+    <text x="816" y="112" fill="#64748b">uv tool install</text>
+    <text x="816" y="134" fill="#94a3b8">nekoro-browser</text>
+    <rect x="816" y="144" width="9" height="4" fill="#3b82f6"/>
+  </g>
+</svg>
