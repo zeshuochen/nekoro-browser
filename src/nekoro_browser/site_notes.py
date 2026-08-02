@@ -60,24 +60,92 @@ def _title_of(md: Path) -> str:
     return md.stem
 
 
+def _dirs_for(url: str):
+    """URL 命中的站点目录。目录名出现在 hostname 里即算命中。"""
+    host = _hostname(url)
+    root = skills_dir()
+    if not host or root is None:
+        return []
+    return [d for d in sorted(root.iterdir())
+            if d.is_dir() and not d.name.startswith(".") and d.name.lower() in host]
+
+
+def _signatures(py: Path) -> list[str]:
+    """用 ast 读函数签名——不 import，避免为了列个清单就执行用户代码。"""
+    import ast
+    out = []
+    try:
+        tree = ast.parse(py.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, SyntaxError):
+        return out
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if node.name.startswith("_"):
+            continue
+        args = [a.arg for a in node.args.args if a.arg != "daemon"]
+        doc = (ast.get_docstring(node) or "").split("\n")[0].strip()
+        sig = f"{node.name}({', '.join(args)})"
+        out.append(f"{sig} — {doc}" if doc else sig)
+    return out
+
+
+def actions_for(url: str) -> list[str]:
+    """该站点已固化的函数清单。路由用：agent 看到就该直接调，而不是重新推导一遍。"""
+    try:
+        out = []
+        for d in _dirs_for(url):
+            for py in sorted(d.glob("*.py")):
+                for sig in _signatures(py):
+                    out.append(sig)
+                    if len(out) >= MAX_FILES * 2:
+                        return out
+        return out
+    except Exception:
+        return []
+
+
+def load_functions():
+    """把所有站点目录下的 *.py 载入，返回 ({name: func}, [错误])。
+
+    每次 /exec 都重新载入，所以改完立即生效（与 agent_helpers 同样的语义）。
+    单个文件出错只跳过它并记下原因——一个写坏的站点脚本不能让整个 exec 挂掉，
+    但也不能静默吞掉，否则用户会对着"函数怎么不存在"抓瞎。
+    """
+    import importlib.util
+    ns, errors = {}, []
+    root = skills_dir()
+    if root is None:
+        return ns, errors
+    try:
+        dirs = [d for d in sorted(root.iterdir()) if d.is_dir() and not d.name.startswith(".")]
+    except OSError:
+        return ns, errors
+    for d in dirs:
+        for py in sorted(d.glob("*.py")):
+            mod_name = f"_nekoro_site_{d.name}_{py.stem}".replace("-", "_").replace(".", "_")
+            try:
+                spec = importlib.util.spec_from_file_location(mod_name, py)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+            except Exception as e:
+                errors.append(f"{d.name}/{py.name}: {type(e).__name__}: {e}")
+                continue
+            for name, obj in vars(mod).items():
+                if not name.startswith("_") and callable(obj) \
+                        and getattr(obj, "__module__", None) == mod_name:
+                    ns[name] = obj
+    return ns, errors
+
+
 def notes_for(url: str) -> list[str]:
     """返回该 URL 命中的笔记清单，形如 `douyin/creator-stats.md — 抖音创作者中心`。
 
     任何异常都吞掉返回空列表：笔记查询失败绝不能连累导航本身。
     """
     try:
-        host = _hostname(url)
-        if not host:
-            return []
-        root = skills_dir()
-        if root is None:
-            return []
         hits = []
-        for sub in sorted(root.iterdir()):
-            if not sub.is_dir() or sub.name.startswith("."):
-                continue
-            if sub.name.lower() not in host:
-                continue
+        for sub in _dirs_for(url):
             for md in sorted(sub.glob("*.md")):
                 hits.append(f"{sub.name}/{md.name} — {_title_of(md)}")
                 if len(hits) >= MAX_FILES:
@@ -97,6 +165,10 @@ def attach(result: dict, url: str) -> dict:
         notes = notes_for(url)
         if notes:
             result["notes"] = notes
+        acts = actions_for(url)
+        if acts:
+            # 路由信号：这个站点已经有现成函数了，别再从零推导
+            result["actions"] = acts
     except Exception:
         pass
     return result

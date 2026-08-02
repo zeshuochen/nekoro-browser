@@ -746,6 +746,21 @@ async def get_last_dialog(daemon) -> dict:
 # Self-heal
 # ═══════════════════════════════════════════════════════════════════════════════
 
+async def list_site_actions(daemon) -> dict:
+    """list_site_actions() → 已固化的站点函数 + 载入失败的文件。
+
+    路由用：想知道"这事有没有现成的"就查这里。载入错误必须能看见——
+    否则用户对着"我明明写了函数怎么不存在"抓瞎。
+    """
+    try:
+        ns, errors = site_notes.load_functions()
+        root = site_notes.skills_dir()
+        return {"ok": True, "root": str(root) if root else None,
+                "actions": sorted(ns), "errors": errors}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 async def reload_agent_helpers(daemon) -> dict:
     """reload_agent_helpers() — 重新加载 agent_helpers.py，无需重启 daemon。"""
     import importlib

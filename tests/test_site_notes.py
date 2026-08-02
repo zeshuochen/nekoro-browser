@@ -104,6 +104,55 @@ def test_notes_lookup_failure_does_not_break_navigation():
         site_notes.notes_for = real
 
 
+# ── 站点脚本：载入、路由信号、错误可见性 ─────────────────────────────────
+
+_ACTION_PY = '''
+async def douyin_like(daemon, username, video_index=0):
+    """搜索用户并给第 N 个视频点赞。"""
+    return {"ok": True, "who": username}
+
+def _private(daemon):
+    return "should not be exported"
+'''
+
+
+def test_actions_are_listed_without_importing():
+    """签名清单走 ast 解析——列个目录不该执行用户代码。"""
+    with _skills({"douyin/actions.py": "raise RuntimeError('import 就炸')\n" + _ACTION_PY}):
+        acts = site_notes.actions_for("https://www.douyin.com/")
+        assert acts == ["douyin_like(username, video_index) — 搜索用户并给第 N 个视频点赞。"], acts
+
+
+def test_navigate_surfaces_actions_for_routing():
+    async def run():
+        d = FakeDaemon()
+        with _skills({"douyin/actions.py": _ACTION_PY, "douyin/notes.md": "# 抖音要点"}):
+            return await helpers.navigate(d, "https://www.douyin.com/x")
+
+    r = asyncio.run(run())
+    assert r["notes"] == ["douyin/notes.md — 抖音要点"]
+    assert r["actions"] and r["actions"][0].startswith("douyin_like(")
+
+
+def test_load_functions_skips_private_and_reports_broken_file():
+    with _skills({"douyin/actions.py": _ACTION_PY,
+                  "broken/bad.py": "def oops(:\n"}):
+        ns, errors = site_notes.load_functions()
+        assert "douyin_like" in ns
+        assert "_private" not in ns                    # 下划线开头不导出
+        assert len(errors) == 1 and "broken/bad.py" in errors[0], errors
+        # 一个坏文件不能连累其他站点的函数
+        assert callable(ns["douyin_like"])
+
+
+def test_load_functions_ignores_imported_names():
+    """`from x import y` 带进来的名字不该被当成站点函数导出。"""
+    with _skills({"douyin/a.py": "import json\nfrom pathlib import Path\n"
+                                 "async def real(daemon):\n    return 1\n"}):
+        ns, _ = site_notes.load_functions()
+        assert set(ns) == {"real"}, set(ns)
+
+
 if __name__ == "__main__":
     test_matches_subdomains_and_reports_title()
     test_no_match_returns_empty()
@@ -111,4 +160,8 @@ if __name__ == "__main__":
     test_cap_on_number_of_files()
     test_navigate_attaches_notes_only_on_hit()
     test_notes_lookup_failure_does_not_break_navigation()
+    test_actions_are_listed_without_importing()
+    test_navigate_surfaces_actions_for_routing()
+    test_load_functions_skips_private_and_reports_broken_file()
+    test_load_functions_ignores_imported_names()
     print("ALL OK")

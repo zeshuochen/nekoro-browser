@@ -102,6 +102,19 @@ class Daemon:
             # 不吃 daemon，硬 partial 上去调用时会 TypeError: takes 0 positional
             # arguments but 1 was given。
             v[name] = partial(fn, self) if asyncio.iscoroutinefunction(fn) else fn
+        # 用户目录里按站点固化的函数（<skills 根>/<site>/*.py）。放在 agent_helpers
+        # 之前：agent_helpers 是草稿纸，草稿应当能盖过已固化的版本。
+        # 同名不覆盖 helpers.py 的核心函数——被站点脚本悄悄改掉 click_selector 的
+        # 语义是最难查的一类 bug。
+        from . import site_notes
+        site_ns, site_errors = site_notes.load_functions()
+        self._site_errors = site_errors
+        core = set(h.list_helpers())
+        for name, obj in site_ns.items():
+            if name in core:
+                self._site_errors.append(f"{name}: 与核心 helper 同名，已跳过")
+                continue
+            v[name] = partial(obj, self) if asyncio.iscoroutinefunction(obj) else obj
         for name, obj in vars(ah).items():
             if not name.startswith("_") and callable(obj):
                 v[name] = partial(obj, self)

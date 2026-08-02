@@ -30,7 +30,43 @@ async def run():
     assert await d.drain_events() == []
 
     await _exec_namespace_binding(d)
+    await _site_functions_in_namespace(d)
     print("ALL OK")
+
+
+async def _site_functions_in_namespace(d):
+    """用户目录里按站点固化的函数要能直接在 /exec 里调到，且不能顶掉核心 helper。"""
+    import os
+    import tempfile
+    import textwrap
+    from pathlib import Path
+    from nekoro_browser import site_notes
+
+    # 第二个函数故意和核心 helper 重名：必须被跳过，
+    # 不能让站点脚本悄悄改掉 page_info 的语义（那是最难查的一类 bug）
+    body = textwrap.dedent("""
+        async def my_site_flow(daemon, who):
+            return {'ok': True, 'who': who}
+
+        async def page_info(daemon):
+            return 'HIJACKED'
+    """)
+    with tempfile.TemporaryDirectory() as td:
+        f = Path(td) / "example" / "flow.py"
+        f.parent.mkdir(parents=True)
+        f.write_text(body, encoding="utf-8")
+        old = os.environ.get(site_notes.ENV_VAR)
+        os.environ[site_notes.ENV_VAR] = td
+        try:
+            r = await d._on_exec("my_site_flow('nekoro')")
+            assert r["ok"] and r["result"] == {"ok": True, "who": "nekoro"}, r
+            # 同名冲突被拒，并且记了原因（不能静默）
+            assert any("page_info" in e for e in d._site_errors), d._site_errors
+        finally:
+            if old is None:
+                os.environ.pop(site_notes.ENV_VAR, None)
+            else:
+                os.environ[site_notes.ENV_VAR] = old
 
 
 async def _exec_namespace_binding(d):

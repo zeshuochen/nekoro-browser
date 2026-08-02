@@ -180,17 +180,55 @@ echo "await page_info()" | nekoro-browser
 
 ## 领域技能 (domain-skills)
 
-`domain-skills/<site>/*.md` 放站点知识（页面结构、选择器、坑）。**仓库里默认是空的**——
-每个人自动化的站点不同，自己按需要写。遇到特定站点先查一眼，别重新踩已知的坑：
+站点知识和固化流程都放 `<skills 根>/<site>/`（`NEKORO_DOMAIN_SKILLS` 指定，
+默认回落到仓库内的 `domain-skills/`）。**仓库里默认是空的** —— 每个人自动化的站点不同。
 
-```bash
-ls domain-skills/
+```
+<skills 根>/douyin/
+    video-interaction.md    ← 知识：navigate 时自动送标题
+    actions.py              ← 流程：每次 /exec 自动载入命名空间
 ```
 
-只放 Markdown 文档，不放可执行代码：exec 命名空间只合并 `helpers.py` 和
-`agent_helpers.py`，这个目录不会被导入。需要站点工作流就照文档自己写，
-写完贴进 `src/nekoro_browser/agent_helpers.py`（第一个参数是 `daemon`），
-下一次 `/exec` 自动 reload 即可调用。写法见 `domain-skills/README.md`。
+### 路由：先看有没有现成的，再决定怎么做
+
+`navigate()` / `new_tab()` 命中站点时，返回值里会多两个字段：
+
+```python
+{'ok': True, 'loaded': True,
+ 'notes':   ['douyin/video-interaction.md — 抖音 — 视频页交互'],
+ 'actions': ['douyin_like(username, video_index) — 搜索用户并给第一个视频点赞']}
+```
+
+**看到 `actions` 就直接调那个函数**（已在命名空间里），别从零推导一遍。
+**看到 `notes` 里有相关标题就先读那份文件**再动手 —— `notes` 只给标题不给正文，
+按需读，避免每次导航都付一遍全文的 token。`list_site_actions()` 可查全部已载入
+函数及载入失败的文件。
+
+### 写哪儿
+
+| 重复的是 | 去处 |
+|---|---|
+| 同一个**站点**，任务每次不同 | `<site>/*.md` 知识笔记 |
+| 同一个**任务**反复跑 | `<site>/*.py` 函数（第一个参数 `daemon`，改完立即生效） |
+
+默认写笔记；同一任务出现 2~3 次再固化成函数，且必须写明验证信号。
+与核心 helper 同名的站点函数会被跳过（不静默替换），冲突原因见 `list_site_actions()`。
+
+### 什么时候提议沉淀
+
+**只在这次运行确实学到东西时才开口**，至少命中一条：试了 ≥2 次才点中、
+`wait_for_load()` 不够要额外等、直连失败改点击、发现快捷键、
+**既有笔记被证伪**（最高优先级）。一把过就什么都别提 —— 那种运行没有产生
+"哪一步是关键"的证据，写下来的必然是猜测。
+
+开口时**先把草稿写好**，让用户只需回答 y/n，别问"要不要沉淀经验"。
+
+### 格式
+
+结论先行；**必须写验证方式**（怎么算成功）；文件拆小、标题写实（标题是 navigate
+时唯一被送出的部分）；**失效的条目标注失效、不要删**（知道哪条路走不通同样值钱，
+这类条目值得带上日期，因为它描述的是一个变化）。日期不强制 —— 反正每次都会先试，
+年龄是有效性的弱代理，验证方式才是。详见 `domain-skills/README.md`。
 
 ## 自愈机制
 
