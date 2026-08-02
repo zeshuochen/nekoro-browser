@@ -104,6 +104,20 @@ def actions_for(url: str) -> list[str]:
         return []
 
 
+def _inject_helpers(mod) -> None:
+    """把核心 helper 塞进站点脚本的全局命名空间。
+
+    站点脚本是独立模块，默认拿不到 `navigate` / `page_info` 这些——但约定和
+    agent_helpers.py 的示例都写着直接调（`await navigate(daemon, url)`），
+    不注入就是 NameError。在 exec_module **之前**注入，模块顶层代码也能用；
+    脚本自己定义的同名函数会自然覆盖注入值。
+    注入进来的名字不会被当成站点函数导出（导出按 __module__ 过滤）。
+    """
+    from . import helpers as h
+    for name in h.list_helpers():
+        mod.__dict__.setdefault(name, getattr(h, name))
+
+
 def load_functions():
     """把所有站点目录下的 *.py 载入，返回 ({name: func}, [错误])。
 
@@ -126,6 +140,7 @@ def load_functions():
             try:
                 spec = importlib.util.spec_from_file_location(mod_name, py)
                 mod = importlib.util.module_from_spec(spec)
+                _inject_helpers(mod)   # 让站点脚本能直接写 await navigate(daemon, url)
                 spec.loader.exec_module(mod)
             except Exception as e:
                 errors.append(f"{d.name}/{py.name}: {type(e).__name__}: {e}")

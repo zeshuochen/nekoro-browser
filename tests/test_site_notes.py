@@ -10,6 +10,7 @@ import contextlib
 import os
 import sys
 import tempfile
+import textwrap
 from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -153,6 +154,43 @@ def test_load_functions_ignores_imported_names():
         assert set(ns) == {"real"}, set(ns)
 
 
+def test_site_script_can_call_core_helpers():
+    """站点脚本是独立模块，默认拿不到 navigate/page_info——约定却写着直接调。
+    不注入就是 NameError（第一次真用它就撞上了）。"""
+    src = textwrap.dedent("""
+        async def go(daemon):
+            return await navigate(daemon, 'https://www.example.com/')
+    """)
+    with _skills({"example/a.py": src}):
+        ns, errors = site_notes.load_functions()
+        assert errors == [], errors
+        assert "go" in ns
+        # navigate 必须在模块全局里，且注入的名字不能被当成站点函数导出
+        assert "navigate" in ns["go"].__globals__
+        assert "navigate" not in ns
+
+        async def run():
+            return await ns["go"](FakeDaemon())
+        assert asyncio.run(run())["ok"]
+
+
+def test_site_script_own_definition_wins_over_injected():
+    """脚本自己定义了同名函数时，用它自己的，不被注入值盖住。"""
+    src = textwrap.dedent("""
+        async def navigate(daemon, url, **kw):
+            return {'ok': True, 'mine': True}
+
+        async def go(daemon):
+            return await navigate(daemon, 'x')
+    """)
+    with _skills({"example/b.py": src}):
+        ns, _ = site_notes.load_functions()
+
+        async def run():
+            return await ns["go"](FakeDaemon())
+        assert asyncio.run(run()) == {"ok": True, "mine": True}
+
+
 if __name__ == "__main__":
     test_matches_subdomains_and_reports_title()
     test_no_match_returns_empty()
@@ -164,4 +202,6 @@ if __name__ == "__main__":
     test_navigate_surfaces_actions_for_routing()
     test_load_functions_skips_private_and_reports_broken_file()
     test_load_functions_ignores_imported_names()
+    test_site_script_can_call_core_helpers()
+    test_site_script_own_definition_wins_over_injected()
     print("ALL OK")

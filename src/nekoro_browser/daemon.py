@@ -94,6 +94,10 @@ class Daemon:
         import ast as _ast
         from . import helpers as h
         from . import agent_helpers as ah
+        # 注入核心 helper 后再 reload：agent_helpers 的文件头示例写的就是
+        # `await js(daemon, ...)` 这种直接调用，不注入就是 NameError。
+        for _n in h.list_helpers():
+            ah.__dict__.setdefault(_n, getattr(h, _n))
         importlib.reload(ah)  # 每次 exec 拿最新 agent_helpers
         v = {"daemon": self, "tab": self._tab_id}
         for name in h.list_helpers():
