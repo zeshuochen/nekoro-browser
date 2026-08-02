@@ -9,7 +9,7 @@
   <a href="https://pypi.org/project/nekoro-browser/"><img src="https://img.shields.io/pypi/v/nekoro-browser" alt="PyPI"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="Python 3.12+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License"></a>
-  <a href="#mcp给-cursor--cline--claude-desktop-用"><img src="https://img.shields.io/badge/MCP-supported-8A2BE2" alt="MCP supported"></a>
+  <a href="#mcp任何-mcp-客户端"><img src="https://img.shields.io/badge/MCP-supported-8A2BE2" alt="MCP supported"></a>
 </p>
 
 <p align="center">
@@ -105,55 +105,58 @@ PY
 
 全部 helper 见 [SKILL.md](SKILL.md)。
 
-## MCP（Cursor / Cline / Claude Desktop / Claude Code）
+## MCP（任何 MCP 客户端）
 
 `helpers.py` 里的函数会被反射成 MCP 工具（当前 46 个），不用写一行胶水代码。
 
-**先说前提**：daemon 必须跑着（`nekoro-browser`，单独一个终端）。MCP server 只是个转发层，
-它跟 daemon 之间走的是和 `echo ... | nekoro-browser` 同一条带鉴权的路径，
+**前提**：daemon 必须跑着（`nekoro-browser`，单独一个终端）。MCP server 只是转发层，
+它跟 daemon 走的是和 `echo ... | nekoro-browser` 同一条带鉴权的路径，
 真正握着 Chrome 连接的是 daemon。
 
-**然后把 server 加进你的客户端。**
+要注册的命令始终是 `nekoro-browser-mcp`，**不同的只是配置格式**：
 
-<table>
-<tr><th>客户端</th><th>配置文件在哪</th></tr>
-<tr><td>Claude Desktop</td><td>设置 → Developer → <b>Edit Config</b>，或直接改：<br>
-macOS <code>~/Library/Application Support/Claude/claude_desktop_config.json</code><br>
-Windows <code>%APPDATA%\Claude\claude_desktop_config.json</code></td></tr>
-<tr><td>Cursor</td><td><code>~/.cursor/mcp.json</code>（全局）或 <code>.cursor/mcp.json</code>（单个项目）</td></tr>
-<tr><td>Cline</td><td>MCP Servers 面板 → <b>Configure MCP Servers</b></td></tr>
-<tr><td>Claude Code</td><td><code>claude mcp add nekoro-browser -- nekoro-browser-mcp</code></td></tr>
-</table>
+**Claude Code**
 
-```json
-{
-  "mcpServers": {
-    "nekoro-browser": {
-      "command": "nekoro-browser-mcp"
-    }
-  }
-}
+```bash
+claude mcp add nekoro-browser -- nekoro-browser-mcp
 ```
 
-不想预先安装？`uvx` 可以按需拉取并运行，相当于 Node 生态里的 `npx -y`：
+**Claude Desktop**（设置 → Developer → Edit Config）· **Cursor**（`~/.cursor/mcp.json`，
+或 `.cursor/mcp.json` 只对单个项目）· **Cline**（MCP Servers → Configure MCP Servers）
 
 ```json
-{
-  "mcpServers": {
-    "nekoro-browser": {
-      "command": "uvx",
-      "args": ["--from", "nekoro-browser", "nekoro-browser-mcp"]
-    }
-  }
-}
+{ "mcpServers": { "nekoro-browser": { "command": "nekoro-browser-mcp" } } }
 ```
 
-但它只免掉了「装 MCP server」这一步 —— daemon 仍然要装、要跑着，所以在自己机器上
-一般还是 `uv tool install` 更省事。
+<sub>Claude Desktop 配置文件：macOS <code>~/Library/Application Support/Claude/claude_desktop_config.json</code> · Windows <code>%APPDATA%\Claude\claude_desktop_config.json</code></sub>
+
+**opencode**（`opencode.json`）—— 注意键叫 `mcp`，且 `command` 是**数组**
+
+```json
+{ "mcp": { "nekoro-browser": { "type": "local", "command": ["nekoro-browser-mcp"], "enabled": true } } }
+```
+
+**Codex**（`~/.codex/config.toml`，或 `codex mcp add nekoro-browser -- nekoro-browser-mcp`）
+
+```toml
+[mcp_servers.nekoro-browser]
+command = "nekoro-browser-mcp"
+```
+
+**VS Code / Copilot**（`.vscode/mcp.json`，或命令面板 `MCP: Open User Configuration`）
+—— 键是 `servers`，不是 `mcpServers`
+
+```json
+{ "servers": { "nekoro-browser": { "command": "nekoro-browser-mcp" } } }
+```
+
+不想预先安装？把命令换成 `uvx` 即可按需拉起，相当于 `npx -y`：
+`"command": "uvx", "args": ["--from", "nekoro-browser", "nekoro-browser-mcp"]`。
+但它只免掉「装 MCP server」这一步，daemon 仍然要装、要跑着。
 
 配完重启客户端。工具没出现的话，先跑 `nekoro-browser --doctor`
-（daemon 死了和 MCP 配错了，表现一模一样），再看客户端的 MCP 日志 ——
-Claude Desktop 放在 `~/Library/Logs/Claude`（macOS）或 `%APPDATA%\Claude\logs`（Windows）。
+（daemon 死了和配错了表现一模一样），再看客户端的 MCP 日志
+（Claude Desktop 在 macOS 是 `~/Library/Logs/Claude`，Windows 是 `%APPDATA%\Claude\logs`）。
 
 **除了工具清单，你还会得到**：两个逃生口 —— `cdp`（原始 CDP 命令）和 `exec_python`
 （在 daemon 命名空间里跑任意 Python，多步流程一次往返）。截图以 image content 返回，

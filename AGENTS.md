@@ -23,7 +23,8 @@ Two halves, one wire (HTTP + WebSocket, same port):
     (≤10 line) wrapper over one CDP capability
   - `cli.py` — the `nekoro-browser` command
   - `mcp_server.py` — the `nekoro-browser-mcp` command: stdio JSON-RPC MCP server for
-    clients that don't read skill files (Cursor / Cline / Claude Desktop). Tools are
+    clients that don't read skill files (Claude Desktop, Cursor, opencode, Codex,
+    VS Code/Copilot, …). Tools are
     reflected off `helpers.py` via `inspect.signature`, then forwarded to the same
     daemon `/exec` endpoint the CLI uses — no second execution path to keep in sync.
 

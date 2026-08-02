@@ -9,7 +9,7 @@
   <a href="https://pypi.org/project/nekoro-browser/"><img src="https://img.shields.io/pypi/v/nekoro-browser" alt="PyPI"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="Python 3.12+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License"></a>
-  <a href="#mcp-cursor--cline--claude-desktop"><img src="https://img.shields.io/badge/MCP-supported-8A2BE2" alt="MCP supported"></a>
+  <a href="#mcp-any-mcp-client"><img src="https://img.shields.io/badge/MCP-supported-8A2BE2" alt="MCP supported"></a>
 </p>
 
 <p align="center">
@@ -109,57 +109,60 @@ PY
 
 All helpers are documented in [SKILL.md](SKILL.md).
 
-## MCP (Cursor / Cline / Claude Desktop / Claude Code)
+## MCP (any MCP client)
 
 Every function in `helpers.py` is reflected into an MCP tool (46 today) — no glue code.
 
-**First, the prerequisite:** the daemon must be running (`nekoro-browser`, its own terminal).
-The MCP server is a thin forwarder — it talks to that daemon over the same authenticated
-path as `echo ... | nekoro-browser`, and the daemon is what owns the Chrome connection.
+**Prerequisite:** the daemon must be running (`nekoro-browser`, its own terminal). The MCP
+server is a thin forwarder — it talks to that daemon over the same authenticated path as
+`echo ... | nekoro-browser`, and the daemon is what owns the Chrome connection.
 
-**Then add the server to your client.**
+The command to register is always `nekoro-browser-mcp`. Only the config shape differs:
 
-<table>
-<tr><th>Client</th><th>Where the config lives</th></tr>
-<tr><td>Claude Desktop</td><td>Settings → Developer → <b>Edit Config</b>, or edit directly:<br>
-macOS <code>~/Library/Application Support/Claude/claude_desktop_config.json</code><br>
-Windows <code>%APPDATA%\Claude\claude_desktop_config.json</code></td></tr>
-<tr><td>Cursor</td><td><code>~/.cursor/mcp.json</code> (everywhere) or <code>.cursor/mcp.json</code> (one project)</td></tr>
-<tr><td>Cline</td><td>MCP Servers panel → <b>Configure MCP Servers</b></td></tr>
-<tr><td>Claude Code</td><td><code>claude mcp add nekoro-browser -- nekoro-browser-mcp</code></td></tr>
-</table>
+**Claude Code**
 
-```json
-{
-  "mcpServers": {
-    "nekoro-browser": {
-      "command": "nekoro-browser-mcp"
-    }
-  }
-}
+```bash
+claude mcp add nekoro-browser -- nekoro-browser-mcp
 ```
 
-Prefer not to install anything up front? `uvx` fetches and runs it on demand, the way
-`npx -y` does in the Node world:
+**Claude Desktop** (Settings → Developer → Edit Config) · **Cursor** (`~/.cursor/mcp.json`,
+or `.cursor/mcp.json` for one project) · **Cline** (MCP Servers → Configure MCP Servers)
 
 ```json
-{
-  "mcpServers": {
-    "nekoro-browser": {
-      "command": "uvx",
-      "args": ["--from", "nekoro-browser", "nekoro-browser-mcp"]
-    }
-  }
-}
+{ "mcpServers": { "nekoro-browser": { "command": "nekoro-browser-mcp" } } }
 ```
 
-That only removes the install step for the MCP server itself — the daemon still has to be
-installed and running, so on your own machine `uv tool install` is usually simpler.
+<sub>Claude Desktop config file: macOS <code>~/Library/Application Support/Claude/claude_desktop_config.json</code> · Windows <code>%APPDATA%\Claude\claude_desktop_config.json</code></sub>
 
-Restart the client afterwards. If the tools don't appear, run `nekoro-browser --doctor`
-first (a dead daemon looks exactly like a broken MCP config), then check the client's MCP
-log — Claude Desktop keeps them in `~/Library/Logs/Claude` (macOS) or `%APPDATA%\Claude\logs`
-(Windows).
+**opencode** (`opencode.json`) — note `command` is an array, and the key is `mcp`
+
+```json
+{ "mcp": { "nekoro-browser": { "type": "local", "command": ["nekoro-browser-mcp"], "enabled": true } } }
+```
+
+**Codex** (`~/.codex/config.toml`, or `codex mcp add nekoro-browser -- nekoro-browser-mcp`)
+
+```toml
+[mcp_servers.nekoro-browser]
+command = "nekoro-browser-mcp"
+```
+
+**VS Code / Copilot** (`.vscode/mcp.json`, or `MCP: Open User Configuration`) — the key is
+`servers`, not `mcpServers`
+
+```json
+{ "servers": { "nekoro-browser": { "command": "nekoro-browser-mcp" } } }
+```
+
+Prefer not to install anything up front? Replace the command with `uvx`, which fetches and
+runs on demand the way `npx -y` does — e.g. `"command": "uvx", "args": ["--from",
+"nekoro-browser", "nekoro-browser-mcp"]`. That only removes the install step for the MCP
+server; the daemon still has to be installed and running.
+
+Restart the client afterwards. If the tools don't show up, run `nekoro-browser --doctor`
+first — a dead daemon looks exactly like a broken MCP config — then check the client's MCP
+log (Claude Desktop keeps them in `~/Library/Logs/Claude` on macOS, `%APPDATA%\Claude\logs`
+on Windows).
 
 **What you get beyond the tool list:** two escape hatches ship as tools — `cdp` (raw CDP
 command) and `exec_python` (arbitrary Python in the daemon namespace, so a whole multi-step

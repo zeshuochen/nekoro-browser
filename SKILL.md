@@ -26,8 +26,12 @@ nekoro-browser --timeout 300    # 单次执行超时（默认 120s；等页面�
 
 ### MCP（非 CLI 客户端）
 
-不读文件的 agent 客户端（Cursor / Cline / Claude Desktop）走 MCP：
-配 `{"mcpServers": {"nekoro-browser": {"command": "nekoro-browser-mcp"}}}`。
+不读 skill 文件的客户端走 MCP，命令统一是 `nekoro-browser-mcp`，只是配置格式各不相同：
+Claude Code `claude mcp add nekoro-browser -- nekoro-browser-mcp`；
+Claude Desktop / Cursor / Cline 用 `{"mcpServers": {...}}`；
+**opencode** 用 `{"mcp": {"nekoro-browser": {"type":"local","command":["nekoro-browser-mcp"]}}}`（command 是数组）；
+**Codex** 用 `~/.codex/config.toml` 的 `[mcp_servers.nekoro-browser]`；
+**VS Code** 用 `.vscode/mcp.json`，键是 `servers`。各客户端配置文件位置见 README。
 helpers 自动反射成工具，外加 `cdp`（原始 CDP）和 `exec_python`（任意 Python，
 多步流程一次往返）。daemon 仍要在另一个终端跑着。
 

@@ -1,8 +1,9 @@
 """mcp_server.py — Model Context Protocol server over stdio.
 
-为什么要有这层：CLI + SKILL.md 只覆盖「会读文件的 agent」（Claude Code / Codex /
-opencode）。Cursor、Cline、Claude Desktop 这类客户端只认 MCP。这个模块把 helpers.py
-原样暴露成 MCP tools，让它们不用改一行 nekoro 代码就能驱动同一个 daemon。
+为什么要有这层：CLI + SKILL.md 只覆盖「会读文件的 agent」。而 MCP 是通用协议，
+Claude Desktop / Cursor / opencode / Codex / VS Code 等一大批客户端都只认它。
+这个模块把 helpers.py 原样暴露成 MCP tools，让它们不用改一行 nekoro 代码就能
+驱动同一个 daemon。
 
 实现取向与项目一致：**纯标准库**，不依赖 `mcp` SDK。stdio 上是行分隔的
 JSON-RPC 2.0，协议面只需 initialize / tools/list / tools/call / ping 四个方法。
