@@ -409,9 +409,29 @@ class ExtensionBridge:
             await _http_resp(writer, 200, json.dumps({"ok": False, "error": str(e)}))
 
     async def stop(self):
-        if self._server:
-            self._server.close()
-            await self._server.wait_closed()
+        """关闭监听并断开扩展。
+
+        必须先主动断开扩展那条持久 WS：它的处理协程停在无限读循环里，而
+        `wait_closed()`（Python 3.12+）要等所有已接受连接的处理协程结束——
+        不先掐断就是**永久挂起**。这个坑同时会让 setup 等到扩展后卡在收尾、
+        以及 daemon 关不掉变成占着端口的僵尸。
+        """
+        if not self._server:
+            return
+        self._server.close()
+        w, self._ext_writer = self._ext_writer, None
+        if w is not None:
+            try:
+                w.close()          # 读端拿到 EOF → 处理协程退出 → wait_closed 才可能返回
+            except Exception:
+                pass
+        try:
+            await asyncio.wait_for(self._server.wait_closed(), 3)
+        except Exception:
+            pass                   # 兜底：端口已 close()，剩下的交给进程退出
+        self._server = None
+        self._ws_ready.clear()
+        self._connected = False
 
     @property
     def connected(self) -> bool:
