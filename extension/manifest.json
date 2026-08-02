@@ -26,6 +26,10 @@
       "all_frames": false
     }
   ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
   "icons": {
     "16": "icons/icon-16.png",
     "48": "icons/icon-48.png",

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>nekoro-browser options</title>
+<style>
+  body { font: 14px/1.6 system-ui, sans-serif; margin: 2rem; max-width: 34rem; }
+  h1 { font-size: 1.1rem; margin: 0 0 1rem; }
+  label { display: block; margin-bottom: .4rem; font-weight: 600; }
+  input { width: 8rem; padding: .35rem .5rem; font: inherit; }
+  button { padding: .35rem .9rem; font: inherit; margin-left: .4rem; }
+  p.hint { color: #666; margin: .6rem 0 1.4rem; }
+  #status { margin-left: .6rem; color: #197a3d; }
+  #status.err { color: #b3261e; }
+  code { background: #f2f2f2; padding: .1rem .3rem; border-radius: 3px; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #1e1e1e; color: #e6e6e6; }
+    input, button { background: #2c2c2c; color: #e6e6e6; border: 1px solid #555; }
+    code { background: #2c2c2c; }
+    p.hint { color: #aaa; }
+  }
+</style>
+</head>
+<body>
+  <h1>nekoro-browser</h1>
+
+  <label for="port">Daemon port</label>
+  <input id="port" type="number" min="1" max="65535" step="1">
+  <button id="save">Save</button>
+  <span id="status"></span>
+
+  <p class="hint">
+    Must match the port the Python daemon listens on. Default is <code>28417</code>.
+    Change it on that side with <code>nekoro-browser --port &lt;n&gt;</code> or the
+    <code>NEKORO_PORT</code> environment variable. Saving reconnects immediately —
+    no need to reload the extension.
+  </p>
+
+  <script src="options.js"></script>
+</body>
+</html>

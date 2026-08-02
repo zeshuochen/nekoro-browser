@@ -18,8 +18,15 @@ import urllib.error
 
 from . import __version__
 from . import auth
+from . import config
 
-URL = "http://127.0.0.1:28417"
+# 显式 --port 的记忆位。None = 每次现算（读 NEKORO_PORT / daemon 写的端口文件），
+# 这样 MCP server 先起、daemon 后起也能连上，不会锁死在导入时的那个值。
+_EXPLICIT_PORT = None
+
+
+def _url() -> str:
+    return config.client_url(_EXPLICIT_PORT)
 
 # 空代理 opener：系统/env 代理会拦 127.0.0.1 返 502，误判 daemon 死。localhost 直连。
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -27,7 +34,7 @@ _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 def _alive():
     try:
-        with _OPENER.open(f"{URL}/ping", timeout=2) as r:
+        with _OPENER.open(f"{_url()}/ping", timeout=2) as r:
             return r.status == 200
     except: return False
 
@@ -42,7 +49,7 @@ def _healthy(timeout=8):
 def _post(path, data="", timeout=30):
     try:
         req = urllib.request.Request(
-            f"{URL}{path}", data=data.encode(), method="POST",
+            f"{_url()}{path}", data=data.encode(), method="POST",
             headers={"Content-Type": "text/plain",
                      "X-Nekoro-Token": auth.read_token()})
         with _OPENER.open(req, timeout=timeout) as r:
@@ -97,8 +104,17 @@ def main():
                    help="重载扩展 service worker（自愈，治 alive-stale；跑任务前刷干净）")
     p.add_argument("--extension-path", action="store_true",
                    help="打印 Chrome 扩展目录（chrome://extensions 里「加载已解压的扩展」选它）")
+    p.add_argument("--port", type=int, default=None,
+                   help=f"daemon 端口（默认 {config.DEFAULT_PORT}；也可设环境变量 "
+                        f"{config.ENV_VAR}）。扩展侧的端口在扩展选项页里改")
     p.add_argument("-c", "--exec", type=str, default=None)
     args = p.parse_args()
+
+    if args.port is not None:
+        global _EXPLICIT_PORT
+        _EXPLICIT_PORT = args.port
+        from . import lifecycle
+        lifecycle.set_port(args.port)   # stop/restart 要打到同一个 daemon
 
     if args.extension_path:
         d = extension_dir()
@@ -159,10 +175,10 @@ def main():
 
     # Daemon mode
     print(f"nekoro-browser v{__version__}", file=sys.stderr)
-    asyncio.run(_run())
+    asyncio.run(_run(args.port))
 
 
-async def _run():
+async def _run(port=None):
     from .daemon import Daemon
     # 端口已占 = 多半已有 daemon 在跑。友好提示而非抛 bind 栈。
     from . import lifecycle
@@ -179,12 +195,13 @@ async def _run():
         for _ in range(25):
             if not _alive(): break
             time.sleep(0.2)
-    d = Daemon()
+    d = Daemon(port=port)
     try:
         ok = await d.start()
         if not ok:
             print("ERROR: Extension not connected", file=sys.stderr); sys.exit(1)
-        print("Ready. Pipe: echo 'page_info()' | nekoro-browser", file=sys.stderr)
+        print(f"Ready on 127.0.0.1:{d.port}. "
+              f"Pipe: echo 'page_info()' | nekoro-browser", file=sys.stderr)
         await d.wait_forever()
     except RuntimeError as e:
         # 扩展没装/没启用时 start() 里 auto_attach 会抛 "extension not connected (WS)"。
@@ -209,9 +226,9 @@ def _doctor():
     import platform
     print(f"[PASS] Python 3.12+ : v{platform.python_version()}")
     if not _alive():
-        print("[INFO] Daemon       : not running (start: nekoro-browser)")
+        print(f"[INFO] Daemon       : not running on {_url()} (start: nekoro-browser)")
         print("=" * 40); return
-    print("[PASS] Daemon       : running")
+    print(f"[PASS] Daemon       : running ({_url()})")
     # 端对端探活：一次真实 CDP 往返，证明扩展 + Service Worker 都活着，
     # 而不只是 Python 进程在。SW 被 Chrome 回收时这步会失败。
     r = _post("/exec", "await page_info()", timeout=8)

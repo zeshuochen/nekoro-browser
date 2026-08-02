@@ -8,6 +8,7 @@ import json
 import logging
 
 from . import auth
+from . import config
 from . import lifecycle
 from .bridge import ExtensionBridge
 
@@ -49,8 +50,8 @@ EVENT_BUFFER_MAX = 2000  # CDP 事件缓冲上限；满了丢最旧，防没人 
 
 
 class Daemon:
-    def __init__(self):
-        self.bridge = ExtensionBridge()
+    def __init__(self, port=None):
+        self.bridge = ExtensionBridge(config.daemon_port(port))
         self._tab_id = None
         self._event_queue: asyncio.Queue = asyncio.Queue(maxsize=EVENT_BUFFER_MAX)
 
@@ -65,6 +66,8 @@ class Daemon:
         # bind 到签发之间 self.token 为 None，token_eq 判否 → /exec 拒，失败关闭。
         self.bridge.set_token(auth.issue_token())
         lifecycle.write_pid()  # 令牌签发后写 pid，供 CLI --stop/--restart 与自愈用
+        # 记下实际端口：客户端不带 --port 时靠这个文件找到非默认端口上的 daemon
+        config.write_port_file(self.bridge.port)
         logger.info("Waiting for extension...")
         try:
             await asyncio.wait_for(self.bridge.attached.wait(), timeout=10)
@@ -194,9 +197,14 @@ class Daemon:
     @property
     def active_tab_id(self): return self._tab_id
 
+    @property
+    def port(self) -> int:
+        return self.bridge.port
+
     async def stop(self):
         await self.bridge.stop()
         lifecycle.cleanup_pid()
+        config.clear_port_file()
 
     async def wait_forever(self):
         # /shutdown 命中或 Ctrl-C 时返回，交给 _run 的 finally 清理。

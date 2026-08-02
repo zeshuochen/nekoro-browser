@@ -25,3 +25,12 @@ def token_path() -> Path:
 
 def pid_path() -> Path:
     return data_dir() / "daemon.pid"
+
+
+def port_path() -> Path:
+    """daemon 实际监听的端口。daemon 启动时写、停止时清。
+
+    存在的意义：daemon 用 `--port` 起在非默认端口后，后续的
+    `echo ... | nekoro-browser` 不用再重复传参也能找到它。
+    """
+    return data_dir() / "port"

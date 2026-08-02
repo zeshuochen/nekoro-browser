@@ -17,9 +17,16 @@ import urllib.request
 from pathlib import Path
 
 from . import auth
+from . import config
 from . import paths
 
-URL = "http://127.0.0.1:28417"   # 测试可 monkeypatch lifecycle.URL 指向本地测试服
+URL = config.client_url()        # 测试可 monkeypatch lifecycle.URL 指向本地测试服
+
+
+def set_port(port) -> None:
+    """CLI 传了 --port 时改写本模块的目标地址（stop/restart 要打到对的 daemon）。"""
+    global URL
+    URL = config.client_url(port)
 
 # 显式空代理 opener：系统/env 代理（如 wandayun）会拦截 127.0.0.1 并返 502，
 # 把健康的本地 daemon 误判成僵尸。localhost 一律直连、绕过任何代理。

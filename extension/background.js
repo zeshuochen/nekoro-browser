@@ -1,10 +1,37 @@
 // nekoro-browser background.js — persistent WebSocket transport
-const PORT = 28417;  // 避开与同类工具 @jackwener/opencli（19825）撞车
-const WS_URL = `ws://127.0.0.1:${PORT}/ws`;
+const DEFAULT_PORT = 28417;  // 避开与同类工具 @jackwener/opencli（19825）撞车
+
+// 端口可改：扩展详情页 → 「扩展程序选项」里设，存 chrome.storage.local.nekoroPort。
+// Python 侧对应 --port / NEKORO_PORT，两边必须一致。
+// 缓存住是因为 connect() 在 onclose 回调里同步调用，来不及等异步 storage 读取。
+let port = DEFAULT_PORT;
+
+function wsUrl() { return `ws://127.0.0.1:${port}/ws`; }
+
+async function loadPort() {
+    try {
+        const v = (await chrome.storage.local.get('nekoroPort')).nekoroPort;
+        const n = parseInt(v, 10);
+        if (Number.isInteger(n) && n >= 1 && n <= 65535) port = n;
+    } catch (_) { /* storage 不可用就用默认端口 */ }
+    return port;
+}
+
+// 选项页改了端口 → 断开重连到新端口，不用重载扩展
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes.nekoroPort) return;
+    const n = parseInt(changes.nekoroPort.newValue, 10);
+    port = (Number.isInteger(n) && n >= 1 && n <= 65535) ? n : DEFAULT_PORT;
+    console.log('[nekoro-browser] port changed →', port);
+    reconnectDelay = 500;
+    if (ws) { try { ws.close(); } catch (_) {} }   // onclose 会安排重连
+    else connect();
+});
 
 let tabId = null;
 let ws = null;
 let connecting = false;
+let portLoaded = false;
 let reconnectDelay = 500;
 
 console.log('[nekoro-browser] v3 (websocket) loaded');
@@ -20,8 +47,14 @@ function wsOpen() { return ws && ws.readyState === WebSocket.OPEN; }
 function connect() {
     if (connecting || wsOpen()) return;
     connecting = true;
+    if (!portLoaded) {                    // 首次连接：先取配置端口，再拨号
+        portLoaded = true;
+        loadPort().then(() => { connecting = false; connect(); })
+                  .catch(() => { connecting = false; connect(); });
+        return;
+    }
     try {
-        ws = new WebSocket(WS_URL);
+        ws = new WebSocket(wsUrl());
     } catch (e) {
         connecting = false;
         scheduleReconnect();
