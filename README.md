@@ -37,6 +37,7 @@ Since Chrome 136, `--remote-debugging-port` / `--remote-debugging-pipe` **refuse
 | Modify the extension | — | Edit Playwright source | Edit OpenCLI source | ✅ right in this repo |
 | Self-healing | ❌ | ❌ | ❌ | ✅ Agent edits helpers at runtime |
 | MCP | ❌ | ✅ (separate `@playwright/mcp`) | ❌ | ✅ built in, 46 tools via `nekoro-browser-mcp` |
+| Site knowledge | ❌ | ❌ | ❌ | ✅ your notes and scripts are **handed to the agent on navigate** |
 
 ## Quick Start
 
@@ -108,9 +109,25 @@ PY
 
 All helpers are documented in [SKILL.md](SKILL.md).
 
-## MCP (Cursor / Cline / Claude Desktop)
+## MCP (Cursor / Cline / Claude Desktop / Claude Code)
 
-Every function in `helpers.py` is reflected into an MCP tool (46 today) — no glue code:
+Every function in `helpers.py` is reflected into an MCP tool (46 today) — no glue code.
+
+**First, the prerequisite:** the daemon must be running (`nekoro-browser`, its own terminal).
+The MCP server is a thin forwarder — it talks to that daemon over the same authenticated
+path as `echo ... | nekoro-browser`, and the daemon is what owns the Chrome connection.
+
+**Then add the server to your client.**
+
+<table>
+<tr><th>Client</th><th>Where the config lives</th></tr>
+<tr><td>Claude Desktop</td><td>Settings → Developer → <b>Edit Config</b>, or edit directly:<br>
+macOS <code>~/Library/Application Support/Claude/claude_desktop_config.json</code><br>
+Windows <code>%APPDATA%\Claude\claude_desktop_config.json</code></td></tr>
+<tr><td>Cursor</td><td><code>~/.cursor/mcp.json</code> (everywhere) or <code>.cursor/mcp.json</code> (one project)</td></tr>
+<tr><td>Cline</td><td>MCP Servers panel → <b>Configure MCP Servers</b></td></tr>
+<tr><td>Claude Code</td><td><code>claude mcp add nekoro-browser -- nekoro-browser-mcp</code></td></tr>
+</table>
 
 ```json
 {
@@ -122,9 +139,34 @@ Every function in `helpers.py` is reflected into an MCP tool (46 today) — no g
 }
 ```
 
-The daemon still has to be running in another terminal (`nekoro-browser`) — the MCP server just forwards tool calls to it over the same authenticated path as `echo ... | nekoro-browser`. Two escape hatches ship as tools: `cdp` (raw CDP command) and `exec_python` (arbitrary Python in the daemon namespace — a whole multi-step flow in one round trip).
+Prefer not to install anything up front? `uvx` fetches and runs it on demand, the way
+`npx -y` does in the Node world:
 
-Screenshots come back as image content so clients can render them. A helper's own failure (`{"ok": false}`) is surfaced as `isError` rather than being dressed up as success.
+```json
+{
+  "mcpServers": {
+    "nekoro-browser": {
+      "command": "uvx",
+      "args": ["--from", "nekoro-browser", "nekoro-browser-mcp"]
+    }
+  }
+}
+```
+
+That only removes the install step for the MCP server itself — the daemon still has to be
+installed and running, so on your own machine `uv tool install` is usually simpler.
+
+Restart the client afterwards. If the tools don't appear, run `nekoro-browser --doctor`
+first (a dead daemon looks exactly like a broken MCP config), then check the client's MCP
+log — Claude Desktop keeps them in `~/Library/Logs/Claude` (macOS) or `%APPDATA%\Claude\logs`
+(Windows).
+
+**What you get beyond the tool list:** two escape hatches ship as tools — `cdp` (raw CDP
+command) and `exec_python` (arbitrary Python in the daemon namespace, so a whole multi-step
+flow costs one round trip). Screenshots come back as image content so clients render them
+inline. A helper's own failure (`{"ok": false}`) is surfaced as `isError` instead of being
+dressed up as success. And when you navigate to a site you have notes or scripts for, they
+ride along in the tool result — see [Self-Healing and Site Knowledge](#self-healing-and-site-knowledge).
 
 ## API
 
