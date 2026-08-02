@@ -5,7 +5,6 @@
 <p align="center">
   <a href="https://github.com/zeshuochen/nekoro-browser/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/zeshuochen/nekoro-browser/tests.yml?branch=master&style=flat-square&label=tests" alt="tests"></a>
   <a href="https://pypi.org/project/nekoro-browser/"><img src="https://img.shields.io/pypi/v/nekoro-browser?style=flat-square" alt="PyPI"></a>
-  <a href="https://pypi.org/project/nekoro-browser/"><img src="https://img.shields.io/pypi/dm/nekoro-browser?style=flat-square&label=downloads" alt="PyPI downloads"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/pypi/pyversions/nekoro-browser?style=flat-square" alt="Python versions"></a>
   <a href="https://github.com/zeshuochen/nekoro-browser/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License"></a>
   <a href="#mcp任何-mcp-客户端"><img src="https://img.shields.io/badge/MCP-supported-8A2BE2?style=flat-square" alt="MCP supported"></a>
