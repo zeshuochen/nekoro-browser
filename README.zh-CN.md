@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/zeshuochen/nekoro-browser/master/docs/banner.svg" width="820" alt="nekoro-browser — 浏览器自动化 CLI + MCP server">
+  <img src="https://raw.githubusercontent.com/zeshuochen/nekoro-browser/master/docs/banner.zh-CN.svg" width="820" alt="nekoro-browser — 浏览器自动化 CLI + MCP server">
 </p>
 
 <p align="center">
@@ -26,27 +26,7 @@
   <a href="#参考手册">参考手册</a>
 </p>
 
-```bash
-uv tool install nekoro-browser && nekoro-browser setup   # 装好，然后引导加载扩展
-nekoro-browser                                           # daemon：单独一个终端，保持打开
-echo "page_info()" | nekoro-browser                      # 直接驱动你已登录的 Chrome
-```
-
 ---
-
-## 为什么不用 `--remote-debugging-port`
-
-Chrome 136 起，`--remote-debugging-port` / `--remote-debugging-pipe` **不再接受默认 profile**——必须指定一个非默认的 `--user-data-dir`，也就是一个没有你登录态的干净实例。扩展的 `chrome.debugger` 不受这条限制，所以 nekoro 走扩展。
-
-| | CDP WebSocket | playwright-cli | opencli | **nekoro-browser** |
-|------|:--:|:--:|:--:|:--:|
-| 原理 | `--remote-debugging-port` | Playwright 扩展 | OpenCLI 扩展 | 自建扩展 + 持久 WebSocket |
-| 安装 | 一行参数 | `npm i -g`（~200MB） | npm / 桌面应用 | `uv tool install`（纯标准库，零依赖） |
-| 登录态 | ❌ 独立实例 | ✅ | ✅ | ✅ |
-| 可修改扩展 | — | 需改 Playwright 源码 | 需改 OpenCLI 源码 | ✅ 扩展就在仓库里 |
-| 自愈 | ❌ | ❌ | ❌ | ✅ Agent 运行时编辑 helpers |
-| MCP | ❌ | ✅（另装 `@playwright/mcp`） | ❌ | ✅ 内置 46 个工具，`nekoro-browser-mcp` |
-| 站点知识 | ❌ | ❌ | ❌ | ✅ 你写的笔记和脚本**在导航时主动送到 agent 手里** |
 
 ## 快速开始
 
@@ -86,6 +66,22 @@ echo "page_info()" | nekoro-browser
 
 就这些。第 4 步如果报 daemon 没运行、或者命令超时，跑 `nekoro-browser --doctor`——
 它会分别检查 daemon、扩展、service worker，直接告诉你是哪一环挂了。
+
+---
+
+## 为什么不用 `--remote-debugging-port`
+
+Chrome 136 起，`--remote-debugging-port` / `--remote-debugging-pipe` **不再接受默认 profile**——必须指定一个非默认的 `--user-data-dir`，也就是一个没有你登录态的干净实例。扩展的 `chrome.debugger` 不受这条限制，所以 nekoro 走扩展。
+
+| | CDP WebSocket | playwright-cli | opencli | **nekoro-browser** |
+|------|:--:|:--:|:--:|:--:|
+| 原理 | `--remote-debugging-port` | Playwright 扩展 | OpenCLI 扩展 | 自建扩展 + 持久 WebSocket |
+| 安装 | 一行参数 | `npm i -g`（~200MB） | npm / 桌面应用 | `uv tool install`（纯标准库，零依赖） |
+| 登录态 | ❌ 独立实例 | ✅ | ✅ | ✅ |
+| 可修改扩展 | — | 需改 Playwright 源码 | 需改 OpenCLI 源码 | ✅ 扩展就在仓库里 |
+| 自愈 | ❌ | ❌ | ❌ | ✅ Agent 运行时编辑 helpers |
+| MCP | ❌ | ✅（另装 `@playwright/mcp`） | ❌ | ✅ 内置 46 个工具，`nekoro-browser-mcp` |
+| 站点知识 | ❌ | ❌ | ❌ | ✅ 你写的笔记和脚本**在导航时主动送到 agent 手里** |
 
 ## 示例
 

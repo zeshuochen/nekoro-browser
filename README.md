@@ -26,27 +26,7 @@ Lightweight browser automation CLI + MCP server. Drives your everyday Chrome thr
   <a href="#reference">Reference</a>
 </p>
 
-```bash
-uv tool install nekoro-browser && nekoro-browser setup   # install, then load the extension
-nekoro-browser                                           # daemon — its own terminal, leave open
-echo "page_info()" | nekoro-browser                      # drive the Chrome you're logged into
-```
-
 ---
-
-## Why Not `--remote-debugging-port`?
-
-Since Chrome 136, `--remote-debugging-port` / `--remote-debugging-pipe` **refuse the default profile** — you must point Chrome at a non-default `--user-data-dir`, i.e. a clean instance with none of your logins. An extension's `chrome.debugger` is not subject to that restriction, which is why nekoro goes through an extension.
-
-| | CDP WebSocket | playwright-cli | opencli | **nekoro-browser** |
-|------|:--:|:--:|:--:|:--:|
-| Approach | `--remote-debugging-port` | Playwright extension | OpenCLI extension | Custom extension + persistent WebSocket |
-| Install | one flag | `npm i -g` (~200MB) | npm / desktop app | `uv tool install` (stdlib only, zero deps) |
-| Login state | ❌ fresh instance | ✅ | ✅ | ✅ |
-| Modify the extension | — | Edit Playwright source | Edit OpenCLI source | ✅ right in this repo |
-| Self-healing | ❌ | ❌ | ❌ | ✅ Agent edits helpers at runtime |
-| MCP | ❌ | ✅ (separate `@playwright/mcp`) | ❌ | ✅ built in, 46 tools via `nekoro-browser-mcp` |
-| Site knowledge | ❌ | ❌ | ❌ | ✅ your notes and scripts are **handed to the agent on navigate** |
 
 ## Quick Start
 
@@ -90,6 +70,22 @@ echo "page_info()" | nekoro-browser
 That's it. If step 4 says the daemon isn't running, or a command times out, run
 `nekoro-browser --doctor` — it checks the daemon, the extension and the service worker
 separately and tells you which one is down.
+
+---
+
+## Why Not `--remote-debugging-port`?
+
+Since Chrome 136, `--remote-debugging-port` / `--remote-debugging-pipe` **refuse the default profile** — you must point Chrome at a non-default `--user-data-dir`, i.e. a clean instance with none of your logins. An extension's `chrome.debugger` is not subject to that restriction, which is why nekoro goes through an extension.
+
+| | CDP WebSocket | playwright-cli | opencli | **nekoro-browser** |
+|------|:--:|:--:|:--:|:--:|
+| Approach | `--remote-debugging-port` | Playwright extension | OpenCLI extension | Custom extension + persistent WebSocket |
+| Install | one flag | `npm i -g` (~200MB) | npm / desktop app | `uv tool install` (stdlib only, zero deps) |
+| Login state | ❌ fresh instance | ✅ | ✅ | ✅ |
+| Modify the extension | — | Edit Playwright source | Edit OpenCLI source | ✅ right in this repo |
+| Self-healing | ❌ | ❌ | ❌ | ✅ Agent edits helpers at runtime |
+| MCP | ❌ | ✅ (separate `@playwright/mcp`) | ❌ | ✅ built in, 46 tools via `nekoro-browser-mcp` |
+| Site knowledge | ❌ | ❌ | ❌ | ✅ your notes and scripts are **handed to the agent on navigate** |
 
 ## Examples
 
