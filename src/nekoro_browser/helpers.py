@@ -51,12 +51,16 @@ _HINT_TABS = 3          # 提示里最多列几张，其余只报数量——给
 
 
 def _tab_key(url: str) -> str:
-    """判重键 = hostname + 首段 path。`/lesson` 与 `/practice` 算两处，够粗也够用。
+    """判重键 = host[:port] + 首段 path。`/lesson` 与 `/practice` 算两处，够粗也够用。
+
+    端口必须进键：`localhost:3000`（前端）和 `localhost:8080`（后端面板）是两个东西，
+    只按 hostname 判重会把它俩当重复——sweep 关掉一张、reuse 把另一张导航走。
     只认 http/https：about:blank 没 hostname，而 `chrome://newtab` 的 hostname 是
     'newtab'——不按 scheme 卡住就会把内部页当成正经站点参与判重。"""
     from urllib.parse import urlparse
     try:
         u = urlparse(url or "")
+        port = u.port                      # 端口非法时这里就抛 ValueError
     except ValueError:
         return ""
     if u.scheme not in ("http", "https"):
@@ -64,12 +68,18 @@ def _tab_key(url: str) -> str:
     host = (u.hostname or "").lower()
     if not host:
         return ""
+    if port and port not in (80, 443):
+        host = f"{host}:{port}"
     seg = [s for s in (u.path or "").split("/") if s]
     return f"{host}/{seg[0]}" if seg else host
 
 
-async def _tabs_like(daemon, url: str, exclude=()) -> list[dict]:
-    """托管组里与 url 同站同段的标签。附赠功能——任何异常都吞成空列表，绝不连累导航本身。"""
+async def _tabs_like(daemon, url: str, exclude=(), strict: bool = False) -> list[dict]:
+    """托管组里与 url 同站同段的标签。
+
+    默认吞掉所有异常返回空列表：提示是附赠功能，绝不能连累导航本身。但 `strict=True`
+    时如实抛出——reuse 路径靠它区分「确实没有同站标签」和「压根没查成」，否则桥抖一下
+    就静默变成又开一张重复标签，正是这个 feature 要消灭的东西。"""
     key = _tab_key(url)
     if not key:
         return []
@@ -84,12 +94,16 @@ async def _tabs_like(daemon, url: str, exclude=()) -> list[dict]:
                 out.append({"tabId": tid, "title": (t.get("title") or "")[:80]})
         return out
     except Exception:
+        if strict:
+            raise
         return []
 
 
-async def new_tab(daemon, url: str = "about:blank", reuse: bool = False,
-                  timeout: float = 15.0) -> dict:
-    """new_tab("https://example.com") — 开新标签，加入 nekoro 托管组，切过去并 attach。
+async def new_tab(daemon, url: str = "about:blank", timeout: float = 15.0, *,
+                  reuse: bool = False) -> dict:
+    """new_tab("https://example.com") — 开新标签，加入 nekoro 托管组，切过去并 attach；
+    `reuse=True` 则优先复用托管组里已有的同站标签（登录态和页面状态都还在），不新开。
+
     走扩展 navigate action：chrome.tabs.create + 分组 + waitTabLoad 等**真实 load 事件**，
     尽量等到加载完（不像原来裸 Target.createTarget 直接返回、后续 wait 撞 about:blank
     stale-complete 竞态）；超时则 loaded=False。返回 {tabId, loaded}，之后 helper 直接
@@ -97,21 +111,32 @@ async def new_tab(daemon, url: str = "about:blank", reuse: bool = False,
     的传输上限（取 max(timeout,10)+5，保证不早于扩展的 load 等待就超时），并不缩短扩展
     侧的 load 等待预算。
 
-    `reuse=True` 时若托管组里已有同站标签，就切过去导航而不新开，返回值多 `reused: True`
-    （那张标签 attach 不上——比如被 DevTools 占着——则如实回落到开新标签）。
+    `reuse` 是**关键字参数**：它比 `timeout` 晚加进来，占位置会让老的 `new_tab(url, 20)`
+    静默把 20 绑成 reuse。复用命中时返回值多 `reused: True`；那张标签 attach 不上
+    （比如被 DevTools 占着）或压根没查成，则如实回落到开新标签并带 `reuse` 说明原因。
     默认 False：函数叫 new_tab，默认开新才是诚实的。默认路径下若发现同站已有标签，
     返回值里带 `existing`（清单+提示），标签照开、行为不变，只是让 agent 知道有得复用。"""
     try:
+        lookup_error = None
         if reuse:
-            for cand in await _tabs_like(daemon, url):
+            try:
+                cands = await _tabs_like(daemon, url, strict=True)
+            except Exception as e:                # 查失败 ≠ 没有同站标签，不能静默当没有
+                cands, lookup_error = [], str(e)
+                logger.warning("new_tab(reuse=True): tab lookup failed: %s", e)
+            for cand in cands:
                 sw = await switch_tab(daemon, cand["tabId"])
                 if not sw.get("ok"):
                     continue                     # 这张 attach 不上，试下一张
-                nav = await navigate(daemon, url, timeout=timeout)
-                res = {"ok": bool(nav.get("ok")), "tabId": cand["tabId"], "reused": True,
-                       "loaded": bool(nav.get("loaded"))}
-                if not res["ok"]:
-                    res["error"] = nav.get("error", "reuse: navigate failed")
+                # 走扩展 navigate action 而不是 CDP Page.navigate：扩展那条会
+                # chrome.tabs.update(active:true) 把标签带到前台，和开新标签的可见性一致
+                # （托管组是 collapsed 建的，只切 CDP 指针的话页面还藏在折叠组里，
+                # 截图/懒加载/IntersectionObserver 看到的根本不是同一个环境）。
+                r = await daemon.bridge.send_scripting(
+                    {"action": "navigate", "url": url, "target": cand["tabId"]},
+                    max(timeout, 10) + 5)
+                res = {"ok": True, "tabId": cand["tabId"], "reused": True,
+                       "loaded": ((r or {}).get("load") == "complete")}
                 return site_notes.attach(res, url)
             # 一张都复用不上 → 照常开新标签，不硬报错
 
@@ -124,7 +149,11 @@ async def new_tab(daemon, url: str = "about:blank", reuse: bool = False,
         loaded = ((r or {}).get("load") == "complete")
         await daemon.switch_tab(tab_id)          # attach debugger + 切活动指针
         res = {"ok": True, "tabId": tab_id, "loaded": loaded}
-        if not reuse:
+        if reuse:
+            # 要求复用却开了新的，必须说清是为什么，别让调用方以为复用成功了
+            res["reuse"] = (f"lookup failed: {lookup_error}" if lookup_error
+                            else "no reusable tab")
+        else:
             others = await _tabs_like(daemon, url, exclude={tab_id})
             if others:
                 res["existing"] = {
@@ -191,24 +220,34 @@ async def sweep_tabs(daemon, dry_run: bool = True) -> dict:
 
     关不关是用户偏好，工具没资格替他定：有人就是要一直留着标签。所以这里只给证据
     （哪些是同站重复、哪些是游离 about:blank），由 agent/用户判断，`dry_run=False`
-    才真关。当前活动标签永远不进候选。
+    才真关。活动标签永远不进候选。
 
     候选口径：
-    - `duplicate` — 同一判重键（host + 首段 path）下多于一张，保留活动标签，
-      没有活动标签则保留最后一张（通常是最新开的），其余进 close 列表
-    - `blank` — url 为空或 about:blank 的游离标签（站点自己弹出来的那种）
+    - `duplicate` — 同一判重键（host[:port] + 首段 path）下多于一张，保留活动标签，
+      没有活动标签则保留最后一张（组内最右，通常是最新开的），其余进 close 列表
+    - `blank` — 只收 url 为空或 `about:blank` 的游离标签（站点自己弹出来的那种）
+    - `other` — `file:` / `data:` / `chrome-extension:` 等既不判重也不清理的标签，
+      **只报不关**：它们同样是 agent 自己开的工作页（本仓库 scripts/smoke.py 就开
+      `data:text/html,...`），一律当垃圾扫掉会误伤
 
-    ⚠️ 扩展还没建起托管组时，`list_tabs` 会退化成「所有非 chrome:// 标签」，候选里
-    就可能混进你自己日常的标签。这种情况下拒绝真关（强制 dry_run），只报候选。"""
+    ⚠️ 扩展没有托管组时，`list_tabs` 会退化成「所有非 chrome:// 标签」（跨全部窗口），
+    候选里就混着你自己日常的标签。**只有扩展明确回 `grouped: True` 才允许真关**——
+    老版本扩展不发这个字段，`None` 是最危险的那种未知，同样拒绝。"""
     try:
         r = await daemon.list_tabs()
     except Exception as e:
         return {"ok": False, "error": str(e)}
     tabs = ((r or {}).get("tabs") or [])
     grouped = (r or {}).get("grouped")       # 老版本扩展不带这个字段 → None = 未知
-    active = getattr(daemon, "active_tab_id", None)
+    # 活动标签取两个来源的并集：daemon 侧指针可能停在旧值/None（刚重启、attached 事件
+    # 没等到），而扩展在每张标签上回的 active 才是「它正驱动着哪张」的权威信号。
+    active = {t.get("tabId") for t in tabs if t.get("active")}
+    active.discard(None)
+    own = getattr(daemon, "active_tab_id", None)
+    if own is not None:
+        active.add(own)
 
-    groups, blank = {}, []
+    groups, blank, other = {}, [], []
     for t in tabs:
         tid = t.get("tabId")
         if tid is None:
@@ -216,8 +255,12 @@ async def sweep_tabs(daemon, dry_run: bool = True) -> dict:
         url = t.get("url", "") or ""
         key = _tab_key(url)
         if not key:
-            if tid != active:                 # 活动标签永不进候选
+            if tid in active:                 # 活动标签永不进候选
+                continue
+            if url in ("", "about:blank"):
                 blank.append({"tabId": tid, "url": url or "about:blank"})
+            else:
+                other.append({"tabId": tid, "url": url})
             continue
         # 活动标签要参与分组（否则「另一张与它重复」这种最常见的情况会数成 1 张、
         # 判不出重复），只是永远落在 keep 那一侧。
@@ -227,16 +270,26 @@ async def sweep_tabs(daemon, dry_run: bool = True) -> dict:
     for key, members in groups.items():
         if len(members) < 2:                  # 同站只有一张 = 不算重复
             continue
-        keep = next((m for m in members if m["tabId"] == active), members[-1])
-        close = [m["tabId"] for m in members if m["tabId"] != keep["tabId"]]
+        keep = next((m for m in members if m["tabId"] in active), members[-1])
+        # 两个来源分歧时 active 里可能不止一个 id——保留一个、其余也不许关，
+        # 「活动标签永不进候选」这条不能因为分歧就打折。
+        close = [m["tabId"] for m in members
+                 if m["tabId"] != keep["tabId"] and m["tabId"] not in active]
+        if not close:
+            continue
         candidates.append({"reason": "duplicate", "key": key, "url": keep["url"],
                            "keep": keep["tabId"], "close": close})
 
     ids = [i for c in candidates for i in c["close"]] + [b["tabId"] for b in blank]
     out = {"ok": True, "total": len(tabs), "candidates": candidates, "blank": blank}
-    if not dry_run and grouped is False:
-        out["note"] = ("拒绝真关：扩展没有托管组，候选里可能混进你自己的标签。"
-                       "确认后请用 close_tabs([...]) 逐个指定。")
+    if other:
+        out["other"] = other              # 只报不关：file:/data: 等也可能是工作页
+    if not dry_run and grouped is not True:
+        # fail-closed：只有扩展明确说「有托管组」才允许真关。老扩展不发 grouped（None）
+        # 时同样拒绝——那种未知恰恰对应「清单里混着用户自己标签」的危险情形。
+        out["note"] = ("拒绝真关：扩展未确认托管组（老版本扩展或尚未建组），候选里可能"
+                       "混进你自己的标签。请到 chrome://extensions 重新加载扩展，"
+                       "或确认后用 close_tabs([...]) 逐个指定。")
         return out
     if dry_run:
         out["note"] = (f"dry_run — 未关任何标签。sweep_tabs(dry_run=False) 或 "

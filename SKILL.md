@@ -88,9 +88,15 @@ echo "await page_info()" | nekoro-browser
   接续上次的会话则用 `list_tabs()` 找 tabId（浏览器重启后 active 指针不可信，见下）。
 - **关不关由你判断，工具不自动关。** 有人就是要一直留着标签，所以没有任何「退出即清」的
   行为。攒多了用 `sweep_tabs()` 看候选，确认后 `sweep_tabs(dry_run=False)` 或
-  `close_tabs([...])`。活动标签永远不在候选里。
-- `list_tabs()` 的 `grouped: False` 表示托管组还没建起来，这份清单其实是**所有**非
-  `chrome://` 标签、混着用户自己的——这种情况 `sweep_tabs(dry_run=False)` 会拒绝执行。
+  `close_tabs([...])`。活动标签永远不在候选里；`file:` / `data:` 这类页只进 `other`
+  桶（只报不关，它们多半也是你自己开的工作页）。
+- `list_tabs()` 的 `grouped` 表示托管组是否已建起来。**只有 `grouped: True` 才允许真关**——
+  为 `False`（清单退化成所有非 `chrome://` 标签、混着用户自己的）或字段缺失（老版本扩展）时
+  `sweep_tabs(dry_run=False)` 都会拒绝执行，让你先去 chrome://extensions 重载扩展。
+- 判重按 `host[:port]` + 首段 path：`localhost:3000` 与 `localhost:8080` 是两处，
+  `/lesson` 与 `/practice` 也是两处。
+- `reuse` 是**关键字参数**（`new_tab(url, reuse=True)`）：它比 `timeout` 晚加进来，
+  写成位置参数会让老的 `new_tab(url, 20)` 静默把 20 绑成 reuse。
 
 ### 页面信息
 

@@ -69,6 +69,18 @@ _PARAM_OVERRIDES = {
         "description": "File path, or a list of paths for multi-file inputs",
         "anyOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}],
     },
+    # 裸 {"type": "array"} 没有 items，严格校验的客户端（Gemini 系函数调用）会拒收。
+    ("close_tabs", "tabs"): {
+        "description": "Tab ids to close, e.g. from sweep_tabs()",
+        "type": "array", "items": {"type": "integer"},
+    },
+    # description 只取 docstring 第一段，reuse 的说明落在后面段落里到不了客户端。
+    ("new_tab", "reuse"): {
+        "description": "Reuse an existing tab for the same site instead of opening a new one "
+                       "(its login and page state are still there); falls back to opening "
+                       "one when there is nothing reusable",
+        "type": "boolean",
+    },
 }
 
 
