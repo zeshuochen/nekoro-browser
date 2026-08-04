@@ -90,6 +90,9 @@ echo "await page_info()" | nekoro-browser
   行为。攒多了用 `sweep_tabs()` 看候选，确认后 `sweep_tabs(dry_run=False)` 或
   `close_tabs([...])`。活动标签永远不在候选里；`file:` / `data:` 这类页只进 `other`
   桶（只报不关，它们多半也是你自己开的工作页）。
+  **活动标签在 `sweep_tabs()` 眼里完全隐身**——不进 `candidates`，也不进 `blank` / `other`
+  报告。所以刚 `new_tab()` 开出来的那张（它就是活动标签）不会出现在报告里，要看全貌
+  先 `switch_tab()` 切走。
 - `list_tabs()` 的 `grouped` 表示托管组是否已建起来。**只有 `grouped: True` 才允许真关**——
   为 `False`（清单退化成所有非 `chrome://` 标签、混着用户自己的）或字段缺失（老版本扩展）时
   `sweep_tabs(dry_run=False)` 都会拒绝执行，让你先去 chrome://extensions 重载扩展。
