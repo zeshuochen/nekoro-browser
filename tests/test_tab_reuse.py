@@ -200,6 +200,36 @@ def test_reuse_reports_lookup_failure_instead_of_silently_opening():
     assert "lookup failed" in r["reuse"] and "bridge down" in r["reuse"], r
 
 
+def test_reuse_falls_back_when_candidate_vanishes_mid_flight():
+    """查到和导航之间用户手动关掉了那张 → 试下一张，都不成就开新的，别判死整个调用。"""
+    d = FakeDaemon([tab(1, DUO), tab(2, DUO)], active=2)
+    orig = d.bridge.send_scripting
+
+    async def flaky(params, timeout=30.0):
+        if params.get("target") == 1:          # 1 号已经没了
+            raise RuntimeError("No tab with given id")
+        return await orig(params, timeout)
+
+    d.bridge.send_scripting = flaky
+    r = run(helpers.new_tab(d, DUO, reuse=True))
+    assert r["ok"] and r["tabId"] == 2 and r["reused"] is True, r
+
+
+def test_reuse_reports_vanished_tab_when_nothing_else_left():
+    d = FakeDaemon([tab(1, DUO)], active=1)
+    orig = d.bridge.send_scripting
+
+    async def flaky(params, timeout=30.0):
+        if params.get("target") == 1:
+            raise RuntimeError("No tab with given id")
+        return await orig(params, timeout)
+
+    d.bridge.send_scripting = flaky
+    r = run(helpers.new_tab(d, DUO, reuse=True))
+    assert r["ok"] and r["tabId"] == 901 and "reused" not in r, r
+    assert "gone" in r["reuse"] and "No tab with given id" in r["reuse"], r
+
+
 def test_reuse_is_keyword_only():
     """reuse 比 timeout 晚加进来，占位置会让老的 new_tab(url, 20) 静默变成 reuse=20。"""
     import inspect

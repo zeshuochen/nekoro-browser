@@ -122,7 +122,7 @@ async def new_tab(daemon, url: str = "about:blank", timeout: float = 15.0, *,
             try:
                 cands = await _tabs_like(daemon, url, strict=True)
             except Exception as e:                # 查失败 ≠ 没有同站标签，不能静默当没有
-                cands, lookup_error = [], str(e)
+                cands, lookup_error = [], f"lookup failed: {e}"
                 logger.warning("new_tab(reuse=True): tab lookup failed: %s", e)
             for cand in cands:
                 sw = await switch_tab(daemon, cand["tabId"])
@@ -132,9 +132,16 @@ async def new_tab(daemon, url: str = "about:blank", timeout: float = 15.0, *,
                 # chrome.tabs.update(active:true) 把标签带到前台，和开新标签的可见性一致
                 # （托管组是 collapsed 建的，只切 CDP 指针的话页面还藏在折叠组里，
                 # 截图/懒加载/IntersectionObserver 看到的根本不是同一个环境）。
-                r = await daemon.bridge.send_scripting(
-                    {"action": "navigate", "url": url, "target": cand["tabId"]},
-                    max(timeout, 10) + 5)
+                try:
+                    r = await daemon.bridge.send_scripting(
+                        {"action": "navigate", "url": url, "target": cand["tabId"]},
+                        max(timeout, 10) + 5)
+                except Exception as e:
+                    # 查到和导航之间用户手动关掉了这张 → 和 attach 失败同样处理：
+                    # 试下一张，都不成就开新的。别让一个已消失的标签把整个调用判死。
+                    lookup_error = f"tab {cand['tabId']} gone: {e}"
+                    logger.warning("new_tab(reuse=True): %s", lookup_error)
+                    continue
                 res = {"ok": True, "tabId": cand["tabId"], "reused": True,
                        "loaded": ((r or {}).get("load") == "complete")}
                 return site_notes.attach(res, url)
@@ -151,8 +158,7 @@ async def new_tab(daemon, url: str = "about:blank", timeout: float = 15.0, *,
         res = {"ok": True, "tabId": tab_id, "loaded": loaded}
         if reuse:
             # 要求复用却开了新的，必须说清是为什么，别让调用方以为复用成功了
-            res["reuse"] = (f"lookup failed: {lookup_error}" if lookup_error
-                            else "no reusable tab")
+            res["reuse"] = lookup_error or "no reusable tab"
         else:
             others = await _tabs_like(daemon, url, exclude={tab_id})
             if others:
