@@ -70,12 +70,27 @@ echo "await page_info()" | nekoro-browser
 | 函数 | 用法 | 说明 |
 |------|------|------|
 | `new_tab(url)` | `new_tab("https://example.com")` | 新建标签页 |
+| `new_tab(url, reuse=True)` | `new_tab("https://example.com", reuse=True)` | 同站已有标签就切过去导航，不新开（返回 `reused: True`） |
 | `navigate(url)` | `navigate("https://example.com")` | 当前标签导航（默认等加载完成） |
 | `list_tabs()` | `list_tabs()` | 列托管组标签 `[{tabId,url,title,active,attached}]` |
 | `switch_tab(id)` | `switch_tab(123)` | 切换活动标签（后续命令发往该标签） |
 | `ensure_real_tab()` | `ensure_real_tab()` | 自动从 chrome:// 等内部页导航到 about:blank |
 | `iframe_target(url_substr)` | `iframe_target("player")` | 获取 iframe 的 CDP targetId |
 | `close_tab(tab=None)` | `close_tab(123)` | 关闭标签；省略则关当前 attached tab |
+| `close_tabs(ids)` | `close_tabs([1,2,3])` | 批量关，返回 `{closed, failed}` |
+| `sweep_tabs()` | `sweep_tabs()` | 列可清理候选（同站重复 / 游离 about:blank），**默认只报不关** |
+
+**标签是资产，不是垃圾。** 托管组里上次留下的标签还是同一张——登录态、页面状态都在，
+`switch_tab(id)` 过去就能接着用。所以：
+
+- **开标签前先看看有没有现成的。** `new_tab()` 默认路径下，若同站已有标签，返回值里会带
+  `existing`（清单 + 提示）——标签照开，但你该知道有得复用。要直接复用就传 `reuse=True`。
+  接续上次的会话则用 `list_tabs()` 找 tabId（浏览器重启后 active 指针不可信，见下）。
+- **关不关由你判断，工具不自动关。** 有人就是要一直留着标签，所以没有任何「退出即清」的
+  行为。攒多了用 `sweep_tabs()` 看候选，确认后 `sweep_tabs(dry_run=False)` 或
+  `close_tabs([...])`。活动标签永远不在候选里。
+- `list_tabs()` 的 `grouped: False` 表示托管组还没建起来，这份清单其实是**所有**非
+  `chrome://` 标签、混着用户自己的——这种情况 `sweep_tabs(dry_run=False)` 会拒绝执行。
 
 ### 页面信息
 

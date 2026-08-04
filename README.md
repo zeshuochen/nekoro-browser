@@ -182,7 +182,7 @@ ride along in the tool result — see [Self-Healing and Site Knowledge](#self-he
 
 | Category | Commands |
 |----------|----------|
-| Navigation | `navigate(url)`, `new_tab(url)`, `list_tabs()`, `switch_tab(id)`, `close_tab(id)` |
+| Navigation | `navigate(url)`, `new_tab(url)`, `new_tab(url, reuse=True)`, `list_tabs()`, `switch_tab(id)`, `close_tab(id)`, `close_tabs(ids)`, `sweep_tabs()` |
 | Page info | `page_info()`, `page_html()`, `page_text()`, `get_markdown()`, `state()` |
 | JavaScript | `js(code)`, `cdp(method, **p)`, `cdp_batch(*cmds)` |
 | Interaction | `click_selector(sel)`, `click_index(n)`, `click_at_xy(x,y)`, `type_text(t)`, `fill_input(sel,t)`, `press_key(k)`, `upload_file(sel,path)` |
@@ -253,6 +253,23 @@ permanent read cost. `actions` lists functions that are already callable, so the
 one instead of rebuilding the flow. `list_site_actions()` shows everything loaded, including
 files that failed to load. Conventions for what to record — and what not to — are in
 [`domain-skills/README.md`](https://github.com/zeshuochen/nekoro-browser/blob/master/domain-skills/README.md).
+
+The same idea applies to tabs. A tab left over from last time is still the same tab — its
+login and page state are intact — so `new_tab()` adds an `existing` field when the managed
+group already holds tabs for that site:
+
+```python
+{'ok': True, 'tabId': 42, 'loaded': True,
+ 'existing': {'hint': 'switch_tab(id) reuses an open tab, or new_tab(url, reuse=True)',
+              'tabs': [{'tabId': 17, 'title': 'Example Domain'}]}}
+```
+
+The tab is still opened — the field only makes reuse visible at the moment a duplicate is
+about to appear. Pass `reuse=True` to navigate an existing tab instead of opening one.
+Nothing is ever closed automatically: whether a tab is clutter or an asset is the user's
+call, so `sweep_tabs()` only *reports* candidates (same-site duplicates, stray
+`about:blank`) and `sweep_tabs(dry_run=False)` / `close_tabs([...])` act on them. The active
+tab is never a candidate.
 
 ---
 

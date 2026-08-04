@@ -175,7 +175,7 @@ command = "nekoro-browser-mcp"
 
 | 分类 | 命令 |
 |------|------|
-| 导航 | `navigate(url)`、`new_tab(url)`、`list_tabs()`、`switch_tab(id)`、`close_tab(id)` |
+| 导航 | `navigate(url)`、`new_tab(url)`、`new_tab(url, reuse=True)`、`list_tabs()`、`switch_tab(id)`、`close_tab(id)`、`close_tabs(ids)`、`sweep_tabs()` |
 | 页面信息 | `page_info()`、`page_html()`、`page_text()`、`get_markdown()`、`state()` |
 | JavaScript | `js(code)`、`cdp(method, **p)`、`cdp_batch(*cmds)` |
 | 交互 | `click_selector(sel)`、`click_index(n)`、`click_at_xy(x,y)`、`type_text(t)`、`fill_input(sel,t)`、`press_key(k)`、`upload_file(sel,path)` |
@@ -243,6 +243,20 @@ Agent 遇到缺口时当场补、当场用——不重新编译，不重启 daem
 `actions` 列的是已经可以直接调的函数，agent 调它就行，不必重新拼一遍流程。
 `list_site_actions()` 可查全部已载入的函数，含载入失败的文件。什么该记、什么不该记，
 见 [`domain-skills/README.md`](https://github.com/zeshuochen/nekoro-browser/blob/master/domain-skills/README.md)。
+
+标签同理。上次留下的标签还是同一张，登录态和页面状态都在——所以托管组里已有同站标签时，
+`new_tab()` 会多带一个 `existing`：
+
+```python
+{'ok': True, 'tabId': 42, 'loaded': True,
+ 'existing': {'hint': '同站已有标签；switch_tab(id) 可复用，或 new_tab(url, reuse=True)',
+              'tabs': [{'tabId': 17, 'title': 'Example Domain'}]}}
+```
+
+标签照开，这个字段只是让「有得复用」这件事出现在即将造出重复标签的那一刻。要直接复用就传
+`reuse=True`。**不会自动关掉任何标签**：标签是垃圾还是资产由用户判断，所以 `sweep_tabs()`
+只*报告*候选（同站重复、游离 `about:blank`），`sweep_tabs(dry_run=False)` /
+`close_tabs([...])` 才真关，且活动标签永远不进候选。
 
 ---
 

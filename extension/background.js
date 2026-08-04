@@ -693,7 +693,10 @@ async function handleCmd(msg) {
     } else if (msg.type === 'auto_attach') {
         await autoAttach();
     } else if (msg.type === 'list_tabs') {
-        post({id: msg.id, result: {tabs: await listManagedTabs()}});
+        // grouped=false 时 listManagedTabs 退化成「所有非 chrome:// 标签」——里面混着
+        // 用户自己的标签。sweep_tabs 靠这个标志决定拒不拒绝真关。
+        post({id: msg.id, result: {tabs: await listManagedTabs(),
+                                   grouped: managedGroupId != null}});
     } else if (msg.type === 'last_dialog') {
         // 返回最近被自动处置的原生对话框（读后清，下次只报新的）
         post({id: msg.id, result: lastDialog});

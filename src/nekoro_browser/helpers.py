@@ -44,15 +44,77 @@ def _is_illegal_return_error(desc: str) -> bool:
 # Tab
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def new_tab(daemon, url: str = "about:blank", timeout: float = 15.0) -> dict:
+# 托管组里的旧标签是资产不是垃圾：同一张标签，登录态和页面状态都还在，能直接接着用。
+# 但 agent 不会主动 list_tabs() 去查——和 site_notes 那条同源的教训：约定不执行自己。
+# 所以把「同站已经开着」这条信息挂到 new_tab 的返回值上，那正是即将造出重复标签的时刻。
+_HINT_TABS = 3          # 提示里最多列几张，其余只报数量——给索引不给正文
+
+
+def _tab_key(url: str) -> str:
+    """判重键 = hostname + 首段 path。`/lesson` 与 `/practice` 算两处，够粗也够用。
+    只认 http/https：about:blank 没 hostname，而 `chrome://newtab` 的 hostname 是
+    'newtab'——不按 scheme 卡住就会把内部页当成正经站点参与判重。"""
+    from urllib.parse import urlparse
+    try:
+        u = urlparse(url or "")
+    except ValueError:
+        return ""
+    if u.scheme not in ("http", "https"):
+        return ""
+    host = (u.hostname or "").lower()
+    if not host:
+        return ""
+    seg = [s for s in (u.path or "").split("/") if s]
+    return f"{host}/{seg[0]}" if seg else host
+
+
+async def _tabs_like(daemon, url: str, exclude=()) -> list[dict]:
+    """托管组里与 url 同站同段的标签。附赠功能——任何异常都吞成空列表，绝不连累导航本身。"""
+    key = _tab_key(url)
+    if not key:
+        return []
+    try:
+        r = await daemon.list_tabs()
+        out = []
+        for t in ((r or {}).get("tabs") or []):
+            tid = t.get("tabId")
+            if tid is None or tid in exclude:
+                continue
+            if _tab_key(t.get("url", "")) == key:
+                out.append({"tabId": tid, "title": (t.get("title") or "")[:80]})
+        return out
+    except Exception:
+        return []
+
+
+async def new_tab(daemon, url: str = "about:blank", reuse: bool = False,
+                  timeout: float = 15.0) -> dict:
     """new_tab("https://example.com") — 开新标签，加入 nekoro 托管组，切过去并 attach。
     走扩展 navigate action：chrome.tabs.create + 分组 + waitTabLoad 等**真实 load 事件**，
     尽量等到加载完（不像原来裸 Target.createTarget 直接返回、后续 wait 撞 about:blank
     stale-complete 竞态）；超时则 loaded=False。返回 {tabId, loaded}，之后 helper 直接
     作用于新标签。注意：load 等待上限由扩展内部硬编码（~10s），`timeout` 只界定这条 RPC
     的传输上限（取 max(timeout,10)+5，保证不早于扩展的 load 等待就超时），并不缩短扩展
-    侧的 load 等待预算。"""
+    侧的 load 等待预算。
+
+    `reuse=True` 时若托管组里已有同站标签，就切过去导航而不新开，返回值多 `reused: True`
+    （那张标签 attach 不上——比如被 DevTools 占着——则如实回落到开新标签）。
+    默认 False：函数叫 new_tab，默认开新才是诚实的。默认路径下若发现同站已有标签，
+    返回值里带 `existing`（清单+提示），标签照开、行为不变，只是让 agent 知道有得复用。"""
     try:
+        if reuse:
+            for cand in await _tabs_like(daemon, url):
+                sw = await switch_tab(daemon, cand["tabId"])
+                if not sw.get("ok"):
+                    continue                     # 这张 attach 不上，试下一张
+                nav = await navigate(daemon, url, timeout=timeout)
+                res = {"ok": bool(nav.get("ok")), "tabId": cand["tabId"], "reused": True,
+                       "loaded": bool(nav.get("loaded"))}
+                if not res["ok"]:
+                    res["error"] = nav.get("error", "reuse: navigate failed")
+                return site_notes.attach(res, url)
+            # 一张都复用不上 → 照常开新标签，不硬报错
+
         r = await daemon.bridge.send_scripting({"action": "navigate", "url": url},
                                                max(timeout, 10) + 5)
         tab_id = (r or {}).get("tabId")
@@ -61,16 +123,31 @@ async def new_tab(daemon, url: str = "about:blank", timeout: float = 15.0) -> di
         # 扩展 waitTabLoad 返回字符串 'complete'|'timeout'|'no-tab'，只有 complete 算真加载完
         loaded = ((r or {}).get("load") == "complete")
         await daemon.switch_tab(tab_id)          # attach debugger + 切活动指针
-        return site_notes.attach({"ok": True, "tabId": tab_id, "loaded": loaded}, url)
+        res = {"ok": True, "tabId": tab_id, "loaded": loaded}
+        if not reuse:
+            others = await _tabs_like(daemon, url, exclude={tab_id})
+            if others:
+                res["existing"] = {
+                    "hint": "同站已有标签；switch_tab(id) 可复用，或 new_tab(url, reuse=True)",
+                    "tabs": others[:_HINT_TABS],
+                }
+                if len(others) > _HINT_TABS:
+                    res["existing"]["more"] = len(others) - _HINT_TABS
+        return site_notes.attach(res, url)
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
 async def list_tabs(daemon) -> dict:
-    """list_tabs() → nekoro 托管组里的标签 [{tabId,url,title,active,attached}]。"""
+    """list_tabs() → nekoro 托管组里的标签 [{tabId,url,title,active,attached}]。
+    `grouped: False` 表示托管组还没建起来，这份清单其实是「所有非 chrome:// 标签」，
+    里面混着用户自己的标签——别拿它当「nekoro 开的标签」用（老版本扩展不带该字段）。"""
     try:
         r = await daemon.list_tabs()
-        return {"ok": True, "tabs": r.get("tabs", []), "active": daemon.active_tab_id}
+        out = {"ok": True, "tabs": r.get("tabs", []), "active": daemon.active_tab_id}
+        if "grouped" in (r or {}):
+            out["grouped"] = r["grouped"]
+        return out
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -96,6 +173,77 @@ async def close_tab(daemon, tab: int = None) -> dict:
         return {"ok": True, "closed": (r or {}).get("closed", t)}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+async def close_tabs(daemon, tabs: list) -> dict:
+    """close_tabs([1,2,3]) — 批量关标签，逐个走 close_tab，返回 {closed, failed}。
+    一张关不掉不影响其余（标签可能已被用户手动关掉）。"""
+    closed, failed = [], []
+    for t in (tabs or []):
+        r = await close_tab(daemon, t)
+        (closed if r.get("ok") else failed).append(
+            t if r.get("ok") else {"tabId": t, "error": r.get("error", "")})
+    return {"ok": not failed, "closed": closed, "failed": failed}
+
+
+async def sweep_tabs(daemon, dry_run: bool = True) -> dict:
+    """sweep_tabs() — 列出可清理的标签候选，**默认只报不关**。
+
+    关不关是用户偏好，工具没资格替他定：有人就是要一直留着标签。所以这里只给证据
+    （哪些是同站重复、哪些是游离 about:blank），由 agent/用户判断，`dry_run=False`
+    才真关。当前活动标签永远不进候选。
+
+    候选口径：
+    - `duplicate` — 同一判重键（host + 首段 path）下多于一张，保留活动标签，
+      没有活动标签则保留最后一张（通常是最新开的），其余进 close 列表
+    - `blank` — url 为空或 about:blank 的游离标签（站点自己弹出来的那种）
+
+    ⚠️ 扩展还没建起托管组时，`list_tabs` 会退化成「所有非 chrome:// 标签」，候选里
+    就可能混进你自己日常的标签。这种情况下拒绝真关（强制 dry_run），只报候选。"""
+    try:
+        r = await daemon.list_tabs()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    tabs = ((r or {}).get("tabs") or [])
+    grouped = (r or {}).get("grouped")       # 老版本扩展不带这个字段 → None = 未知
+    active = getattr(daemon, "active_tab_id", None)
+
+    groups, blank = {}, []
+    for t in tabs:
+        tid = t.get("tabId")
+        if tid is None:
+            continue
+        url = t.get("url", "") or ""
+        key = _tab_key(url)
+        if not key:
+            if tid != active:                 # 活动标签永不进候选
+                blank.append({"tabId": tid, "url": url or "about:blank"})
+            continue
+        # 活动标签要参与分组（否则「另一张与它重复」这种最常见的情况会数成 1 张、
+        # 判不出重复），只是永远落在 keep 那一侧。
+        groups.setdefault(key, []).append({"tabId": tid, "url": url})
+
+    candidates = []
+    for key, members in groups.items():
+        if len(members) < 2:                  # 同站只有一张 = 不算重复
+            continue
+        keep = next((m for m in members if m["tabId"] == active), members[-1])
+        close = [m["tabId"] for m in members if m["tabId"] != keep["tabId"]]
+        candidates.append({"reason": "duplicate", "key": key, "url": keep["url"],
+                           "keep": keep["tabId"], "close": close})
+
+    ids = [i for c in candidates for i in c["close"]] + [b["tabId"] for b in blank]
+    out = {"ok": True, "total": len(tabs), "candidates": candidates, "blank": blank}
+    if not dry_run and grouped is False:
+        out["note"] = ("拒绝真关：扩展没有托管组，候选里可能混进你自己的标签。"
+                       "确认后请用 close_tabs([...]) 逐个指定。")
+        return out
+    if dry_run:
+        out["note"] = (f"dry_run — 未关任何标签。sweep_tabs(dry_run=False) 或 "
+                       f"close_tabs({ids}) 执行" if ids else "dry_run — 没有可清理的候选")
+        return out
+    out["result"] = await close_tabs(daemon, ids)
+    return out
 
 
 async def navigate(daemon, url: str, wait: bool = True, timeout: float = 15.0) -> dict:
