@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nekoro-browser"
-version = "0.1.0"
+version = "0.1.1"
 description = "Lightweight browser automation CLI + MCP server driving your everyday Chrome via the extension chrome.debugger API — keeps your login state, no --remote-debugging-port"
 readme = "README.md"
 license = {text = "MIT"}
