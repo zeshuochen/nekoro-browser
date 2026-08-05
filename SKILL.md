@@ -76,7 +76,7 @@ echo "await page_info()" | nekoro-browser
 | `list_tabs()` | `list_tabs()` | 列托管组标签 `[{tabId,url,title,active,attached}]` |
 | `switch_tab(id)` | `switch_tab(123)` | 切换活动标签（后续命令发往该标签） |
 | `ensure_real_tab()` | `ensure_real_tab()` | 自动从 chrome:// 等内部页导航到 about:blank |
-| `iframe_target(url_substr)` | `iframe_target("player")` | 获取 iframe 的 CDP targetId |
+| `iframe_target(url_substr)` | `iframe_target("player")` | 获取 iframe 的 **frameId**（配 `Page.createIsolatedWorld` 在 iframe 内跑 JS，用法见 docstring；注意 isolated world 只共享 DOM、看不到页面的 JS 全局） |
 | `close_tab(tab=None)` | `close_tab(123)` | 关闭标签；省略则关当前 attached tab |
 | `close_tabs(ids)` | `close_tabs([1,2,3])` | 批量关，返回 `{closed, failed}` |
 | `sweep_tabs()` | `sweep_tabs()` | 列可清理候选（同站重复 / 游离 about:blank），**默认只报不关** |
