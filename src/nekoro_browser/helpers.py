@@ -173,6 +173,18 @@ async def new_tab(daemon, url: str = "about:blank", timeout: float = 15.0, *,
         return {"ok": False, "error": str(e)}
 
 
+async def ensure_tab(daemon, url: str, timeout: float = 15.0) -> dict:
+    """ensure_tab("https://example.com") — 复用优先的导航（借鉴 ego-lite 的
+    `browser.openOrReuseTab`：名字即语义，不用调用方记得传 `reuse=True`）。
+
+    托管组里已有同站标签（登录态和页面状态都还在）就切过去复用，没有才开新标签。
+    等价于 `new_tab(url, reuse=True)`；reuse 查失败（桥抖）时保持 new_tab 的行为——
+    如实开新标签并在返回值里带 `reuse` 字段说明原因，有得用总比报错强。
+
+    返回值同 new_tab：{ok, tabId, loaded}；复用时多 `reused: True`。"""
+    return await new_tab(daemon, url, timeout=timeout, reuse=True)
+
+
 async def list_tabs(daemon) -> dict:
     """list_tabs() → nekoro 托管组里的标签 [{tabId,url,title,active,attached}]。
     `grouped: False` 表示托管组还没建起来，这份清单其实是「所有非 chrome:// 标签」，
@@ -769,6 +781,149 @@ async def _find_tab(daemon, url_hint: str = "http") -> int | None:
         return None
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# 统一 locator —— 借鉴 ego-lite 的 element-resolver
+# ═══════════════════════════════════════════════════════════════════════════════
+# ego-lite 把定位形式收敛成一个字符串（css:/text:/xpath=… 等），并用
+# ElementResolutionError.kind 区分「重试有用」（transient：没找到，页面可能还没
+# 渲染完）和「重试无用」（permanent：多匹配歧义或非法选择器——多匹配还静默点
+# 第一个正是它明确反对的）。NEKORO 原有 click_selector/click_text/click_index 各管
+# 一种形式、失败只报 error 无分类，agent 看到 "not found" 不知道该不该重试。
+# click() 补上统一入口 + 错误分类，作为决策信号。
+
+_LOC_KINDS = ("css", "text", "index", "xpath", "placeholder")
+
+
+def _parse_loc(loc: str):
+    """解析统一 locator 字符串 → (kind, value, nth)。
+
+    - `css:.btn` 或裸 `.btn` — CSS 选择器
+    - `text:登录` / `text=登录` — 可见文本（模糊包含，取第一个匹配）
+    - `index:3` — state() 序号（与 state() 同一元素序）
+    - `xpath://button[contains(.,'登录')]` — XPath
+    - `placeholder:关键词` — input/textarea 的 placeholder
+    - 可选 `nth:N;` 前缀：多匹配歧义时取第 N 个（`nth:2;css:.btn`）
+    未知前缀按裸 CSS 处理——兼容老调用 click(".btn")。
+    """
+    loc = (loc or "").strip()
+    nth = None
+    if loc.startswith("nth:"):
+        semi = loc.find(";")
+        if semi >= 5 and loc[4:semi].isdigit():
+            nth = int(loc[4:semi])
+            loc = loc[semi + 1:].strip()
+    for kind in _LOC_KINDS:
+        if loc.startswith(kind + ":"):
+            return kind, loc[len(kind) + 1:].strip(), nth
+    if loc.startswith("text="):
+        return "text", loc[5:].strip(), nth
+    return "css", loc, nth
+
+
+def _loc_center_js(kind: str, value: str, nth) -> str:
+    """构造返回 {kind:'ok'|'not-found'|'ambiguous'|'invalid', ...} 的定位表达式。
+
+    text/index 走扩展 getRectByText / getRectByIndex op（与 click_text / click_index
+    行为一致）；css/xpath/placeholder 用内联 JS 并做多匹配检测——多匹配歧义报
+    permanent，而不是静默点第一个。"""
+    idx = nth if nth is not None else 0
+    if kind == "css":
+        sel = json.dumps(value)
+        amb = "" if nth is not None else "  if (hits.length > 1) return {kind: 'ambiguous', count: hits.length};"
+        return ("(() => {\n"
+                "  let hits;\n"
+                f"  try {{ hits = Array.from(document.querySelectorAll({sel})); }}\n"
+                "  catch (e) { return {kind: 'invalid', error: 'invalid selector: ' + e.message}; }\n"
+                f"{amb}\n"
+                "  if (hits.length === 0) return {kind: 'not-found'};\n"
+                f"  const el = hits[{idx}];\n"
+                "  if (el === undefined) return {kind: 'not-found'};\n"
+                "  const r = el.getBoundingClientRect();\n"
+                "  if (!r.width && !r.height) return {kind: 'not-found'};\n"
+                "  return {kind: 'ok', x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2)};\n"
+                "})()")
+    if kind == "xpath":
+        xp = json.dumps(value)
+        amb = "" if nth is not None else "  if (hits.length > 1) return {kind: 'ambiguous', count: hits.length};"
+        return ("(() => {\n"
+                f"  const snap = document.evaluate({xp}, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);\n"
+                "  const hits = [];\n"
+                "  for (let i = 0; i < snap.snapshotLength; i++) hits.push(snap.snapshotItem(i));\n"
+                f"{amb}\n"
+                "  if (hits.length === 0) return {kind: 'not-found'};\n"
+                f"  const el = hits[{idx}];\n"
+                "  if (el === undefined) return {kind: 'not-found'};\n"
+                "  const r = el.getBoundingClientRect();\n"
+                "  if (!r.width && !r.height) return {kind: 'not-found'};\n"
+                "  return {kind: 'ok', x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2)};\n"
+                "})()")
+    if kind == "placeholder":
+        ph = json.dumps(value)
+        amb = "" if nth is not None else "  if (hits.length > 1) return {kind: 'ambiguous', count: hits.length};"
+        return ("(() => {\n"
+                "  const hits = Array.from(document.querySelectorAll('input[placeholder], textarea[placeholder]'))\n"
+                f"    .filter(el => (el.getAttribute('placeholder') || '').includes({ph}));\n"
+                f"{amb}\n"
+                "  if (hits.length === 0) return {kind: 'not-found'};\n"
+                f"  const el = hits[{idx}];\n"
+                "  if (el === undefined) return {kind: 'not-found'};\n"
+                "  const r = el.getBoundingClientRect();\n"
+                "  if (!r.width && !r.height) return {kind: 'not-found'};\n"
+                "  return {kind: 'ok', x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2)};\n"
+                "})()")
+    raise ValueError(f"unsupported locator kind: {kind}")
+
+
+async def click(daemon, loc: str) -> dict:
+    """click("css:.btn") / click("text:登录") / click("index:3") /
+    click("xpath://button[contains(.,'登录')]") / click("placeholder:关键词")
+    — 统一定位点击（借鉴 ego-lite 的 locator 语法）。一个入口覆盖所有定位形式，
+    不用在 click_selector / click_text / click_index 之间挑；支持 `nth:N;` 前缀
+    取第 N 个匹配（`nth:2;css:.btn`）。
+
+    失败返回带 `kind` 决策信号：
+    - transient — 没找到元素，页面可能还没渲染完，值得重试（配合 wait_selector）
+    - permanent — 多匹配歧义（加 nth:N; 或改 xpath 精确定位）或非法选择器，重试无用
+    """
+    kind, value, nth = _parse_loc(loc)
+    try:
+        if kind in ("text", "index"):
+            if kind == "index":
+                if not str(value).isdigit():
+                    return {"ok": False, "error": f"index: not a number: {value}",
+                            "kind": "permanent"}
+                value = int(value)
+            op = "getRectByText" if kind == "text" else "getRectByIndex"
+            r = await daemon.bridge.send_scripting(
+                {"action": "evaluate", "op": op, "arg": value}, 10)
+            rect = r.get("value") if r else None
+            if not rect or rect.get("x") is None:
+                return {"ok": False, "error": f"{kind} not found: {value}",
+                        "kind": "transient"}
+            return await click_at_xy(daemon, rect["x"], rect["y"])
+        code = _loc_center_js(kind, value, nth)
+        r = await daemon.evaluate(code)
+        got = (r or {}).get("result", {}).get("value")
+        if not got or not isinstance(got, dict):
+            return {"ok": False, "error": f"locator failed: {loc}", "kind": "transient"}
+        gk = got.get("kind")
+        if gk == "not-found":
+            return {"ok": False, "error": f"{kind} not found: {value}", "kind": "transient"}
+        if gk == "ambiguous":
+            return {"ok": False,
+                    "error": f"{kind} matched {got.get('count')} elements: {value} "
+                             f"(add nth:N; prefix or use xpath:)",
+                    "kind": "permanent"}
+        if gk == "invalid":
+            return {"ok": False, "error": got.get("error", f"invalid {kind}: {value}"),
+                    "kind": "permanent"}
+        if gk != "ok" or not isinstance(got.get("x"), (int, float)):
+            return {"ok": False, "error": f"locator failed: {loc}", "kind": "transient"}
+        return await click_at_xy(daemon, got["x"], got["y"])
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 async def click_selector(daemon, sel: str, tab: int = None) -> dict:
     """click_selector(".btn") — CDP 真实坐标点击 (isTrusted:true)"""
     t = tab or await _find_tab(daemon)
@@ -778,8 +933,8 @@ async def click_selector(daemon, sel: str, tab: int = None) -> dict:
         r = await daemon.bridge.send_scripting({
             "action": "evaluate", "target": t, "op": "getRect", "sel": sel}, 10)
         rect = r.get("value") if r else None
-        if not rect or not rect.get("x"):
-            return {"ok": False, "error": f"element not found: {sel}"}
+        if not rect or rect.get("x") is None:
+            return {"ok": False, "error": f"element not found: {sel}", "kind": "transient"}
         # CDP 真实鼠标点击
         return await click_at_xy(daemon, rect["x"], rect["y"])
     except Exception as e:
@@ -822,8 +977,8 @@ async def click_text(daemon, text: str, tab: int = None) -> dict:
         r = await daemon.bridge.send_scripting({
             "action": "evaluate", "target": t, "op": "getRectByText", "arg": text}, 10)
         rect = r.get("value") if r else None
-        if not rect or not rect.get("x"):
-            return {"ok": False, "error": f"text not found: {text}"}
+        if not rect or rect.get("x") is None:
+            return {"ok": False, "error": f"text not found: {text}", "kind": "transient"}
         return await click_at_xy(daemon, rect["x"], rect["y"])
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -837,8 +992,8 @@ async def click_index(daemon, index: int, tab: int = None) -> dict:
         r = await daemon.bridge.send_scripting({
             "action": "evaluate", "target": t, "op": "getRectByIndex", "arg": index}, 10)
         rect = r.get("value") if r else None
-        if not rect or not rect.get("x"):
-            return {"ok": False, "error": f"index not found: {index}"}
+        if not rect or rect.get("x") is None:
+            return {"ok": False, "error": f"index not found: {index}", "kind": "transient"}
         return await click_at_xy(daemon, rect["x"], rect["y"])
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -891,7 +1046,18 @@ async def wait_selector(daemon, sel: str, state: str = "visible",
             "action": "evaluate", "target": t, "op": "waitSelector",
             "arg": {"sel": sel, "state": state, "timeout": int(timeout * 1000)}},
             timeout + 5)
-        return {"ok": True, "result": r.get("value")}
+        value = r.get("value") if r else None
+        res = {"ok": True, "result": value}
+        # 扩展侧返回字符串状态：'visible'|'hidden'|'attached'|'detached'|'timeout:sel'|'no-selector'。
+        # timeout = 元素没在时限内到达目标态（可能还没渲染完）→ transient，可重试；
+        # no-selector = 调用方没给选择器 → permanent，重试无用。补 kind 决策信号，
+        # 结构不变（ok/result 与旧版一致），agent 读到 kind 就能决定是否重试。
+        if isinstance(value, str):
+            if value.startswith("timeout"):
+                res["kind"] = "transient"
+            elif value == "no-selector":
+                res["kind"] = "permanent"
+        return res
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
