@@ -278,7 +278,8 @@ Agent 遇到缺口时当场补、当场用——不重新编译，不重启 daem
 
 - **未打包的扩展会被 Chrome 停用。** 以「加载已解压的扩展程序」装的扩展，在 Chrome 更新或重启后可能被自动关掉、或弹出「停用开发者模式扩展程序」的提示。`--doctor` 报 Extension/SW 不响应时，先去 `chrome://extensions/` 把它重新打开。本项目目前**不发 Chrome 应用商店**，这条限制短期内不会消失。
 - **Service Worker 保活不是 100%。** MV3 的回收时机由 Chrome 决定。心跳 + `onStartup` + 自动重挂能覆盖绝大多数情况，但无人值守的长时 cron 任务仍建议先 `--doctor` 健康检查再重试。
-- **同时只驱动一个「活动标签」。** 多标签可以列举和切换（`list_tabs` / `switch_tab`），但命令总是发往当前活动标签，不做并行会话。
+- **一切围绕一个「活动标签」。** 16 个 helper（`click`、`click_selector`、`state`、`wait_selector`、`fill_input` 等）可以传 `tab=id` 指定另一张**已 attach** 的标签——指名了却没 attach 会直接报错，**不会悄悄退回活动标签**。其余 37 个恒跟随活动标签。仍然不做并行会话：一个 daemon 驱动一个 Chrome，请求串行。
+- **下载落在 Chrome 自己设定的目录，路径改不了。** `wait_for_download()` 返回 `{url, filename, bytes}`——只有文件名，没有完整路径。`Browser.setDownloadBehavior`（`-32601`）和已废弃的 `Page.setDownloadBehavior`（`-32000 "Cannot not access browser-level commands"`）都是 browser-level 命令，在 `chrome.debugger` 的 tab attach 下一律被拒——扩展只能拿到 tab target。要改目录请在 Chrome 设置里改。
 - **MCP server 串行处理请求。** 一次 `wait_selector(timeout=90)` 期间，同一连接上的其他请求（含 `ping`）会排队等它做完。要并发就开多个客户端连接。
 
 ---
@@ -299,6 +300,7 @@ Agent 遇到缺口时当场补、当场用——不重新编译，不重启 daem
 | `nekoro-browser --restart` | 停止后重启（前台） |
 | `nekoro-browser --reload-ext` | 命扩展重载 service worker，**升级后必须跑一次**；跑批量任务前刷干净状态也用它 |
 | `nekoro-browser --extension-path` | 打印扩展目录（加载已解压扩展时用） |
+| `nekoro-browser --version` | 打印已安装版本（和你加载的扩展对一下） |
 | `nekoro-browser --port N` | daemon 监听 N 端口（默认 28417） |
 | `nekoro-browser -c "code"` | 执行一段代码并返回结果 |
 | `nekoro-browser --timeout N` | 单次执行的超时秒数（默认 120，等页面加载很费时） |
