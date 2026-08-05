@@ -175,10 +175,10 @@ command = "nekoro-browser-mcp"
 
 | 分类 | 命令 |
 |------|------|
-| 导航 | `navigate(url)`、`new_tab(url)`、`new_tab(url, reuse=True)`、`list_tabs()`、`switch_tab(id)`、`close_tab(id)`、`close_tabs(ids)`、`sweep_tabs()` |
+| 导航 | `navigate(url)`、`new_tab(url)`、`ensure_tab(url)`、`new_tab(url, reuse=True)`、`list_tabs()`、`switch_tab(id)`、`close_tab(id)`、`close_tabs(ids)`、`sweep_tabs()` |
 | 页面信息 | `page_info()`、`page_html()`、`page_text()`、`get_markdown()`、`state()` |
 | JavaScript | `js(code)`、`cdp(method, **p)`、`cdp_batch(*cmds)` |
-| 交互 | `click_selector(sel)`、`click_index(n)`、`click_at_xy(x,y)`、`type_text(t)`、`fill_input(sel,t)`、`press_key(k)`、`upload_file(sel,path)` |
+| 交互 | `click(loc)`、`click_selector(sel)`、`click_index(n)`、`click_at_xy(x,y)`、`type_text(t)`、`fill_input(sel,t)`、`press_key(k)`、`upload_file(sel,path)` |
 | 弹窗 | `dialog_off()`、`get_last_dialog()` |
 | 等待 | `wait_for_load()`、`wait_selector(sel)`、`wait_for_network_idle()`、`sleep(s)` |
 | 截图 | `capture_screenshot()`、`capture_screenshot("jpeg", 90)` |
@@ -349,3 +349,7 @@ PR 欢迎。改动前先跑一遍测试：`for f in tests/test_*.py; do uv run p
 - **[browser-harness](https://github.com/browser-use/browser-harness)** — helpers.py 的薄封装哲学（每个函数是 CDP 命令的别名，≤10 行）、管道模式、自愈 `agent_helpers.py`、domain-skills 目录结构、`cdp()` 原始访问接口
 - **[browser-act](https://github.com/browser-act/skills)** — `state()` 索引元素树、`*[N]` 增量标记、`waitSelector()` 状态等待、`getMarkdown()` 页面提取
 - **[Playwright](https://github.com/microsoft/playwright)** — CDP `Input.dispatchMouseEvent` 真实鼠标事件（`isTrusted:true`）、扩展+daemon 双路径架构
+
+思路借鉴：
+
+- **[ego-lite](https://github.com/citrolabs/ego-lite)** — "code base，不是 CLI base"（agent 写脚本而不是命令循环）、统一 locator 语法（`css:` / `text:` / `xpath=` …）配 `transient`/`permanent` 元素解析错误分类（重试/放弃的决策信号，→ `click()`）、"名字即语义"的 `openOrReuseTab`（→ `ensure_tab()`）、把经验积累当作一等设计目标（nekoro 的 domain-skills 正是在做这件事）

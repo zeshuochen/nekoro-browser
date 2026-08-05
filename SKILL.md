@@ -70,6 +70,7 @@ echo "await page_info()" | nekoro-browser
 | 函数 | 用法 | 说明 |
 |------|------|------|
 | `new_tab(url)` | `new_tab("https://example.com")` | 新建标签页 |
+| `ensure_tab(url)` | `ensure_tab("https://example.com")` | **复用优先**：同站已有标签就切过去导航，没有才新开（openOrReuseTab 语义，等价 `new_tab(url, reuse=True)`，不用记参数） |
 | `new_tab(url, reuse=True)` | `new_tab("https://example.com", reuse=True)` | 同站已有标签就切过去导航，不新开（返回 `reused: True`） |
 | `navigate(url)` | `navigate("https://example.com")` | 当前标签导航（默认等加载完成） |
 | `list_tabs()` | `list_tabs()` | 列托管组标签 `[{tabId,url,title,active,attached}]` |
@@ -128,6 +129,7 @@ echo "await page_info()" | nekoro-browser
 
 | 函数 | 用法 | 说明 |
 |------|------|------|
+| `click(loc)` | `click("text:登录")` / `click("css:.btn")` / `click("xpath://button")` / `click("index:3")` / `click("placeholder:关键词")` | **统一定位点击**（ego-lite 风格 locator）。一个入口覆盖所有定位形式，支持 `nth:N;` 前缀取第 N 个匹配（`nth:2;css:.btn`）。失败带 `kind` 决策信号：`transient`=没找到（可重试）/ `permanent`=多匹配歧义或非法选择器（重试无用，换定位） |
 | `click_at_xy(x, y)` | `click_at_xy(100, 200)` | CDP 真实鼠标点击（isTrusted:true） |
 | `click_selector(sel)` | `click_selector("#btn")` | CSS 选择器 → CDP 坐标点击 |
 | `click_text("文字")` | `click_text("喜欢")` | 按可见文本 → CDP 坐标点击 |
