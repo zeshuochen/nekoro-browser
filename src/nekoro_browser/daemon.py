@@ -165,8 +165,8 @@ class Daemon:
         return await self.bridge.send_request("switch_tab", tabId=tab_id)
     async def navigate(self, url): return await self.bridge.send("Page.navigate", {"url": url})
     async def evaluate(self, expr): return await self.bridge.send("Runtime.evaluate", {"expression":expr,"returnByValue":True})
-    async def screenshot(self, f="png", q=80):
-        r = await self.bridge.send("Page.captureScreenshot", {"format":f,"quality":q})
+    async def screenshot(self, format="png", quality=80):
+        r = await self.bridge.send("Page.captureScreenshot", {"format":format,"quality":quality})
         return r.get("data","")
     async def get_document(self): return await self.bridge.send("DOM.getDocument", {"depth":-1})
     async def query_selector(self, sel):
