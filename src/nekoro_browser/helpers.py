@@ -750,6 +750,43 @@ async def get_response_body(daemon, request_id: str) -> dict:
         return {"ok": False, "error": str(e)}
 
 
+async def wait_for_download(daemon, timeout: float = 30.0) -> dict:
+    """wait_for_download(30) — 点击下载后等待完成（Page.downloadWillBegin/Progress 事件）。
+
+    下载落 Chrome 默认下载目录（browser-level 的 setDownloadBehavior 被 chrome.debugger
+    tab attach 拒绝，路径无法自定义）。事件在 daemon 缓冲里，触发下载后再调也能等到。
+    返回 {url, filename, bytes}；超时 → kind:transient（可重试）；取消 → kind:permanent。
+    """
+    try:
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + timeout
+        info = {}
+        while True:
+            for e in await drain_events(daemon):
+                m = (e or {}).get("method") or ""
+                p = (e or {}).get("params") or {}
+                if m == "Page.downloadWillBegin":
+                    info.setdefault("url", p.get("url") or "")
+                    info.setdefault("filename", p.get("suggestedFilename") or "")
+                elif m == "Page.downloadProgress":
+                    st = p.get("state")
+                    if st == "completed":
+                        return {"ok": True, "url": info.get("url", ""),
+                                "filename": info.get("filename") or "unknown",
+                                "bytes": p.get("totalBytes")}
+                    if st == "canceled":
+                        return {"ok": False, "error": "download canceled",
+                                "kind": "permanent"}
+            if loop.time() >= deadline:
+                if info:
+                    return {"ok": False, "error": "download started but not finished",
+                            "kind": "transient", "filename": info.get("filename")}
+                return {"ok": False, "error": "no download detected", "kind": "transient"}
+            await asyncio.sleep(0.3)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Extension self-reload
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -920,6 +957,73 @@ async def click(daemon, loc: str) -> dict:
         if gk != "ok" or not isinstance(got.get("x"), (int, float)):
             return {"ok": False, "error": f"locator failed: {loc}", "kind": "transient"}
         return await click_at_xy(daemon, got["x"], got["y"])
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+async def refs(daemon, selector: str = None, max_items: int = 50) -> dict:
+    """refs() → [{ref, tag, text}] — 可交互元素 + 稳定句柄（CDP backendNodeId）。
+
+    借鉴 ego-lite 的 @N ref：ref 是 backendNodeId，DOM 小变化后仍指向同一元素
+    （跨轮次稳定）；页面导航/大改后失效 → click_ref 报 kind:transient，重新 refs()。
+    selector 默认覆盖主流可交互元素；传 selector 可收窄。
+    """
+    try:
+        await daemon.bridge.send("DOM.enable", {})
+        r = await daemon.bridge.send("DOM.getDocument", {})
+        root = (r or {}).get("root", {})
+        sel = selector or ("button, a, input, textarea, select, [role=\"button\"], "
+                           "[onclick], [data-testid], [contenteditable]")
+        r2 = await daemon.bridge.send("DOM.querySelectorAll",
+                                      {"nodeId": root.get("nodeId"), "selector": sel})
+        out = []
+        for nid in (r2 or {}).get("nodeIds", [])[:max_items]:
+            d = await daemon.bridge.send("DOM.describeNode", {"nodeId": nid})
+            node = (d or {}).get("node", {})
+            ref = node.get("backendNodeId")
+            if ref is None:
+                continue
+            tag = (node.get("nodeName") or "").lower()
+            text = ""
+            try:
+                rr = await daemon.bridge.send("DOM.resolveNode", {"backendNodeId": ref})
+                oid = ((rr or {}).get("object") or {}).get("objectId")
+                if oid:
+                    cf = await daemon.bridge.send("Runtime.callFunctionOn", {
+                        "objectId": oid,
+                        "functionDeclaration":
+                            "function(){ const t=(this.innerText||this.value||'').trim();"
+                            " return (t||(this.getAttribute&&(this.getAttribute('aria-label')||''))).slice(0,80) }",
+                        "returnByValue": True})
+                    text = str(((cf or {}).get("result") or {}).get("value") or "")
+            except Exception:
+                text = ""
+            out.append({"ref": ref, "tag": tag, "text": text})
+        return {"ok": True, "result": out}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+async def click_ref(daemon, ref: int) -> dict:
+    """click_ref(123) — 用 backendNodeId 点击（跨轮次稳定句柄）。
+
+    ref 从 refs() 拿。DOM 小变化后仍命中同一元素；页面导航后失效 →
+    kind:transient（重新 refs()），不静默点错位置。
+    """
+    try:
+        try:
+            bm = await daemon.bridge.send("DOM.getBoxModel", {"backendNodeId": ref})
+        except Exception as e:
+            return {"ok": False,
+                    "error": f"ref {ref} no longer valid (page changed?): {e}",
+                    "kind": "transient"}
+        content = ((bm or {}).get("model") or {}).get("content") or []
+        if len(content) < 8:
+            return {"ok": False, "error": f"ref {ref} has no box model (not rendered?)",
+                    "kind": "transient"}
+        x = sum(content[0::2]) / 4
+        y = sum(content[1::2]) / 4
+        return await click_at_xy(daemon, round(x), round(y))
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
