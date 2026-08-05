@@ -242,6 +242,46 @@ def test_reuse_is_keyword_only():
     assert r["tabId"] == 901 and "reused" not in r, r
 
 
+# ── ensure_tab（openOrReuseTab 语义：复用优先，名字即语义）───────────────
+
+def test_ensure_tab_reuses_existing_same_site_tab():
+    """有同站标签就直接切过去，不新开——这是默认行为，不是可选参数。"""
+    d = FakeDaemon([tab(1, DUO), tab(2, DUO)], active=2)
+    r = run(helpers.ensure_tab(d, DUO))
+    assert r == {"ok": True, "tabId": 1, "reused": True, "loaded": True}, r
+    assert d.switched == [1]
+    # 复用必须走带 target 的扩展 navigate action（chrome.tabs.update(active:true)）
+    assert d.bridge.scripting == [{"action": "navigate", "url": DUO, "target": 1}], \
+        d.bridge.scripting
+    assert d.nav == [], "复用不该走 CDP Page.navigate（标签会留在折叠组里不可见）"
+
+
+def test_ensure_tab_opens_new_when_no_candidate():
+    """没有同站标签 → 开新标签，语义等价 new_tab(reuse=True)。"""
+    d = FakeDaemon([], active=None)
+    r = run(helpers.ensure_tab(d, DUO))
+    assert r["ok"] and r["tabId"] == 901 and "reused" not in r, r
+    assert r["reuse"] == "no reusable tab", r
+
+
+def test_ensure_tab_falls_back_when_attach_fails():
+    """旧标签被 DevTools 占着 attach 不上 → 如实开新标签，不硬报错。"""
+    d = FakeDaemon([tab(1, DUO)], active=1, attach_fail={1})
+    r = run(helpers.ensure_tab(d, DUO))
+    assert r["ok"] and r["tabId"] == 901 and "reused" not in r, r
+    assert r["reuse"] == "no reusable tab", r
+
+
+def test_ensure_tab_passes_timeout_as_positional_third():
+    """ensure_tab(url, 20)：第二个位置参数仍是 timeout，不是复用开关。"""
+    import inspect
+    assert list(inspect.signature(helpers.ensure_tab).parameters) == \
+        ["daemon", "url", "timeout"], inspect.signature(helpers.ensure_tab)
+    d = FakeDaemon([tab(1, DUO)], active=1)
+    r = run(helpers.ensure_tab(d, DUO, 20))
+    assert r["reused"] is True and r["tabId"] == 1, r
+
+
 # ── sweep_tabs ────────────────────────────────────────────────────────────────
 
 def test_sweep_dry_run_reports_without_closing():
