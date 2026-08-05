@@ -41,6 +41,12 @@ uv tool install nekoro-browser
 
 <sub>从源码装：<code>git clone https://github.com/zeshuochen/nekoro-browser && cd nekoro-browser && uv pip install -e .</code></sub>
 
+> **升级之后记得重载扩展。** `uv tool upgrade nekoro-browser` 只更新 Python 那一侧，
+> Chrome 里已加载的扩展仍在跑旧的 `background.js`——凡是涉及扩展的改动都会**静默**
+> 停留在旧行为（不报错，只是新功能不生效）。每次升级后执行 `nekoro-browser --reload-ext`
+> （或在 `chrome://extensions` 的卡片上点**重新加载**），再 `nekoro-browser --doctor`
+> 确认 service worker 有响应。
+
 **2 — 加载扩展**
 
 ```bash
@@ -80,7 +86,7 @@ Chrome 136 起，`--remote-debugging-port` / `--remote-debugging-pipe` **不再�
 | 登录态 | ❌ 独立实例 | ✅ | ✅ | ✅ |
 | 可修改扩展 | — | 需改 Playwright 源码 | 需改 OpenCLI 源码 | ✅ 扩展就在仓库里 |
 | 自愈 | ❌ | ❌ | ❌ | ✅ Agent 运行时编辑 helpers |
-| MCP | ❌ | ✅（另装 `@playwright/mcp`） | ❌ | ✅ 内置 46 个工具，`nekoro-browser-mcp` |
+| MCP | ❌ | ✅（另装 `@playwright/mcp`） | ❌ | ✅ 内置 53 个工具，`nekoro-browser-mcp` |
 | 站点知识 | ❌ | ❌ | ❌ | ✅ 你写的笔记和脚本**在导航时主动送到 agent 手里** |
 
 ## 示例
@@ -114,7 +120,7 @@ PY
 
 ## MCP（任何 MCP 客户端）
 
-`helpers.py` 里的函数会被反射成 MCP 工具（当前 46 个），不用写一行胶水代码。
+`helpers.py` 里的函数会被反射成 MCP 工具（当前 53 个），不用写一行胶水代码。
 
 **前提**：daemon 必须跑着（`nekoro-browser`，单独一个终端）。MCP server 只是转发层，
 它跟 daemon 走的是和 `echo ... | nekoro-browser` 同一条带鉴权的路径，
@@ -176,9 +182,9 @@ command = "nekoro-browser-mcp"
 | 分类 | 命令 |
 |------|------|
 | 导航 | `navigate(url)`、`new_tab(url)`、`ensure_tab(url)`、`new_tab(url, reuse=True)`、`list_tabs()`、`switch_tab(id)`、`close_tab(id)`、`close_tabs(ids)`、`sweep_tabs()` |
-| 页面信息 | `page_info()`、`page_html()`、`page_text()`、`get_markdown()`、`state()`、`refs()` |
+| 页面信息 | `page_info()`、`page_html()`、`page_text()`、`get_markdown()`、`state()`、`refs()`、`find_text(t)`、`iframe_target(url_substr)` |
 | JavaScript | `js(code)`、`cdp(method, **p)`、`cdp_batch(*cmds)` |
-| 交互 | `click(loc)`、`click_selector(sel)`、`click_ref(ref)`、`click_index(n)`、`click_at_xy(x,y)`、`type_text(t)`、`fill_input(sel,t)`、`press_key(k)`、`upload_file(sel,path)` |
+| 交互 | `click(loc)`、`click(loc, tab=id)`、`click_selector(sel)`、`click_ref(ref)`、`click_index(n)`、`click_at_xy(x,y)`、`type_text(t)`、`fill_input(sel,t)`、`press_key(k)`、`upload_file(sel,path)` |
 | 弹窗 | `dialog_off()`、`get_last_dialog()` |
 | 等待 | `wait_for_load()`、`wait_selector(sel)`、`wait_for_network_idle()`、`sleep(s)` |
 | 下载 | `wait_for_download()` |
@@ -215,7 +221,7 @@ CLI (nekoro-browser)  ·  MCP server (nekoro-browser-mcp)
 
 </details>
 
-`helpers.py`（47 个）→ CDP 薄封装，每个 ≤10 行，且都不认识任何具体网站。
+`helpers.py`（54 个）→ CDP 薄封装，且都不认识任何具体网站。
 
 `lifecycle.py` 管 daemon 生命周期：pid 文件 + 进程指纹防误杀、僵尸自愈（CDP 探活失败自动清理重启）、localhost 请求绕过系统代理。
 
@@ -291,7 +297,7 @@ Agent 遇到缺口时当场补、当场用——不重新编译，不重启 daem
 | `nekoro-browser --doctor` | 端到端诊断（daemon + 扩展 + SW 是否都活着） |
 | `nekoro-browser --stop` | 停止 daemon |
 | `nekoro-browser --restart` | 停止后重启（前台） |
-| `nekoro-browser --reload-ext` | 命扩展重载 service worker，跑批量任务前刷干净状态 |
+| `nekoro-browser --reload-ext` | 命扩展重载 service worker，**升级后必须跑一次**；跑批量任务前刷干净状态也用它 |
 | `nekoro-browser --extension-path` | 打印扩展目录（加载已解压扩展时用） |
 | `nekoro-browser --port N` | daemon 监听 N 端口（默认 28417） |
 | `nekoro-browser -c "code"` | 执行一段代码并返回结果 |
