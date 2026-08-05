@@ -83,24 +83,30 @@ openOrReuseTab、agent_helpers 热加载），真正有差距的是**元素定�
 - 验收：test_click_loc 补 6 用例（x==0 ×3、kind ×3 + wait_selector ×3）；全量测试通过 ✅
 - 风险：中（错误返回加字段向后兼容——agent 只读 ok/error 不受影响；已确认无断言错误 dict 恰等某形状的测试）
 
-### 批次 4：backendNodeId ref 跨轮次稳定定位（⏳ 后续，需真实浏览器）
+### 批次 4：backendNodeId ref 跨轮次稳定定位（✅ 已完成，2026-08-05）
 
-- 目标：让 state() 输出的元素句柄在 DOM 小变化后仍可定位（ego `@N` ref 思路）
-- 方案（待细化）：state() 输出附带 backendNodeId；click 时 DOM.resolveNode +
-  getBoxModel 定位；map 空/失效时自动降级（重 state 或按文本语义回退）
-- 前置：确认 chrome.debugger 下 DOM domain 可用（需真实浏览器 MVP 验证，
-  遵循「新功能先验证核心链路」）
-- 验收：真实浏览器用例——state() → 页面局部刷新 → 点击仍命中
-- 风险：中高（跨扩展+daemon 改动，需真实浏览器回归）
+- 目标：让元素句柄在 DOM 小变化后仍可定位（ego `@N` ref 思路）
+- MVP：真实浏览器验证 `DOM.getDocument`/`querySelectorAll`/`describeNode`/`resolveNode`/
+  `getBoxModel` 在 chrome.debugger tab attach 下全部可用，且 **backendNodeId 在 DOM 前插
+  元素后仍解析到同一元素**（跨轮次稳定 ✅）。data URL 导航被 Chrome 拦截（MVP 教训：用真实 URL）
+- 落地（纯 Python 层，不动扩展）：
+  - `refs()`：DOM 域枚举可交互元素 → [{ref(backendNodeId), tag, text}]
+  - `click_ref(ref)`：resolveNode + getBoxModel 中心坐标 → click_at_xy；失效 → kind:transient
+- 验收：端到端（真实浏览器）——refs 拿 ref → click_ref 点击按钮 onclick 生效 → DOM 前插
+  后 click_ref 仍命中 ✅；单元测试 7 用例（test_refs_downloads.py）✅
+- 风险：中（MVP 已验证 CDP 链路；无需改扩展）
 
-### 批次 5：下载管理（⏳ 后续，需真实浏览器 MVP 验证）
+### 批次 5：下载管理（✅ 已完成，2026-08-05）
 
 - 目标：`wait_for_download()` helper（ego `page.waitForEvent("download")` 思路）
-- 方案（待细化）：扩展 attach 后 `Browser.enable` + `Browser.setDownloadBehavior`，
-  下载事件经现有 onEvent 转发缓存；daemon 侧 helper 轮询
-- 前置：MVP 验证 Browser 域命令在 chrome.debugger tab attach 下可用
-- 验收：真实浏览器触发下载，helper 返回落盘路径
-- 风险：中（跨扩展改动，需真实浏览器）
+- MVP：`Browser.setDownloadBehavior`/`Browser.enable` 被 tab attach 拒绝（browser-level 命令
+  -32601/-32000）——**路径无法自定义**；但 `Page.downloadWillBegin`/`downloadProgress` 事件
+  经扩展 onEvent 转发已可用（Chrome 同源自动下载拦截是 MVP 干扰项，换源验证通过）
+- 落地：`wait_for_download(timeout)` 轮询 drain_events，等 downloadWillBegin（filename/url）→
+  downloadProgress completed → 返回 {url, filename, bytes}；canceled → permanent；超时 → transient
+- 验收：端到端（真实浏览器）——真实点击下载链接 → wait_for_download 返回
+  {filename, bytes} ✅；单元测试 5 用例 ✅
+- 风险：中（MVP 已验证事件链；下载落 Chrome 默认目录，路径不可自定义——已在 docstring 说明）
 
 ### 批次 6：类型注解卫生（风格级，可选）
 

@@ -144,6 +144,8 @@ echo "await page_info()" | nekoro-browser
 | 函数 | 用法 | 说明 |
 |------|------|------|
 | `state()` | `state()` | 返回索引元素列表 `[{index, changed, tag, text, box}]` |
+| `refs()` | `refs()` | 可交互元素 + 稳定句柄 `[{ref, tag, text}]`（CDP backendNodeId，DOM 小变化后仍有效） |
+| `click_ref(ref)` | `click_ref(123)` | 用 ref 点击（跨轮次稳定；导航后失效 → `kind:transient`，重新 refs()） |
 | `state(max_items=50)` | 同上 | 限制数量 |
 | `state(sel=".sidebar")` | 同上 | 限定范围 |
 | `click_index(idx)` | `click_index(3)` | 点击第 N 个元素（CDP isTrusted:true） |
@@ -192,6 +194,7 @@ echo "await page_info()" | nekoro-browser
 | 函数 | 用法 | 说明 |
 |------|------|------|
 | `http_get(url)` | `http_get("https://example.com")` | 纯 HTTP GET，适合静态页/API |
+| `wait_for_download(30)` | `wait_for_download(30)` | 点击下载后等待完成，返回 `{url, filename, bytes}`（落 Chrome 默认下载目录） |
 
 ### 对话框与事件
 

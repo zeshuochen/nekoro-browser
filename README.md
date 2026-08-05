@@ -183,11 +183,12 @@ ride along in the tool result — see [Self-Healing and Site Knowledge](#self-he
 | Category | Commands |
 |----------|----------|
 | Navigation | `navigate(url)`, `new_tab(url)`, `ensure_tab(url)`, `new_tab(url, reuse=True)`, `list_tabs()`, `switch_tab(id)`, `close_tab(id)`, `close_tabs(ids)`, `sweep_tabs()` |
-| Page info | `page_info()`, `page_html()`, `page_text()`, `get_markdown()`, `state()` |
+| Page info | `page_info()`, `page_html()`, `page_text()`, `get_markdown()`, `state()`, `refs()` |
 | JavaScript | `js(code)`, `cdp(method, **p)`, `cdp_batch(*cmds)` |
-| Interaction | `click(loc)`, `click_selector(sel)`, `click_index(n)`, `click_at_xy(x,y)`, `type_text(t)`, `fill_input(sel,t)`, `press_key(k)`, `upload_file(sel,path)` |
+| Interaction | `click(loc)`, `click_selector(sel)`, `click_ref(ref)`, `click_index(n)`, `click_at_xy(x,y)`, `type_text(t)`, `fill_input(sel,t)`, `press_key(k)`, `upload_file(sel,path)` |
 | Dialogs | `dialog_off()`, `get_last_dialog()` |
 | Waiting | `wait_for_load()`, `wait_selector(sel)`, `wait_for_network_idle()`, `sleep(s)` |
+| Downloads | `wait_for_download()` |
 | Screenshots | `capture_screenshot()`, `capture_screenshot("jpeg", 90)` |
 
 ---
