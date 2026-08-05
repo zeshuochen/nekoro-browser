@@ -16,6 +16,7 @@ Agent 看到清单后自己决定读哪一份。
 
 import os
 from pathlib import Path
+from typing import Any
 
 MAX_FILES = 8          # 清单上限，防某个站点笔记堆太多把返回值撑爆
 ENV_VAR = "NEKORO_DOMAIN_SKILLS"
@@ -104,7 +105,7 @@ def actions_for(url: str) -> list[str]:
         return []
 
 
-def _inject_helpers(mod) -> None:
+def _inject_helpers(mod, helpers_module) -> None:
     """把核心 helper 塞进站点脚本的全局命名空间。
 
     站点脚本是独立模块，默认拿不到 `navigate` / `page_info` 这些——但约定和
@@ -112,13 +113,16 @@ def _inject_helpers(mod) -> None:
     不注入就是 NameError。在 exec_module **之前**注入，模块顶层代码也能用；
     脚本自己定义的同名函数会自然覆盖注入值。
     注入进来的名字不会被当成站点函数导出（导出按 __module__ 过滤）。
+
+    `helpers_module` 由调用方传入（daemon / 测试）：site_notes 不再反向 import
+    helpers，从根上拆掉 helpers ↔ site_notes 循环依赖（此前靠函数内延迟 import
+    侥幸不炸，pyright 仍报 cycle）。
     """
-    from . import helpers as h
-    for name in h.list_helpers():
-        mod.__dict__.setdefault(name, getattr(h, name))
+    for name in helpers_module.list_helpers():
+        mod.__dict__.setdefault(name, getattr(helpers_module, name))
 
 
-def load_functions():
+def load_functions(helpers_module):
     """把所有站点目录下的 *.py 载入，返回 ({name: func}, [错误])。
 
     每次 /exec 都重新载入，所以改完立即生效（与 agent_helpers 同样的语义）。
@@ -139,8 +143,11 @@ def load_functions():
             mod_name = f"_nekoro_site_{d.name}_{py.stem}".replace("-", "_").replace(".", "_")
             try:
                 spec = importlib.util.spec_from_file_location(mod_name, py)
+                if spec is None or spec.loader is None:
+                    errors.append(f"{d.name}/{py.name}: cannot create module spec")
+                    continue
                 mod = importlib.util.module_from_spec(spec)
-                _inject_helpers(mod)   # 让站点脚本能直接写 await navigate(daemon, url)
+                _inject_helpers(mod, helpers_module)   # 让站点脚本能直接写 await navigate(daemon, url)
                 spec.loader.exec_module(mod)
             except Exception as e:
                 errors.append(f"{d.name}/{py.name}: {type(e).__name__}: {e}")
@@ -169,7 +176,7 @@ def notes_for(url: str) -> list[str]:
         return []
 
 
-def attach(result: dict, url: str) -> dict:
+def attach(result: dict[str, Any], url: str) -> dict[str, Any]:
     """命中才加 `notes` 键——没笔记的站点不该多出一个空字段来占位。
 
     这里再兜一层异常：`notes_for` 自己虽然吞了，但 attach 是接在 navigate/new_tab

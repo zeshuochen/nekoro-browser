@@ -1,0 +1,169 @@
+# nekoro-browser × ego-lite 借鉴实现文档
+
+> 状态：批次 0-6 全部完成；PR review 的整改（可见性歧义、nth 边界、refs 往返、pyright 口径）见 §6
+> 创建：2026-08-05
+> 关联仓库：https://github.com/zeshuochen/nekoro-browser
+
+## 1. 背景与动机
+
+学习 [ego-lite](https://github.com/citrolabs/ego-lite)（citrolabs，7.8k stars，为 AI agent 构建的浏览器）
+后，对照 nekoro-browser 现状提炼出差距。ego-lite 最有价值的设计在 `element-resolver.ts`
+（统一 locator + transient/permanent 错误分类）、`ref-map`（backendNodeId 跨轮次稳定定位）、
+`task-spaces`（空间隔离 + 人机交接）、`learning/`（站点经验 manifest 结构）。
+
+其中大部分思路 nekoro 已有更优或等价实现（code-based 脚本、domain-skills 经验推送、
+openOrReuseTab、agent_helpers 热加载），真正有差距的是**元素定位与错误处理**：
+
+| ego-lite 机制 | nekoro 现状 | 差距 |
+|---|---|---|
+| 统一 locator 字符串（css:/text:/xpath=/role:…） | click_selector / click_text / click_index 三个 helper 各管一种 | 已补（批次 0） |
+| transient/permanent 错误分类（重试/放弃决策信号） | 一律 "element not found"，无分类 | 已补（批次 0） |
+| 多匹配即歧义 → permanent，不静默点第一个 | 扩展 getRect 用 querySelector 静默取第一个 | 已补（批次 0，css/xpath/placeholder） |
+| backendNodeId ref 跨轮次稳定定位 | state() 序号，DOM 一变即失效 | 已补（批次 4） |
+| box-model 守卫（非零尺寸才可点） | `if not rect.get("x")` 脆弱判空 | 已补（批次 2） |
+| 下载管理 waitForEvent("download") | 无 | 已补（批次 5） |
+
+## 2. 现状核查结论（2026-08-05）
+
+细心核查 LSP 报错 + explore 全量梳理后确认以下**真实问题**（非噪音）：
+
+1. **循环导入（真问题）**：`helpers.py:15 from . import site_notes` ↔
+   `site_notes.py:116 from . import helpers as h`。运行时侥幸未炸（site_notes 的 import 在
+   `_inject_helpers()` 函数内部惰性执行），但属设计缺陷，pyright 报 cycle。
+2. **脆弱判空 ×3**：`click_selector:936` / `click_text:980` / `click_index:995` 都用
+   `if not rect or not rect.get("x")` 判断矩形（x==0 时误判为未找到）。新 `click()` 已用
+   `rect.get("x") is None`（helpers.py:900），旧三处待统一。
+3. **无错误分类**：旧定位 helper 失败一律 `{"ok": false, "error": "..."}`，agent 无法判断
+   「重试有用」（transient）还是「换策略」（permanent）。仅新 `click()` 带 `kind`。
+4. **wait_selector 语义含糊**：扩展侧返回裸字符串（`'visible'|'timeout:sel'|'no-selector'`），
+   helpers 原样透传，不区分「瞬时未找到（可重试）」vs「选择器本身无效」。
+5. **定位 op 返回形状不一致**：getRect* → `null`、state → `{error:'not-found'}`、
+   findText → `[]`、box → `{found:false}`——同为元素定位，四种空态表达。
+6. **类型注解缺失（风格级）**：helpers.py 大量 `-> dict` / `-> list[dict]` 裸注解，
+   pyright 严格模式全报 `Expected type arguments`。非运行时错误，CI 未跑 pyright，
+   但按「不傲慢对待报错」原则列入批次 6 处理。
+
+## 3. 分批实施计划
+
+原则：**有差距的分批次改，每批可独立验证、可独立合入**，不搞一次大改。
+
+### 批次 0（✅ 已完成，2026-08-05）
+
+- `click(loc)` 统一 locator 点击：css:/text:/index:/xpath:/placeholder: + `nth:N;` 前缀
+- 错误分类：`transient`（未找到，可重试）/ `permanent`（多匹配歧义、非法选择器、index 非数字）
+- `ensure_tab(url)`：ego `openOrReuseTab` 移植（复用优先）
+- 测试：`tests/test_click_loc.py`（16 用例）；全量 26 测试通过
+- 文档：README 中英致谢、SKILL.md×2 命令表
+- 教训：`nth:` 解析边界 bug（`5 < semi` 应为 `semi >= 5`），由测试捕获
+
+### 批次 1：拆循环导入（✅ 已完成，2026-08-05）
+
+- 目标：消灭 `helpers ↔ site_notes` 循环依赖
+- 落地：`site_notes._inject_helpers(mod, helpers_module)` 参数注入；`load_functions(helpers_module)`
+  必传，由 daemon（`_on_exec` 里已有的 `h`）传入。site_notes.py 不再有任何对 helpers 的 import
+- 验收：`python -c "import nekoro_browser.helpers"` 干净；pyright 不再报 cycle；全量测试通过 ✅
+- 风险：低（纯结构重组；test_site_notes.py 4 处调用同步加参）
+
+### 批次 2：判空修正 + box-model 守卫（✅ 已完成，2026-08-05）
+
+- 目标：定位点击前验证元素非零尺寸，杜绝静默点空位/误判
+- 落地：`click_selector` / `click_text` / `click_index` 的 `not rect.get("x")` →
+  `rect.get("x") is None`（x==0 合法，与 `click()` 统一入口一致）
+- 验收：x==0/y==0 元素可点击（test_click_loc 补 3 用例）；全量测试通过 ✅
+- 风险：低
+
+### 批次 3：旧 click_* 错误分类补全 + wait_selector 语义澄清（✅ 已完成，2026-08-05）
+
+- 目标：让**所有**定位 helper 的错误都带 `kind` 决策信号，不只新 `click()`
+- 落地：
+  - `click_selector` / `click_text` / `click_index` 失败返回补 `kind: "transient"`
+  - `wait_selector`：扩展返回 `'timeout:sel'` → `kind: "transient"`；`'no-selector'` →
+    `kind: "permanent"`；正常状态（visible 等）不带 kind。结构不变（ok/result 与旧版一致）
+- 未做：定位 op 空态归一（box/state/findText 的空结果是**正常查询语义**，不是错误，保持）
+- 验收：test_click_loc 补 6 用例（x==0 ×3、kind ×3 + wait_selector ×3）；全量测试通过 ✅
+- 风险：中（错误返回加字段向后兼容——agent 只读 ok/error 不受影响；已确认无断言错误 dict 恰等某形状的测试）
+
+### 批次 4：backendNodeId ref 跨轮次稳定定位（✅ 已完成，2026-08-05）
+
+- 目标：让元素句柄在 DOM 小变化后仍可定位（ego `@N` ref 思路）
+- MVP：真实浏览器验证 `DOM.getDocument`/`querySelectorAll`/`describeNode`/`resolveNode`/
+  `getBoxModel` 在 chrome.debugger tab attach 下全部可用，且 **backendNodeId 在 DOM 前插
+  元素后仍解析到同一元素**（跨轮次稳定 ✅）。data URL 导航被 Chrome 拦截（MVP 教训：用真实 URL）
+- 落地（纯 Python 层，不动扩展）：
+  - `refs()`：DOM 域枚举可交互元素 → [{ref(backendNodeId), tag, text}]
+  - `click_ref(ref)`：resolveNode + getBoxModel 中心坐标 → click_at_xy；失效 → kind:transient
+- 验收：端到端（真实浏览器）——refs 拿 ref → click_ref 点击按钮 onclick 生效 → DOM 前插
+  后 click_ref 仍命中 ✅；单元测试 7 用例（test_refs_downloads.py）✅
+- 风险：中（MVP 已验证 CDP 链路；无需改扩展）
+
+### 批次 5：下载管理（✅ 已完成，2026-08-05）
+
+- 目标：`wait_for_download()` helper（ego `page.waitForEvent("download")` 思路）
+- MVP：`Browser.setDownloadBehavior`/`Browser.enable` 被 tab attach 拒绝（browser-level 命令
+  -32601/-32000）——**路径无法自定义**；但 `Page.downloadWillBegin`/`downloadProgress` 事件
+  经扩展 onEvent 转发已可用（Chrome 同源自动下载拦截是 MVP 干扰项，换源验证通过）
+- 落地：`wait_for_download(timeout)` 轮询 drain_events，等 downloadWillBegin（filename/url）→
+  downloadProgress completed → 返回 {url, filename, bytes}；canceled → permanent；超时 → transient
+- 验收：端到端（真实浏览器）——真实点击下载链接 → wait_for_download 返回
+  {filename, bytes} ✅；单元测试 5 用例 ✅
+- 风险：中（MVP 已验证事件链；下载落 Chrome 默认目录，路径不可自定义——已在 docstring 说明）
+
+### 批次 6：类型注解卫生（✅ 已完成，2026-08-05）
+
+- 目标：消灭 pyright 严格模式报错（不降级配置，通过修代码达成）
+- 落地：
+  - helpers.py：45+ 处 `-> dict` → `-> dict[str, Any]`；13 处 `tab: int = None` →
+    `tab: int | None = None`（sel/url/selector 同理）；动态构建的 res/out 显式标注；
+    `list_site_actions` 漏传 helpers_module 修复（批次 1 漏网）
+  - site_notes.py：`spec_from_file_location` 返回 Optional——None 时记错误跳过
+    （此前 spec.loader 会炸的真隐患）
+  - daemon.py：`_site_errors` 在 __init__ 初始化；Queue/list/dict 补泛型
+  - pyproject.toml：`[tool.pyright]` 严格模式 + `extraPaths=["src"]`
+    （tests 的 sys.path hack 由静态配置解析，非降级）
+  - tests：FakeDaemon 重构——真实 bridge 类替代运行时动态挂属性
+    （删掉未触发的 `__post_init__` 死代码）
+- 验收：全项目 pyright 零 error（src ×3 + tests）✅；27 测试全过 ✅
+
+## 4. 批次间依赖
+
+```
+批次 0（定位入口） ──▶ 批次 2（判空守卫，增强 click 系列）
+批次 1（结构）      ──▶ 独立
+批次 2（判空）      ──▶ 批次 3（错误分类，同一批函数顺手补）
+批次 3（分类）      ──▶ 批次 4（ref 依赖判空语义）
+批次 5（下载）      ──▶ 独立
+批次 6（类型）      ──▶ 最后做（其余批次完成后统一）
+```
+
+## 5. 验收与复盘
+
+每批合入前：全量测试（`for f in tests/test_*.py; do uv run python $f; done`）+
+LSP 无新增 error。批次完成后在本文件追加复盘（实际产出 vs 预期、偏差原因、下次改进）。
+
+## 6. PR #1 review 整改（2026-08-06）
+
+review 挖出 4 类问题，都不是"再加个功能"，而是**已落地的东西没兑现自己的承诺**：
+
+| 问题 | 症状 | 处置 |
+|---|---|---|
+| `nth:N;` 对 text/index 静默失效 | `click("nth:2;text:登录")` 点的是第 **1** 个，还返回 `ok:True` | 报 permanent。扩展 op 只回第一个匹配，兑现不了就别装作兑现了 |
+| 歧义判定不看可见性 | 移动端+桌面端各一份导航（一个 display:none）→ 直接 permanent，逼调用方数 nth | 先按可见性过滤，再判歧义。ego-lite 本来就是这么做的 |
+| `refs()` 3×N 次串行往返 | 50 个元素 = 153 次来回，且 `resolveNode` 产出的 RemoteObject 从不释放 | describeNode 并发 + 文本一条 evaluate；不再产生 objectId，也就无需 releaseObject |
+| 视口外元素点空报 ok | box/rect 都是视口坐标，元素在视口外照着点等于点空 | `click()`/`click_ref()` 取坐标前 scrollIntoViewIfNeeded |
+
+另外把异常分支补上了 `kind`（桥抖 = transient），别让唯一没有决策信号的分支是最需要它的那个。
+
+**没做的两条，都卡在同一条线上——要改扩展：**
+
+- `click(loc, tab=...)`：扩展只有 op 白名单，没有"带 target 的任意 JS 求值"能力
+- 自定义下载目录：browser-level 的 `setDownloadBehavior` 被 tab attach 拒绝
+
+不值得为这两个功能让所有用户重装扩展。`click()` 的活动标签语义已写进 docstring 和 SKILL.md；下载目录的限制也已注明（`Page.setDownloadBehavior` 或许可行，但**没在真机上验过，不写没验证过的代码**）。
+
+### 关于"pyright 严格模式零 error"
+
+原批次 6 的这句声明不成立：仓库根目录跑 `pyright` 1.1.411（用的就是提交进来的 strict 配置）是 **2211 error**，装好依赖也一样，不是环境问题。
+
+根因是**口径不同**：编辑器里的 basedpyright 把 `reportUnknown*` 这类算 warning，pyright CLI 在 strict 下算 error。真要归零，得给整条 CDP 链写 TypedDict——那正是这个薄封装项目刻意不做的事。
+
+处置：改挂 `standard`（现在是真·零 error，src + tests 共 39 文件），并加 CI job 把口径钉死成 pyright CLI。**挂一个 CI 守得住的标准，比挂一个谁也过不了的标准有用。**

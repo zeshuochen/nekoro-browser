@@ -182,12 +182,13 @@ ride along in the tool result — see [Self-Healing and Site Knowledge](#self-he
 
 | Category | Commands |
 |----------|----------|
-| Navigation | `navigate(url)`, `new_tab(url)`, `new_tab(url, reuse=True)`, `list_tabs()`, `switch_tab(id)`, `close_tab(id)`, `close_tabs(ids)`, `sweep_tabs()` |
-| Page info | `page_info()`, `page_html()`, `page_text()`, `get_markdown()`, `state()` |
+| Navigation | `navigate(url)`, `new_tab(url)`, `ensure_tab(url)`, `new_tab(url, reuse=True)`, `list_tabs()`, `switch_tab(id)`, `close_tab(id)`, `close_tabs(ids)`, `sweep_tabs()` |
+| Page info | `page_info()`, `page_html()`, `page_text()`, `get_markdown()`, `state()`, `refs()` |
 | JavaScript | `js(code)`, `cdp(method, **p)`, `cdp_batch(*cmds)` |
-| Interaction | `click_selector(sel)`, `click_index(n)`, `click_at_xy(x,y)`, `type_text(t)`, `fill_input(sel,t)`, `press_key(k)`, `upload_file(sel,path)` |
+| Interaction | `click(loc)`, `click_selector(sel)`, `click_ref(ref)`, `click_index(n)`, `click_at_xy(x,y)`, `type_text(t)`, `fill_input(sel,t)`, `press_key(k)`, `upload_file(sel,path)` |
 | Dialogs | `dialog_off()`, `get_last_dialog()` |
 | Waiting | `wait_for_load()`, `wait_selector(sel)`, `wait_for_network_idle()`, `sleep(s)` |
+| Downloads | `wait_for_download()` |
 | Screenshots | `capture_screenshot()`, `capture_screenshot("jpeg", 90)` |
 
 ---
@@ -363,3 +364,7 @@ Core architecture derived from:
 - **[browser-harness](https://github.com/browser-use/browser-harness)** — thin-wrapper philosophy (each function is a CDP alias, ≤10 lines), pipe mode, self-healing `agent_helpers.py`, domain-skills directory structure, `cdp()` raw access
 - **[browser-act](https://github.com/browser-act/skills)** — `state()` indexed element tree, `*[N]` change markers, `waitSelector()` state polling, `getMarkdown()` page extraction
 - **[Playwright](https://github.com/microsoft/playwright)** — CDP `Input.dispatchMouseEvent` real mouse events (`isTrusted:true`), extension + daemon dual-path architecture
+
+Ideas drawn from:
+
+- **[ego-lite](https://github.com/citrolabs/ego-lite)** — "code base, not CLI base" (agent writes a script, not a command loop), unified locator syntax (`css:` / `text:` / `xpath=` …) with `transient`/`permanent` element-resolution errors as a retry/abandon signal (→ `click()`), "name says the intent" `openOrReuseTab` ergonomics (→ `ensure_tab()`), and experience-accumulation as a first-class design goal (nekoro's domain-skills already chase this)

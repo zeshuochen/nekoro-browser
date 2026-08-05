@@ -164,6 +164,7 @@ def test_unknown_tool_does_not_reach_daemon():
     _patch(captured=cap)
     resp = m.handle({"jsonrpc": "2.0", "id": 9, "method": "tools/call",
                      "params": {"name": "definitely_not_a_tool", "arguments": {}}})
+    assert resp is not None, "tools/call 必须有响应"
     assert resp["result"]["isError"]
     assert cap == []          # 没打到 daemon
 
@@ -225,11 +226,12 @@ def test_protocol_version_is_echoed_when_known():
                          ("2025-06-18", "2025-06-18"),
                          ("1999-01-01", m.PROTOCOL_VERSION),  # 不认识：回自己的
                          (None, m.PROTOCOL_VERSION)):
-        params = {"capabilities": {}}
+        params: dict[str, object] = {"capabilities": {}}
         if want:
             params["protocolVersion"] = want
         r = m.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
                       "params": params})
+        assert r is not None, "initialize 必须有响应"
         assert r["result"]["protocolVersion"] == expect, want
     _unpatch()
 

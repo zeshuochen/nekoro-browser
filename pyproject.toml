@@ -64,3 +64,15 @@ include = [
     "AGENTS.md",
     "LICENSE",
 ]
+
+[tool.pyright]
+# standard 而不是 strict：helpers.py 是 CDP 的薄封装，收到的就是动态 JSON，
+# daemon/bridge 这条链上的参数天然是鸭子类型（真 Daemon、测试 fake、站点脚本都往里塞）。
+# strict 会把这些全判成 error（实测 2211 条，九成是 reportUnknown* 的级联），
+# 要归零就得给整条 CDP 链写 TypedDict——那正是这个项目刻意不做的事。
+# 与其挂一个谁也过不了的标准，不如挂一个 CI 真能守住的：standard 零 error。
+# 注：编辑器里的 basedpyright 把这些算 warning、pyright CLI 算 error，口径不同，
+# 以 CI 里的 pyright CLI 为准（.github/workflows/tests.yml 的 typecheck job）。
+typeCheckingMode = "standard"
+include = ["src", "tests"]
+extraPaths = ["src"]

@@ -70,6 +70,7 @@ echo "await page_info()" | nekoro-browser
 | 函数 | 用法 | 说明 |
 |------|------|------|
 | `new_tab(url)` | `new_tab("https://example.com")` | 新建标签页 |
+| `ensure_tab(url)` | `ensure_tab("https://example.com")` | **复用优先**：同站已有标签就切过去导航，没有才新开（openOrReuseTab 语义，等价 `new_tab(url, reuse=True)`，不用记参数） |
 | `new_tab(url, reuse=True)` | `new_tab("https://example.com", reuse=True)` | 同站已有标签就切过去导航，不新开（返回 `reused: True`） |
 | `navigate(url)` | `navigate("https://example.com")` | 当前标签导航（默认等加载完成） |
 | `list_tabs()` | `list_tabs()` | 列托管组标签 `[{tabId,url,title,active,attached}]` |
@@ -128,6 +129,7 @@ echo "await page_info()" | nekoro-browser
 
 | 函数 | 用法 | 说明 |
 |------|------|------|
+| `click(loc)` | `click("text:登录")` / `click("css:.btn")` / `click("xpath://button")` / `click("index:3")` / `click("placeholder:关键词")` | **统一定位点击**（ego-lite 风格 locator）。一个入口覆盖所有定位形式。`nth:N;` 前缀取第 N 个匹配（`nth:2;css:.btn`）——**只对 css/xpath/placeholder 有效**，text/index 走扩展 op 只回第一个匹配，给了 nth 会报 permanent 而不是悄悄点第一个。歧义只按**看得见的**匹配判（隐藏的重复元素不算歧义），取坐标前自动滚进视口。只作用于**当前活动标签**（要点别的标签先 `switch_tab`）。失败带 `kind` 决策信号：`transient`=没找到（可重试）/ `permanent`=多匹配歧义或非法选择器（重试无用，换定位） |
 | `click_at_xy(x, y)` | `click_at_xy(100, 200)` | CDP 真实鼠标点击（isTrusted:true） |
 | `click_selector(sel)` | `click_selector("#btn")` | CSS 选择器 → CDP 坐标点击 |
 | `click_text("文字")` | `click_text("喜欢")` | 按可见文本 → CDP 坐标点击 |
@@ -142,6 +144,8 @@ echo "await page_info()" | nekoro-browser
 | 函数 | 用法 | 说明 |
 |------|------|------|
 | `state()` | `state()` | 返回索引元素列表 `[{index, changed, tag, text, box}]` |
+| `refs()` | `refs()` | 可交互元素 + 稳定句柄 `[{ref, tag, text}]`（CDP backendNodeId，DOM 小变化后仍有效） |
+| `click_ref(ref)` | `click_ref(123)` | 用 ref 点击（跨轮次稳定；导航后失效 → `kind:transient`，重新 refs()） |
 | `state(max_items=50)` | 同上 | 限制数量 |
 | `state(sel=".sidebar")` | 同上 | 限定范围 |
 | `click_index(idx)` | `click_index(3)` | 点击第 N 个元素（CDP isTrusted:true） |
@@ -190,6 +194,7 @@ echo "await page_info()" | nekoro-browser
 | 函数 | 用法 | 说明 |
 |------|------|------|
 | `http_get(url)` | `http_get("https://example.com")` | 纯 HTTP GET，适合静态页/API |
+| `wait_for_download(30)` | `wait_for_download(30)` | 点击下载后等待完成，返回 `{url, filename, bytes}`（落 Chrome 默认下载目录） |
 
 ### 对话框与事件
 

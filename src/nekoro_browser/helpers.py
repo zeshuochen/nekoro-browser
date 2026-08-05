@@ -11,6 +11,8 @@ import base64
 import json
 import logging
 import math
+import sys
+from typing import Any
 
 from . import site_notes
 
@@ -74,7 +76,7 @@ def _tab_key(url: str) -> str:
     return f"{host}/{seg[0]}" if seg else host
 
 
-async def _tabs_like(daemon, url: str, exclude=(), strict: bool = False) -> list[dict]:
+async def _tabs_like(daemon, url: str, exclude=(), strict: bool = False) -> list[dict[str, Any]]:
     """托管组里与 url 同站同段的标签。
 
     默认吞掉所有异常返回空列表：提示是附赠功能，绝不能连累导航本身。但 `strict=True`
@@ -100,7 +102,7 @@ async def _tabs_like(daemon, url: str, exclude=(), strict: bool = False) -> list
 
 
 async def new_tab(daemon, url: str = "about:blank", timeout: float = 15.0, *,
-                  reuse: bool = False) -> dict:
+                  reuse: bool = False) -> dict[str, Any]:
     """new_tab("https://example.com") — 开新标签，加入 nekoro 托管组，切过去并 attach；
     `reuse=True` 则优先复用托管组里已有的同站标签（登录态和页面状态都还在），不新开。
 
@@ -142,7 +144,7 @@ async def new_tab(daemon, url: str = "about:blank", timeout: float = 15.0, *,
                     lookup_error = f"tab {cand['tabId']} gone: {e}"
                     logger.warning("new_tab(reuse=True): %s", lookup_error)
                     continue
-                res = {"ok": True, "tabId": cand["tabId"], "reused": True,
+                res: dict[str, Any] = {"ok": True, "tabId": cand["tabId"], "reused": True,
                        "loaded": ((r or {}).get("load") == "complete")}
                 return site_notes.attach(res, url)
             # 一张都复用不上 → 照常开新标签，不硬报错
@@ -155,25 +157,38 @@ async def new_tab(daemon, url: str = "about:blank", timeout: float = 15.0, *,
         # 扩展 waitTabLoad 返回字符串 'complete'|'timeout'|'no-tab'，只有 complete 算真加载完
         loaded = ((r or {}).get("load") == "complete")
         await daemon.switch_tab(tab_id)          # attach debugger + 切活动指针
-        res = {"ok": True, "tabId": tab_id, "loaded": loaded}
+        res: dict[str, Any] = {"ok": True, "tabId": tab_id, "loaded": loaded}
         if reuse:
             # 要求复用却开了新的，必须说清是为什么，别让调用方以为复用成功了
             res["reuse"] = lookup_error or "no reusable tab"
         else:
             others = await _tabs_like(daemon, url, exclude={tab_id})
             if others:
-                res["existing"] = {
+                existing: dict[str, Any] = {
                     "hint": "同站已有标签；switch_tab(id) 可复用，或 new_tab(url, reuse=True)",
                     "tabs": others[:_HINT_TABS],
                 }
                 if len(others) > _HINT_TABS:
-                    res["existing"]["more"] = len(others) - _HINT_TABS
+                    existing["more"] = len(others) - _HINT_TABS
+                res["existing"] = existing
         return site_notes.attach(res, url)
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
-async def list_tabs(daemon) -> dict:
+async def ensure_tab(daemon, url: str, timeout: float = 15.0) -> dict[str, Any]:
+    """ensure_tab("https://example.com") — 复用优先的导航（借鉴 ego-lite 的
+    `browser.openOrReuseTab`：名字即语义，不用调用方记得传 `reuse=True`）。
+
+    托管组里已有同站标签（登录态和页面状态都还在）就切过去复用，没有才开新标签。
+    等价于 `new_tab(url, reuse=True)`；reuse 查失败（桥抖）时保持 new_tab 的行为——
+    如实开新标签并在返回值里带 `reuse` 字段说明原因，有得用总比报错强。
+
+    返回值同 new_tab：{ok, tabId, loaded}；复用时多 `reused: True`。"""
+    return await new_tab(daemon, url, timeout=timeout, reuse=True)
+
+
+async def list_tabs(daemon) -> dict[str, Any]:
     """list_tabs() → nekoro 托管组里的标签 [{tabId,url,title,active,attached}]。
     `grouped: False` 表示托管组还没建起来，这份清单其实是「所有非 chrome:// 标签」，
     里面混着用户自己的标签——别拿它当「nekoro 开的标签」用（老版本扩展不带该字段）。"""
@@ -187,7 +202,7 @@ async def list_tabs(daemon) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-async def switch_tab(daemon, tab_id: int) -> dict:
+async def switch_tab(daemon, tab_id: int) -> dict[str, Any]:
     """switch_tab(123) — 把后续命令切到该标签（未 attach 则先 attach）。"""
     try:
         r = await daemon.switch_tab(tab_id)
@@ -196,7 +211,7 @@ async def switch_tab(daemon, tab_id: int) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-async def close_tab(daemon, tab: int = None) -> dict:
+async def close_tab(daemon, tab: int | None = None) -> dict[str, Any]:
     """close_tab(123) — 关掉指定标签；tab 省略则关当前 attached tab。
     走扩展 close_tab action（chrome.tabs.remove）。关掉活动标签后扩展会自动重连到
     另一可用标签、经 attach 回调同步 active_tab_id。无标签可关 → ok:false。"""
@@ -210,7 +225,7 @@ async def close_tab(daemon, tab: int = None) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-async def close_tabs(daemon, tabs: list) -> dict:
+async def close_tabs(daemon, tabs: list[Any]) -> dict[str, Any]:
     """close_tabs([1,2,3]) — 批量关标签，逐个走 close_tab，返回 {closed, failed}。
     一张关不掉不影响其余（标签可能已被用户手动关掉）。"""
     closed, failed = [], []
@@ -221,7 +236,7 @@ async def close_tabs(daemon, tabs: list) -> dict:
     return {"ok": not failed, "closed": closed, "failed": failed}
 
 
-async def sweep_tabs(daemon, dry_run: bool = True) -> dict:
+async def sweep_tabs(daemon, dry_run: bool = True) -> dict[str, Any]:
     """sweep_tabs() — 列出可清理的标签候选，**默认只报不关**。
 
     关不关是用户偏好，工具没资格替他定：有人就是要一直留着标签。所以这里只给证据
@@ -287,7 +302,7 @@ async def sweep_tabs(daemon, dry_run: bool = True) -> dict:
                            "keep": keep["tabId"], "close": close})
 
     ids = [i for c in candidates for i in c["close"]] + [b["tabId"] for b in blank]
-    out = {"ok": True, "total": len(tabs), "candidates": candidates, "blank": blank}
+    out: dict[str, Any] = {"ok": True, "total": len(tabs), "candidates": candidates, "blank": blank}
     if other:
         out["other"] = other              # 只报不关：file:/data: 等也可能是工作页
     if not dry_run and grouped is not True:
@@ -305,7 +320,7 @@ async def sweep_tabs(daemon, dry_run: bool = True) -> dict:
     return out
 
 
-async def navigate(daemon, url: str, wait: bool = True, timeout: float = 15.0) -> dict:
+async def navigate(daemon, url: str, wait: bool = True, timeout: float = 15.0) -> dict[str, Any]:
     """navigate("https://example.com") — 默认等 readyState==='complete' 再返回。
     wait=False 立即返回（Page.navigate 一发出就走）。loaded 标记是否等到加载完成。"""
     try:
@@ -326,12 +341,12 @@ async def navigate(daemon, url: str, wait: bool = True, timeout: float = 15.0) -
 # Page
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def page_info(daemon) -> dict:
+async def page_info(daemon) -> dict[str, Any]:
     """page_info() → {title, url}"""
     return await daemon.get_page_info()
 
 
-async def page_html(daemon) -> dict:
+async def page_html(daemon) -> dict[str, Any]:
     """page_html() → 完整 HTML"""
     try:
         r = await daemon.evaluate("document.documentElement.outerHTML")
@@ -340,7 +355,7 @@ async def page_html(daemon) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-async def page_text(daemon) -> dict:
+async def page_text(daemon) -> dict[str, Any]:
     """page_text() → 可见文本"""
     try:
         r = await daemon.evaluate("document.body.innerText")
@@ -353,7 +368,7 @@ async def page_text(daemon) -> dict:
 # Screenshot
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def capture_screenshot(daemon, format: str = "png", quality: int = 80) -> dict:
+async def capture_screenshot(daemon, format: str = "png", quality: int = 80) -> dict[str, Any]:
     """capture_screenshot() → base64 PNG"""
     try:
         data = await daemon.screenshot(format=format, quality=quality)
@@ -366,7 +381,7 @@ async def capture_screenshot(daemon, format: str = "png", quality: int = 80) -> 
 # JavaScript (Runtime.evaluate via CDP)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def js(daemon, code: str, _wrapped: bool = False) -> dict:
+async def js(daemon, code: str, _wrapped: bool = False) -> dict[str, Any]:
     """js("document.title") — 在当前页面执行 JS，返回完成值。
     先按裸表达式/脚本 eval（`document.title` 直接返回标题）；顶层 `return` 触发
     "Illegal return statement" 时自动包进函数重试（`return x` 也能用）。
@@ -400,7 +415,7 @@ def _wrap_js_function(code: str) -> str:
     return f"(function(){{{code}}})()"
 
 
-async def cdp(daemon, method: str, **params) -> dict:
+async def cdp(daemon, method: str, **params) -> dict[str, Any]:
     """cdp("Page.navigate", url="...") — 原始 CDP 命令"""
     try:
         return {"ok": True, "result": await daemon.bridge.send(method, params)}
@@ -408,7 +423,7 @@ async def cdp(daemon, method: str, **params) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-async def cdp_batch(daemon, *cmds) -> dict:
+async def cdp_batch(daemon, *cmds) -> dict[str, Any]:
     """cdp_batch(["DOM.getDocument",{}], ["Page.getLayoutMetrics"]) —
     多条【互不依赖】的 CDP 命令一次性并发下发。命令是 id-keyed 的，
     N 条同时在途 → 只花 ~1 个往返延迟，而非串行 N 个。
@@ -429,7 +444,7 @@ async def cdp_batch(daemon, *cmds) -> dict:
 # Click / Input
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def click_at_xy(daemon, x: float, y: float) -> dict:
+async def click_at_xy(daemon, x: float, y: float) -> dict[str, Any]:
     """click_at_xy(100, 200) — CDP 完整鼠标点击序列 (isTrusted:true)"""
     try:
         # Step 1: mouseMoved — 关键！让 React pointer/hover 系统初始化
@@ -448,7 +463,7 @@ async def click_at_xy(daemon, x: float, y: float) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-async def type_text(daemon, text: str) -> dict:
+async def type_text(daemon, text: str) -> dict[str, Any]:
     """type_text("hello") — CDP Input.insertText"""
     try:
         return {"ok": True, "result": await daemon.type_text(text)}
@@ -456,7 +471,7 @@ async def type_text(daemon, text: str) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-async def fill_input(daemon, sel: str, text: str, tab: int = None) -> dict:
+async def fill_input(daemon, sel: str, text: str, tab: int | None = None) -> dict[str, Any]:
     """fill_input("#email", "a@b.com") — 框架感知填值。
     走 scripting：原生 value setter 写值 + 派发 input/change，React/Vue 受控组件
     能收到 onChange（type_text 的 Input.insertText 常绕不过框架 setter）。
@@ -476,7 +491,7 @@ async def fill_input(daemon, sel: str, text: str, tab: int = None) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-async def upload_file(daemon, sel: str, path) -> dict:
+async def upload_file(daemon, sel: str, path) -> dict[str, Any]:
     """upload_file("input[type=file]", r"C:\\a.png") — 给文件输入框设文件。
     走 CDP DOM.setFileInputFiles（触发 change 事件，框架能收到）；path 为绝对路径，
     单个 str 或多个 list。文件不存在 / 找不到元素 / 元素非 file input → ok:false，不伪造成功。
@@ -512,7 +527,7 @@ _KEYS = {  # key → (windowsVirtualKeyCode, code, text)
 }
 
 
-async def press_key(daemon, key: str, modifiers: int = 0) -> dict:
+async def press_key(daemon, key: str, modifiers: int = 0) -> dict[str, Any]:
     """press_key("Enter") / press_key("a") — 修饰键位: Alt=1 Ctrl=2 Meta=4 Shift=8。
     特殊键（Enter/Tab/Arrow*/Backspace…）带 virtual key code，监听 e.keyCode/e.which/e.key
     的页面（表单、老站）都能触发；单字符可打印键补发 char 事件（直接进 input，不走 insertText）；
@@ -545,7 +560,7 @@ async def press_key(daemon, key: str, modifiers: int = 0) -> dict:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def scroll_wheel(daemon, dx: float = 0, dy: float = 300,
-                       x: float = 500, y: float = 300) -> dict:
+                       x: float = 500, y: float = 300) -> dict[str, Any]:
     """scroll_wheel(0, 500) — CDP compositor 级 mouseWheel（能穿透 iframe/shadow DOM）。
     fire-and-forget 修复后 CDP Input.dispatchMouseEvent 不再超时。"""
     try:
@@ -560,7 +575,7 @@ async def scroll_wheel(daemon, dx: float = 0, dy: float = 300,
 # Tab safety & iframe
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def ensure_real_tab(daemon) -> dict:
+async def ensure_real_tab(daemon) -> dict[str, Any]:
     """ensure_real_tab() — 当前 tab 是 chrome:// 等内部页时自动导航到 about:blank。
     返回 {url, title}。"""
     INTERNAL = ("chrome://", "chrome-untrusted://", "devtools://")
@@ -577,7 +592,7 @@ async def ensure_real_tab(daemon) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-async def iframe_target(daemon, url_substr: str) -> dict:
+async def iframe_target(daemon, url_substr: str) -> dict[str, Any]:
     """iframe_target("player") → 返回第一个 URL 含 url_substr 的 iframe targetId。"""
     try:
         r = await daemon.bridge.send("Target.getTargets", {})
@@ -616,7 +631,7 @@ async def http_get(daemon, url: str, timeout: float = 20.0) -> str:
     return await asyncio.get_running_loop().run_in_executor(None, _sync)
 
 
-async def scroll_to(daemon, x: float = 0, y: float = 0) -> dict:
+async def scroll_to(daemon, x: float = 0, y: float = 0) -> dict[str, Any]:
     """scroll_to(0, 500) — 滚动页面视口到坐标 (window.scrollTo)"""
     try:
         await daemon.evaluate(f"window.scrollTo({x}, {y})")
@@ -629,7 +644,7 @@ async def scroll_to(daemon, x: float = 0, y: float = 0) -> dict:
 # Wait
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def wait_for_load(daemon, timeout: float = 15.0) -> dict:
+async def wait_for_load(daemon, timeout: float = 15.0) -> dict[str, Any]:
     """wait_for_load(15) — poll document.readyState (无 listener 泄漏)。"""
     import time
     try:
@@ -645,7 +660,7 @@ async def wait_for_load(daemon, timeout: float = 15.0) -> dict:
 
 
 async def wait_for_network_idle(daemon, idle_time: float = 0.5,
-                                 timeout: float = 15.0) -> dict:
+                                 timeout: float = 15.0) -> dict[str, Any]:
     """wait_for_network_idle(0.5, 15) — 等待【当前活动标签】的 Network 请求静默 idle_time 秒。
     只算 active_tab_id 的事件：其它 attached 标签（后台轮询/SSE 页）的 Network 事件也进全局
     缓冲，不过滤会一直把 idle 窗口顶开、永不静默。"""
@@ -654,7 +669,7 @@ async def wait_for_network_idle(daemon, idle_time: float = 0.5,
         await cdp(daemon, "Network.enable")
         active = daemon.active_tab_id     # 只抓一次：等待期间即使 switch_tab 也继续认起始标签
         deadline = time.time() + timeout
-        pending: set = set()
+        pending: set[int] = set()
         last_active = time.time()
         while time.time() < deadline:
             events = await drain_events(daemon)
@@ -683,7 +698,7 @@ async def drain_events(daemon):
     return await daemon.drain_events()
 
 
-async def sleep(daemon, seconds: float) -> dict:
+async def sleep(daemon, seconds: float) -> dict[str, Any]:
     """sleep(2)"""
     await asyncio.sleep(seconds)
     return {"ok": True}
@@ -693,7 +708,7 @@ async def sleep(daemon, seconds: float) -> dict:
 # Network / Cookies
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def get_cookies(daemon, url: str = None) -> dict:
+async def get_cookies(daemon, url: str | None = None) -> dict[str, Any]:
     """get_cookies("https://example.com")"""
     try:
         r = await daemon.bridge.send("Network.getCookies", {"urls": [url]} if url else {})
@@ -703,7 +718,7 @@ async def get_cookies(daemon, url: str = None) -> dict:
 
 
 async def set_cookie(daemon, name: str, value: str,
-                     url: str = "", domain: str = "", path: str = "/") -> dict:
+                     url: str = "", domain: str = "", path: str = "/") -> dict[str, Any]:
     """set_cookie("token", "abc", domain=".example.com")"""
     try:
         p = {"name": name, "value": value, "path": path}
@@ -715,7 +730,7 @@ async def set_cookie(daemon, name: str, value: str,
         return {"ok": False, "error": str(e)}
 
 
-async def network_enable(daemon) -> dict:
+async def network_enable(daemon) -> dict[str, Any]:
     """network_enable() — 启用 CDP 网络请求捕获"""
     try:
         await daemon.bridge.send("Network.enable", {
@@ -725,7 +740,7 @@ async def network_enable(daemon) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-async def get_response_body(daemon, request_id: str) -> dict:
+async def get_response_body(daemon, request_id: str) -> dict[str, Any]:
     """get_response_body("1234.5") → CDP 网络响应体"""
     try:
         r = await daemon.bridge.send("Network.getResponseBody",
@@ -738,11 +753,53 @@ async def get_response_body(daemon, request_id: str) -> dict:
         return {"ok": False, "error": str(e)}
 
 
+async def wait_for_download(daemon, timeout: float = 30.0) -> dict[str, Any]:
+    """wait_for_download(30) — 点击下载后等待完成（Page.downloadWillBegin/Progress 事件）。
+
+    下载落 Chrome 设置里的默认下载目录（通常是 ~/Downloads；browser-level 的
+    setDownloadBehavior 被 chrome.debugger tab attach 拒绝，路径无法自定义），所以
+    返回值只有 filename 没有绝对路径——要读文件请按 Chrome 那边的下载目录去拼。
+
+    事件在 daemon 缓冲里，触发下载后再调也能等到。但 drain_events 是**破坏性**的：
+    这里会把缓冲里的 Network 等事件一并取走丢弃，别和 wait_for_network_idle 套着用。
+
+    返回 {url, filename, bytes}；超时 → kind:transient（可重试）；取消 → kind:permanent。
+    """
+    try:
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        info = {}
+        while True:
+            for e in await drain_events(daemon):
+                m = (e or {}).get("method") or ""
+                p = (e or {}).get("params") or {}
+                if m == "Page.downloadWillBegin":
+                    info.setdefault("url", p.get("url") or "")
+                    info.setdefault("filename", p.get("suggestedFilename") or "")
+                elif m == "Page.downloadProgress":
+                    st = p.get("state")
+                    if st == "completed":
+                        return {"ok": True, "url": info.get("url", ""),
+                                "filename": info.get("filename") or "unknown",
+                                "bytes": p.get("totalBytes")}
+                    if st == "canceled":
+                        return {"ok": False, "error": "download canceled",
+                                "kind": "permanent"}
+            if loop.time() >= deadline:
+                if info:
+                    return {"ok": False, "error": "download started but not finished",
+                            "kind": "transient", "filename": info.get("filename")}
+                return {"ok": False, "error": "no download detected", "kind": "transient"}
+            await asyncio.sleep(0.3)
+    except Exception as e:
+        return {"ok": False, "error": str(e), "kind": "transient"}
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Extension self-reload
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def reload_extension(daemon) -> dict:
+async def reload_extension(daemon) -> dict[str, Any]:
     """reload_extension() — 强制重载扩展（自愈用）"""
     try:
         await daemon.bridge.send_scripting({"action": "reload_extension"}, 5)
@@ -769,7 +826,251 @@ async def _find_tab(daemon, url_hint: str = "http") -> int | None:
         return None
 
 
-async def click_selector(daemon, sel: str, tab: int = None) -> dict:
+# ═══════════════════════════════════════════════════════════════════════════════
+# 统一 locator —— 借鉴 ego-lite 的 element-resolver
+# ═══════════════════════════════════════════════════════════════════════════════
+# ego-lite 把定位形式收敛成一个字符串（css:/text:/xpath=… 等），并用
+# ElementResolutionError.kind 区分「重试有用」（transient：没找到，页面可能还没
+# 渲染完）和「重试无用」（permanent：多匹配歧义或非法选择器——多匹配还静默点
+# 第一个正是它明确反对的）。NEKORO 原有 click_selector/click_text/click_index 各管
+# 一种形式、失败只报 error 无分类，agent 看到 "not found" 不知道该不该重试。
+# click() 补上统一入口 + 错误分类，作为决策信号。
+
+_LOC_KINDS = ("css", "text", "index", "xpath", "placeholder")
+
+
+def _parse_loc(loc: str):
+    """解析统一 locator 字符串 → (kind, value, nth)。
+
+    - `css:.btn` 或裸 `.btn` — CSS 选择器
+    - `text:登录` / `text=登录` — 可见文本（模糊包含，取第一个匹配）
+    - `index:3` — state() 序号（与 state() 同一元素序）
+    - `xpath://button[contains(.,'登录')]` — XPath
+    - `placeholder:关键词` — input/textarea 的 placeholder
+    - 可选 `nth:N;` 前缀：多匹配歧义时取第 N 个（`nth:2;css:.btn`）
+    未知前缀按裸 CSS 处理——兼容老调用 click(".btn")。
+    """
+    loc = (loc or "").strip()
+    nth = None
+    if loc.startswith("nth:"):
+        semi = loc.find(";")
+        if semi >= 5 and loc[4:semi].isdigit():
+            nth = int(loc[4:semi])
+            loc = loc[semi + 1:].strip()
+    for kind in _LOC_KINDS:
+        if loc.startswith(kind + ":"):
+            return kind, loc[len(kind) + 1:].strip(), nth
+    if loc.startswith("text="):
+        return "text", loc[5:].strip(), nth
+    return "css", loc, nth
+
+
+# 每种 locator 只负责把命中集合算进 `hits`；之后的可见性过滤、歧义判定、滚进视口、
+# 取中心点全是共用的。三份几乎一样的 JS 抄过一遍就够了——再抄下去，改一处漏两处
+# 只是时间问题。
+_LOC_HITS_JS = {
+    "css": ("  let hits;\n"
+            "  try { hits = Array.from(document.querySelectorAll(%s)); }\n"
+            "  catch (e) { return {kind: 'invalid', error: 'invalid selector: ' + e.message}; }\n"),
+    "xpath": ("  let snap;\n"
+              "  try { snap = document.evaluate(%s, document, null,"
+              " XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null); }\n"
+              "  catch (e) { return {kind: 'invalid', error: 'invalid xpath: ' + e.message}; }\n"
+              "  const hits = [];\n"
+              "  for (let i = 0; i < snap.snapshotLength; i++) hits.push(snap.snapshotItem(i));\n"),
+    "placeholder": ("  const hits = Array.from(document.querySelectorAll("
+                    "'input[placeholder], textarea[placeholder]'))\n"
+                    "    .filter(el => (el.getAttribute('placeholder') || '').includes(%s));\n"),
+}
+
+
+def _loc_center_js(kind: str, value: str, nth) -> str:
+    """构造返回 {kind:'ok'|'not-found'|'ambiguous'|'invalid', ...} 的定位表达式。
+
+    text/index 走扩展 getRectByText / getRectByIndex op（与 click_text / click_index
+    行为一致）；css/xpath/placeholder 用内联 JS 并做多匹配检测——多匹配歧义报
+    permanent，而不是静默点第一个。
+
+    歧义只在**看得见的**匹配里判：移动端和桌面端各留一份导航是现代站点的常态，
+    `.login-btn` 命中两个、其中一个 display:none——那不是歧义，是只有一个能点。
+    拿隐藏的那份去逼调用方数 `nth:N;`，换来的是一个改版就失效的脆定位。
+    """
+    hits_js = _LOC_HITS_JS.get(kind)
+    if hits_js is None:
+        raise ValueError(f"unsupported locator kind: {kind}")
+    idx = nth if nth is not None else 0
+    amb = ("" if nth is not None else
+           "  if (vis.length > 1) return {kind: 'ambiguous', count: vis.length};\n")
+    return ("(() => {\n"
+            + hits_js % json.dumps(value)
+            + "  const vis = hits.filter(el => {\n"
+              "    const b = el.getBoundingClientRect();\n"
+              "    return (b.width || b.height) && getComputedStyle(el).visibility !== 'hidden';\n"
+              "  });\n"
+            + amb
+            + "  if (vis.length === 0) return {kind: 'not-found'};\n"
+              f"  const el = vis[{idx}];\n"
+              "  if (el === undefined) return {kind: 'not-found'};\n"
+              # 视口外元素的 rect 落在视口之外，照着点等于点空还报 ok。先滚进来再取
+              # 坐标；用 IfNeeded 版——已经看得见就不动页面，别平白搅乱用户的滚动位置。
+              "  if (el.scrollIntoViewIfNeeded) el.scrollIntoViewIfNeeded(false);\n"
+              "  const r = el.getBoundingClientRect();\n"
+              "  return {kind: 'ok', x: Math.round(r.left + r.width / 2),"
+              " y: Math.round(r.top + r.height / 2)};\n"
+              "})()")
+
+
+async def click(daemon, loc: str) -> dict[str, Any]:
+    """click("css:.btn") / click("text:登录") / click("index:3") /
+    click("xpath://button[contains(.,'登录')]") / click("placeholder:关键词")
+    — 统一定位点击（借鉴 ego-lite 的 locator 语法）。一个入口覆盖所有定位形式，
+    不用在 click_selector / click_text / click_index 之间挑；`nth:N;` 前缀取第 N 个
+    匹配（`nth:2;css:.btn`），**只对 css/xpath/placeholder 有效**——text/index 走的是
+    扩展 op，扩展只回第一个匹配，给了 nth 会直接报 permanent 而不是悄悄点第一个。
+
+    只作用于**当前活动标签**（走 Runtime.evaluate）。要点别的标签先 switch_tab；
+    需要显式 tab 参数的场合用 click_selector(sel, tab=...)。
+
+    失败返回带 `kind` 决策信号：
+    - transient — 没找到元素，页面可能还没渲染完，值得重试（配合 wait_selector）
+    - permanent — 多匹配歧义（加 nth:N; 或改 xpath 精确定位）或非法选择器，重试无用
+    """
+    kind, value, nth = _parse_loc(loc)
+    try:
+        if kind in ("text", "index"):
+            # nth 对这两种定位没法兑现（扩展 op 只回第一个匹配）。默默忽略等于
+            # 「让调用方以为点了第 2 个、实际点了第 1 个」——正是这个函数要消灭的事。
+            if nth is not None:
+                return {"ok": False,
+                        "error": f"nth:N; not supported for {kind}: (extension op returns "
+                                 f"only the first match) — use css:/xpath:/placeholder:",
+                        "kind": "permanent"}
+            if kind == "index":
+                if not str(value).isdigit():
+                    return {"ok": False, "error": f"index: not a number: {value}",
+                            "kind": "permanent"}
+                value = int(value)
+            op = "getRectByText" if kind == "text" else "getRectByIndex"
+            r = await daemon.bridge.send_scripting(
+                {"action": "evaluate", "op": op, "arg": value}, 10)
+            rect = r.get("value") if r else None
+            if not rect or rect.get("x") is None:
+                return {"ok": False, "error": f"{kind} not found: {value}",
+                        "kind": "transient"}
+            return await click_at_xy(daemon, rect["x"], rect["y"])
+        code = _loc_center_js(kind, value, nth)
+        r = await daemon.evaluate(code)
+        got = (r or {}).get("result", {}).get("value")
+        if not got or not isinstance(got, dict):
+            return {"ok": False, "error": f"locator failed: {loc}", "kind": "transient"}
+        gk = got.get("kind")
+        if gk == "not-found":
+            return {"ok": False, "error": f"{kind} not found: {value}", "kind": "transient"}
+        if gk == "ambiguous":
+            return {"ok": False,
+                    "error": f"{kind} matched {got.get('count')} elements: {value} "
+                             f"(add nth:N; prefix or use xpath:)",
+                    "kind": "permanent"}
+        if gk == "invalid":
+            return {"ok": False, "error": got.get("error", f"invalid {kind}: {value}"),
+                    "kind": "permanent"}
+        if gk != "ok" or not isinstance(got.get("x"), (int, float)):
+            return {"ok": False, "error": f"locator failed: {loc}", "kind": "transient"}
+        return await click_at_xy(daemon, got["x"], got["y"])
+    except Exception as e:
+        # 桥抖 / 超时是典型的「等会儿再来」，别让唯一没有 kind 的分支是异常分支
+        return {"ok": False, "error": str(e), "kind": "transient"}
+
+
+_REFS_SELECTOR = ("button, a, input, textarea, select, [role=\"button\"], "
+                  "[onclick], [data-testid], [contenteditable]")
+
+
+def _refs_text_js(sel: str, max_items: int) -> str:
+    """同一个 selector 在 JS 侧再查一次，只取文本——和 DOM.querySelectorAll 同为
+    文档序，按下标对齐即可。"""
+    return ("(() => Array.from(document.querySelectorAll(%s)).slice(0, %d)\n"
+            "  .map(el => (((el.innerText || el.value || '').trim())"
+            " || (el.getAttribute && el.getAttribute('aria-label')) || '').slice(0, 80)))()"
+            % (json.dumps(sel), max_items))
+
+
+async def refs(daemon, selector: str | None = None, max_items: int = 50) -> dict[str, Any]:
+    """refs() → [{ref, tag, text}] — 可交互元素 + 稳定句柄（CDP backendNodeId）。
+
+    借鉴 ego-lite 的 @N ref：ref 是 backendNodeId，DOM 小变化后仍指向同一元素
+    （跨轮次稳定）；页面导航/大改后失效 → click_ref 报 kind:transient，重新 refs()。
+    selector 默认覆盖主流可交互元素；传 selector 可收窄。
+
+    往返次数是常数级：describeNode 全部并发下发，文本走**一条** Runtime.evaluate
+    取回。逐个元素 describe→resolve→callFunctionOn 是 3×N 个串行来回，50 个元素就是
+    150 次——而且 resolveNode 产出的 RemoteObject 不释放会把游离 DOM 钉在 JS 堆里。
+    这里根本不产生 objectId，也就无需 releaseObject。
+    """
+    try:
+        sel = selector or _REFS_SELECTOR
+        await daemon.bridge.send("DOM.enable", {})
+        r = await daemon.bridge.send("DOM.getDocument", {})
+        r2 = await daemon.bridge.send(
+            "DOM.querySelectorAll",
+            {"nodeId": ((r or {}).get("root") or {}).get("nodeId"), "selector": sel})
+        nids = ((r2 or {}).get("nodeIds") or [])[:max_items]
+        described, texts_r = await asyncio.gather(
+            asyncio.gather(*(daemon.bridge.send("DOM.describeNode", {"nodeId": n})
+                             for n in nids)),
+            daemon.evaluate(_refs_text_js(sel, max_items)),
+        )
+        texts = ((texts_r or {}).get("result") or {}).get("value")
+        # 两次查询之间 DOM 可能变了；条数对不上就宁可不给文本，也不给错位的文本
+        if not isinstance(texts, list) or len(texts) != len(nids):
+            texts = []
+        out: list[dict[str, Any]] = []
+        for i, d in enumerate(described):
+            node = (d or {}).get("node") or {}
+            ref = node.get("backendNodeId")
+            if ref is None:
+                continue
+            out.append({"ref": ref, "tag": (node.get("nodeName") or "").lower(),
+                        "text": str(texts[i]) if i < len(texts) else ""})
+        return {"ok": True, "result": out}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "kind": "transient"}
+
+
+async def click_ref(daemon, ref: int) -> dict[str, Any]:
+    """click_ref(123) — 用 backendNodeId 点击（跨轮次稳定句柄）。
+
+    ref 从 refs() 拿。DOM 小变化后仍命中同一元素；页面导航后失效 →
+    kind:transient（重新 refs()），不静默点错位置。
+
+    取坐标前先 scrollIntoViewIfNeeded：box model 是视口坐标，元素在视口外时直接
+    照着点就是点空——还会返回 ok:True，正是这个函数承诺不做的事。
+    """
+    try:
+        try:
+            # 滚不动不算失败（元素可能本来就在视口里，或页面不可滚）——尽力而为
+            try:
+                await daemon.bridge.send("DOM.scrollIntoViewIfNeeded",
+                                         {"backendNodeId": ref})
+            except Exception:
+                pass
+            bm = await daemon.bridge.send("DOM.getBoxModel", {"backendNodeId": ref})
+        except Exception as e:
+            return {"ok": False,
+                    "error": f"ref {ref} no longer valid (page changed?): {e}",
+                    "kind": "transient"}
+        content = ((bm or {}).get("model") or {}).get("content") or []
+        if len(content) < 8:
+            return {"ok": False, "error": f"ref {ref} has no box model (not rendered?)",
+                    "kind": "transient"}
+        x = sum(content[0::2]) / 4
+        y = sum(content[1::2]) / 4
+        return await click_at_xy(daemon, round(x), round(y))
+    except Exception as e:
+        return {"ok": False, "error": str(e), "kind": "transient"}
+
+
+async def click_selector(daemon, sel: str, tab: int | None = None) -> dict[str, Any]:
     """click_selector(".btn") — CDP 真实坐标点击 (isTrusted:true)"""
     t = tab or await _find_tab(daemon)
     if not t: return {"ok": False, "error": "No tab"}
@@ -778,16 +1079,16 @@ async def click_selector(daemon, sel: str, tab: int = None) -> dict:
         r = await daemon.bridge.send_scripting({
             "action": "evaluate", "target": t, "op": "getRect", "sel": sel}, 10)
         rect = r.get("value") if r else None
-        if not rect or not rect.get("x"):
-            return {"ok": False, "error": f"element not found: {sel}"}
+        if not rect or rect.get("x") is None:
+            return {"ok": False, "error": f"element not found: {sel}", "kind": "transient"}
         # CDP 真实鼠标点击
         return await click_at_xy(daemon, rect["x"], rect["y"])
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
-async def state(daemon, max_items: int = 80, sel: str = None,
-                tab: int = None) -> dict:
+async def state(daemon, max_items: int = 80, sel: str | None = None,
+                tab: int | None = None) -> dict[str, Any]:
     """state() → [{index, changed, tag, text, box}] — 索引元素树"""
     t = tab or await _find_tab(daemon)
     if not t: return {"ok": False, "error": "No tab"}
@@ -801,7 +1102,7 @@ async def state(daemon, max_items: int = 80, sel: str = None,
 
 
 async def find_text(daemon, text: str, exact: bool = False,
-                    limit: int = 10, tab: int = None) -> dict:
+                    limit: int = 10, tab: int | None = None) -> dict[str, Any]:
     """find_text("喜欢") → [{text, tag, match, w, h}]"""
     t = tab or await _find_tab(daemon)
     if not t: return {"ok": False, "error": "No tab"}
@@ -814,7 +1115,7 @@ async def find_text(daemon, text: str, exact: bool = False,
         return {"ok": False, "error": str(e)}
 
 
-async def click_text(daemon, text: str, tab: int = None) -> dict:
+async def click_text(daemon, text: str, tab: int | None = None) -> dict[str, Any]:
     """click_text("喜欢") — CDP 真实坐标点击 (isTrusted:true)"""
     t = tab or await _find_tab(daemon)
     if not t: return {"ok": False, "error": "No tab"}
@@ -822,14 +1123,14 @@ async def click_text(daemon, text: str, tab: int = None) -> dict:
         r = await daemon.bridge.send_scripting({
             "action": "evaluate", "target": t, "op": "getRectByText", "arg": text}, 10)
         rect = r.get("value") if r else None
-        if not rect or not rect.get("x"):
-            return {"ok": False, "error": f"text not found: {text}"}
+        if not rect or rect.get("x") is None:
+            return {"ok": False, "error": f"text not found: {text}", "kind": "transient"}
         return await click_at_xy(daemon, rect["x"], rect["y"])
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
-async def click_index(daemon, index: int, tab: int = None) -> dict:
+async def click_index(daemon, index: int, tab: int | None = None) -> dict[str, Any]:
     """click_index(3) — CDP 真实坐标点击 (isTrusted:true)"""
     t = tab or await _find_tab(daemon)
     if not t: return {"ok": False, "error": "No tab"}
@@ -837,14 +1138,14 @@ async def click_index(daemon, index: int, tab: int = None) -> dict:
         r = await daemon.bridge.send_scripting({
             "action": "evaluate", "target": t, "op": "getRectByIndex", "arg": index}, 10)
         rect = r.get("value") if r else None
-        if not rect or not rect.get("x"):
-            return {"ok": False, "error": f"index not found: {index}"}
+        if not rect or rect.get("x") is None:
+            return {"ok": False, "error": f"index not found: {index}", "kind": "transient"}
         return await click_at_xy(daemon, rect["x"], rect["y"])
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
-async def hover(daemon, sel: str, tab: int = None) -> dict:
+async def hover(daemon, sel: str, tab: int | None = None) -> dict[str, Any]:
     """hover(".menu") — CSS 选择器悬停"""
     t = tab or await _find_tab(daemon)
     if not t: return {"ok": False, "error": "No tab"}
@@ -856,7 +1157,7 @@ async def hover(daemon, sel: str, tab: int = None) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-async def hover_index(daemon, index: int, tab: int = None) -> dict:
+async def hover_index(daemon, index: int, tab: int | None = None) -> dict[str, Any]:
     """hover_index(3) — 悬停 state() 列表的第 N 个元素"""
     t = tab or await _find_tab(daemon)
     if not t: return {"ok": False, "error": "No tab"}
@@ -868,7 +1169,7 @@ async def hover_index(daemon, index: int, tab: int = None) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-async def scroll_into_view(daemon, sel: str = None, tab: int = None) -> dict:
+async def scroll_into_view(daemon, sel: str | None = None, tab: int | None = None) -> dict[str, Any]:
     """scroll_into_view("#target") — 滚动到可见"""
     t = tab or await _find_tab(daemon)
     if not t: return {"ok": False, "error": "No tab"}
@@ -882,7 +1183,7 @@ async def scroll_into_view(daemon, sel: str = None, tab: int = None) -> dict:
 
 
 async def wait_selector(daemon, sel: str, state: str = "visible",
-                        timeout: float = 10.0, tab: int = None) -> dict:
+                        timeout: float = 10.0, tab: int | None = None) -> dict[str, Any]:
     """wait_selector(".modal", "visible", 15) — 等待元素状态"""
     t = tab or await _find_tab(daemon)
     if not t: return {"ok": False, "error": "No tab"}
@@ -891,13 +1192,24 @@ async def wait_selector(daemon, sel: str, state: str = "visible",
             "action": "evaluate", "target": t, "op": "waitSelector",
             "arg": {"sel": sel, "state": state, "timeout": int(timeout * 1000)}},
             timeout + 5)
-        return {"ok": True, "result": r.get("value")}
+        value = r.get("value") if r else None
+        res = {"ok": True, "result": value}
+        # 扩展侧返回字符串状态：'visible'|'hidden'|'attached'|'detached'|'timeout:sel'|'no-selector'。
+        # timeout = 元素没在时限内到达目标态（可能还没渲染完）→ transient，可重试；
+        # no-selector = 调用方没给选择器 → permanent，重试无用。补 kind 决策信号，
+        # 结构不变（ok/result 与旧版一致），agent 读到 kind 就能决定是否重试。
+        if isinstance(value, str):
+            if value.startswith("timeout"):
+                res["kind"] = "transient"
+            elif value == "no-selector":
+                res["kind"] = "permanent"
+        return res
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
-async def get_markdown(daemon, sel: str = None, max_chars: int = 8000,
-                       tab: int = None) -> dict:
+async def get_markdown(daemon, sel: str | None = None, max_chars: int = 8000,
+                       tab: int | None = None) -> dict[str, Any]:
     """get_markdown() → 页面内容转 Markdown"""
     t = tab or await _find_tab(daemon)
     if not t: return {"ok": False, "error": "No tab"}
@@ -910,7 +1222,7 @@ async def get_markdown(daemon, sel: str = None, max_chars: int = 8000,
         return {"ok": False, "error": str(e)}
 
 
-async def box_of(daemon, sel: str, tab: int = None) -> dict:
+async def box_of(daemon, sel: str, tab: int | None = None) -> dict[str, Any]:
     """box_of(".btn") → {x, y, w, h, visible, tag, text}"""
     t = tab or await _find_tab(daemon)
     if not t: return {"ok": False, "error": "No tab"}
@@ -922,7 +1234,7 @@ async def box_of(daemon, sel: str, tab: int = None) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-async def dialog_off(daemon, tab: int = None) -> dict:
+async def dialog_off(daemon, tab: int | None = None) -> dict[str, Any]:
     """dialog_off() — JS 层覆盖 window.alert/confirm/prompt 为自动关闭（需在触发前注入，
     盖不住 beforeunload / 已开的原生对话框）。想要兜底防挂用扩展的 CDP 层处置（见
     get_last_dialog）——那个 attach 后一直生效、覆盖 beforeunload。"""
@@ -936,7 +1248,7 @@ async def dialog_off(daemon, tab: int = None) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-async def get_last_dialog(daemon) -> dict:
+async def get_last_dialog(daemon) -> dict[str, Any]:
     """get_last_dialog() → {dialog} — 取最近一次被扩展自动处置的原生对话框，读后清。
     attach 后扩展 Page.enable + 拦 Page.javascriptDialogOpening 立即处置（beforeunload
     放行、alert/confirm/prompt 取消），防原生对话框冻结页面 JS 线程导致 evaluate 系
@@ -953,14 +1265,14 @@ async def get_last_dialog(daemon) -> dict:
 # Self-heal
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def list_site_actions(daemon) -> dict:
+async def list_site_actions(daemon) -> dict[str, Any]:
     """list_site_actions() → 已固化的站点函数 + 载入失败的文件。
 
     路由用：想知道"这事有没有现成的"就查这里。载入错误必须能看见——
     否则用户对着"我明明写了函数怎么不存在"抓瞎。
     """
     try:
-        ns, errors = site_notes.load_functions()
+        ns, errors = site_notes.load_functions(sys.modules[__name__])
         root = site_notes.skills_dir()
         return {"ok": True, "root": str(root) if root else None,
                 "actions": sorted(ns), "errors": errors}
@@ -968,7 +1280,7 @@ async def list_site_actions(daemon) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-async def reload_agent_helpers(daemon) -> dict:
+async def reload_agent_helpers(daemon) -> dict[str, Any]:
     """reload_agent_helpers() — 重新加载 agent_helpers.py，无需重启 daemon。"""
     import importlib
     from . import agent_helpers as ah

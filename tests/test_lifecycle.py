@@ -38,8 +38,8 @@ def test_pid_file_roundtrip():
 
 
 class _PidHandler(BaseHTTPRequestHandler):
-    pid_value = 4242                       # 类变量，测试可改
-    def log_message(self, *a):             # 静音
+    pid_value: object = 4242               # 类变量，测试可改（故意塞非 int）
+    def log_message(self, format: str, *args: object):   # 静音
         pass
     def do_GET(self):
         if self.path == "/pid":
