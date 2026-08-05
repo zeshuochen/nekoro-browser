@@ -275,16 +275,19 @@ async function runOp(op, sel, arg) {
             return {ok: true, value: el.value};
         }
         case 'getRectByText': {
+            // 用 findFirstText（= find_text 用的那个引擎：isVisible 过滤 + getDirectText +
+            // 按匹配质量和面积排序），不要自己再写一遍朴素查找。原来那版有两个真 bug：
+            //   ① 无可见性检查 → display:none 的元素排在前面就被选中，rect 是 0×0，
+            //      于是点在 (0,0)、什么也没点到，却一路返回 ok:true（静默成功）
+            //   ② 只认 childNodes.length===1 的纯文本叶节点 → `保存 <b>*</b>` 这种
+            //      文本与元素混排的按钮整个被跳过，报 text not found
+            // 结果是 find_text 找得到、click_text 点不到——两个本该配套的 helper 互相矛盾。
             const tx = typeof arg === 'string' ? arg : (arg && arg.text);
-            const all = document.querySelectorAll('*');
-            for (const e of all) {
-                if (e.childNodes.length === 1 && e.childNodes[0].nodeType === 3) {
-                    if (e.textContent.trim().includes(tx)) {
-                        if (e.scrollIntoViewIfNeeded) e.scrollIntoViewIfNeeded(false);
-                        const r = e.getBoundingClientRect();
-                        return {x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2)};
-                    }
-                }
+            const el = findFirstText(tx);
+            if (el) {
+                if (el.scrollIntoViewIfNeeded) el.scrollIntoViewIfNeeded(false);
+                const r = el.getBoundingClientRect();
+                return {x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2)};
             }
             return null;
         }

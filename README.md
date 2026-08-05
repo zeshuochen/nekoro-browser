@@ -42,6 +42,12 @@ nekoro-browser` works the same way.
 
 <sub>From source: <code>git clone https://github.com/zeshuochen/nekoro-browser && cd nekoro-browser && uv pip install -e .</code></sub>
 
+> **Upgrading?** `uv tool upgrade nekoro-browser` updates the Python side only. The
+> extension Chrome already loaded keeps running the old `background.js`, so anything that
+> touches the extension silently stays on the old behaviour. Reload it after every upgrade:
+> `nekoro-browser --reload-ext` (or **Reload** on the card in `chrome://extensions`).
+> Run `nekoro-browser --doctor` afterwards to confirm the service worker answers.
+
 **2 — Load the extension**
 
 ```bash
@@ -84,7 +90,7 @@ Since Chrome 136, `--remote-debugging-port` / `--remote-debugging-pipe` **refuse
 | Login state | ❌ fresh instance | ✅ | ✅ | ✅ |
 | Modify the extension | — | Edit Playwright source | Edit OpenCLI source | ✅ right in this repo |
 | Self-healing | ❌ | ❌ | ❌ | ✅ Agent edits helpers at runtime |
-| MCP | ❌ | ✅ (separate `@playwright/mcp`) | ❌ | ✅ built in, 46 tools via `nekoro-browser-mcp` |
+| MCP | ❌ | ✅ (separate `@playwright/mcp`) | ❌ | ✅ built in, 53 tools via `nekoro-browser-mcp` |
 | Site knowledge | ❌ | ❌ | ❌ | ✅ your notes and scripts are **handed to the agent on navigate** |
 
 ## Examples
@@ -183,9 +189,9 @@ ride along in the tool result — see [Self-Healing and Site Knowledge](#self-he
 | Category | Commands |
 |----------|----------|
 | Navigation | `navigate(url)`, `new_tab(url)`, `ensure_tab(url)`, `new_tab(url, reuse=True)`, `list_tabs()`, `switch_tab(id)`, `close_tab(id)`, `close_tabs(ids)`, `sweep_tabs()` |
-| Page info | `page_info()`, `page_html()`, `page_text()`, `get_markdown()`, `state()`, `refs()` |
+| Page info | `page_info()`, `page_html()`, `page_text()`, `get_markdown()`, `state()`, `refs()`, `find_text(t)`, `iframe_target(url_substr)` |
 | JavaScript | `js(code)`, `cdp(method, **p)`, `cdp_batch(*cmds)` |
-| Interaction | `click(loc)`, `click_selector(sel)`, `click_ref(ref)`, `click_index(n)`, `click_at_xy(x,y)`, `type_text(t)`, `fill_input(sel,t)`, `press_key(k)`, `upload_file(sel,path)` |
+| Interaction | `click(loc)`, `click(loc, tab=id)`, `click_selector(sel)`, `click_ref(ref)`, `click_index(n)`, `click_at_xy(x,y)`, `type_text(t)`, `fill_input(sel,t)`, `press_key(k)`, `upload_file(sel,path)` |
 | Dialogs | `dialog_off()`, `get_last_dialog()` |
 | Waiting | `wait_for_load()`, `wait_selector(sel)`, `wait_for_network_idle()`, `sleep(s)` |
 | Downloads | `wait_for_download()` |
@@ -222,7 +228,7 @@ CLI (nekoro-browser)  ·  MCP server (nekoro-browser-mcp)
 
 </details>
 
-`helpers.py` (47 thin wrappers) → CDP commands, each ≤10 lines, none of them aware of any particular website.
+`helpers.py` (54 thin wrappers) → CDP commands, none of them aware of any particular website.
 
 `lifecycle.py` manages the daemon: pid file + process fingerprint (avoids killing a reused pid), self-heal on stale daemon (CDP probe fails → auto cleanup and restart), localhost requests bypass the system proxy.
 
@@ -304,7 +310,7 @@ tab is never a candidate.
 | `nekoro-browser --doctor` | End-to-end diagnostic (daemon + extension + SW all alive?) |
 | `nekoro-browser --stop` | Stop the daemon |
 | `nekoro-browser --restart` | Stop and restart (foreground) |
-| `nekoro-browser --reload-ext` | Reload the extension's service worker — run before a batch job for a clean state |
+| `nekoro-browser --reload-ext` | Reload the extension's service worker — **required after upgrading**, also useful before a batch job for a clean state |
 | `nekoro-browser --extension-path` | Print the extension directory (for "Load unpacked") |
 | `nekoro-browser --port N` | Run the daemon on port N (default 28417) |
 | `nekoro-browser -c "code"` | Run one snippet, print the result |
