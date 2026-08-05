@@ -244,6 +244,9 @@ async function runOp(op, sel, arg) {
         case 'getRect': {
             const el = document.querySelector(sel);
             if (!el) return null;
+            // rect 是视口坐标：元素在视口外时照着点就是点空，而且会一路返回 ok。
+            // 滚进来再取——已经看得见的不动页面（IfNeeded 语义）。
+            if (el.scrollIntoViewIfNeeded) el.scrollIntoViewIfNeeded(false);
             const r = el.getBoundingClientRect();
             return {x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2)};
         }
@@ -277,6 +280,7 @@ async function runOp(op, sel, arg) {
             for (const e of all) {
                 if (e.childNodes.length === 1 && e.childNodes[0].nodeType === 3) {
                     if (e.textContent.trim().includes(tx)) {
+                        if (e.scrollIntoViewIfNeeded) e.scrollIntoViewIfNeeded(false);
                         const r = e.getBoundingClientRect();
                         return {x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2)};
                     }
@@ -289,6 +293,7 @@ async function runOp(op, sel, arg) {
             if (isNaN(idx) || idx < 0) return null;
             const el = _getElementByIndex(idx);
             if (!el) return null;
+            if (el.scrollIntoViewIfNeeded) el.scrollIntoViewIfNeeded(false);
             const r = el.getBoundingClientRect();
             return {x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2)};
         }
@@ -722,6 +727,15 @@ async function handleCmd(msg) {
         // 执行 runOp（见 handleScripting），不再用 chrome.scripting.executeScript。
         await handleScripting(msg);
     } else if (msg.method) {
+        // 每条命令可自带 tabId 指定目标（helpers 的 tab= 参数）。不带就打当前指针，
+        // 与原行为一致。指名了却没 attach 就报错——**绝不退回指针**：调用方说了要
+        // 打 A，悄悄打到 B 上再回 ok，是这个项目最不能接受的一类错误。
+        if (msg.tabId && !managedTabIds.has(msg.tabId)) {
+            post({id: msg.id, error: {code: -32000,
+                message: `tab ${msg.tabId} not attached (switch_tab/new_tab first)`}});
+            return;
+        }
+        const target = msg.tabId || tabId;
         // Fire-and-forget: Input events Chrome doesn't respond to — skip waiting for callback.
         const FIRE_AND_FORGET = [
             "Input.dispatchMouseEvent",
@@ -730,7 +744,7 @@ async function handleCmd(msg) {
             "Input.dispatchTouchEvent",
         ];
         if (FIRE_AND_FORGET.includes(msg.method)) {
-            chrome.debugger.sendCommand({tabId}, msg.method, msg.params || {}, (result) => {
+            chrome.debugger.sendCommand({tabId: target}, msg.method, msg.params || {}, (result) => {
                 if (chrome.runtime.lastError) {
                     console.warn("[nekoro] CDP fire-and-forget error:", msg.method,
                         chrome.runtime.lastError.message);
@@ -740,7 +754,7 @@ async function handleCmd(msg) {
             return;
         }
         chrome.debugger.sendCommand(
-            {tabId}, msg.method, msg.params || {},
+            {tabId: target}, msg.method, msg.params || {},
             (result) => {
                 if (chrome.runtime.lastError) {
                     post({id:msg.id, error:{message:chrome.runtime.lastError.message, code:-32000}});

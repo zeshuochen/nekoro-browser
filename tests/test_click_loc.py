@@ -27,8 +27,8 @@ class _FakeBridge:
     async def send_scripting(self, params, timeout=30.0):
         return await self.owner._on_scripting(params)
 
-    async def send(self, method, params):
-        return await self.owner._on_cdp(method, params)
+    async def send(self, method, params, tab=None, **kw):
+        return await self.owner._on_cdp(method, params, tab)
 
 
 class FakeDaemon:
@@ -36,6 +36,7 @@ class FakeDaemon:
         self.evaluate_calls = []
         self.script_calls = []
         self.mouse_events = []
+        self.cdp_tabs = []
         self.evaluate_value = evaluate_value
         self.script_value = script_value
         self.active_tab_id = 1          # _find_tab 用它，避免走 find_tab op
@@ -53,7 +54,15 @@ class FakeDaemon:
             return self.script_value(params)
         return {"value": self.script_value}
 
-    async def _on_cdp(self, method, params):
+    async def _on_cdp(self, method, params, tab=None):
+        self.cdp_tabs.append(tab)
+        if method == "Runtime.evaluate":
+            # 带 tab 的 click 走原始 CDP 而不是 daemon.evaluate，wire 形状同样是
+            # {result:{value:...}}——fake 必须两条路都照真形状回
+            self.evaluate_calls.append(params["expression"])
+            if callable(self.evaluate_value):
+                return self.evaluate_value(params["expression"])
+            return {"result": {"value": self.evaluate_value}}
         self.mouse_events.append((method, params))
 
 
@@ -338,6 +347,35 @@ def test_wait_selector_visible_has_no_kind():
     d = make_fake(script_value="visible")
     r = run(helpers.wait_selector(d, ".modal"))
     assert r["ok"] is True and "kind" not in r, r
+
+
+# ── tab 路由（扩展侧按 msg.tabId 分发；真机验过跨标签点击）─────────────────
+
+def test_click_with_tab_routes_locate_and_click_to_that_tab():
+    """定位在 A、点击落 B 是最难查的一类错——两端必须带同一个 tab。"""
+    d = make_fake(evaluate_value=OK)
+    r = run(helpers.click(d, "css:.btn", tab=77))
+    assert r == {"ok": True}, r
+    assert d.evaluate_calls, "带 tab 时走原始 CDP Runtime.evaluate"
+    assert set(d.cdp_tabs) == {77}, f"每条命令都得带 tab=77: {d.cdp_tabs}"
+    assert d.mouse_events, "点击本身也要落在 tab 77"
+
+
+def test_click_without_tab_keeps_pointer_semantics():
+    """不传 tab 就打活动指针——原有行为，绝不能被新参数改掉。"""
+    d = make_fake(evaluate_value=OK)
+    r = run(helpers.click(d, "css:.btn"))
+    assert r == {"ok": True}, r
+    assert d.cdp_tabs == [None] * len(d.cdp_tabs), d.cdp_tabs
+
+
+def test_click_text_with_tab_passes_target_to_extension_op():
+    """text/index 走扩展 op，tab 要变成 op 的 target 字段。"""
+    d = make_fake(script_value={"x": 5, "y": 6})
+    r = run(helpers.click(d, "text:登录", tab=88))
+    assert r["ok"] is True, r
+    assert d.script_calls[0]["target"] == 88, d.script_calls[0]
+    assert set(d.cdp_tabs) == {88}, d.cdp_tabs
 
 
 if __name__ == "__main__":
