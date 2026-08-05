@@ -64,3 +64,9 @@ include = [
     "AGENTS.md",
     "LICENSE",
 ]
+
+[tool.pyright]
+# 严格模式：helpers.py 等薄封装返回动态 JSON，用 dict[str, Any] 诚实标注，
+# 测试文件的 sys.path hack 由 extraPaths 让 pyright 静态解析。
+typeCheckingMode = "strict"
+extraPaths = ["src"]

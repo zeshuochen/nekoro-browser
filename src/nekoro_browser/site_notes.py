@@ -16,6 +16,7 @@ Agent 看到清单后自己决定读哪一份。
 
 import os
 from pathlib import Path
+from typing import Any
 
 MAX_FILES = 8          # 清单上限，防某个站点笔记堆太多把返回值撑爆
 ENV_VAR = "NEKORO_DOMAIN_SKILLS"
@@ -142,6 +143,9 @@ def load_functions(helpers_module):
             mod_name = f"_nekoro_site_{d.name}_{py.stem}".replace("-", "_").replace(".", "_")
             try:
                 spec = importlib.util.spec_from_file_location(mod_name, py)
+                if spec is None or spec.loader is None:
+                    errors.append(f"{d.name}/{py.name}: cannot create module spec")
+                    continue
                 mod = importlib.util.module_from_spec(spec)
                 _inject_helpers(mod, helpers_module)   # 让站点脚本能直接写 await navigate(daemon, url)
                 spec.loader.exec_module(mod)
@@ -172,7 +176,7 @@ def notes_for(url: str) -> list[str]:
         return []
 
 
-def attach(result: dict, url: str) -> dict:
+def attach(result: dict[str, Any], url: str) -> dict[str, Any]:
     """命中才加 `notes` 键——没笔记的站点不该多出一个空字段来占位。
 
     这里再兜一层异常：`notes_for` 自己虽然吞了，但 attach 是接在 navigate/new_tab

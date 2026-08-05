@@ -108,13 +108,21 @@ openOrReuseTab、agent_helpers 热加载），真正有差距的是**元素定�
   {filename, bytes} ✅；单元测试 5 用例 ✅
 - 风险：中（MVP 已验证事件链；下载落 Chrome 默认目录，路径不可自定义——已在 docstring 说明）
 
-### 批次 6：类型注解卫生（风格级，可选）
+### 批次 6：类型注解卫生（✅ 已完成，2026-08-05）
 
-- 目标：消灭 helpers.py 的 pyright 严格模式噪音
-- 方案 A：补齐 `dict[str, ...]` / `list[dict[str, ...]]` 泛型注解（量大）
-- 方案 B：项目 pyproject 声明 pyright 配置（basic 模式），对齐 CI 现状
-- 验收：LSP 对 helpers.py 无 error；全量测试通过
-- 风险：低（纯注解/配置）
+- 目标：消灭 pyright 严格模式报错（不降级配置，通过修代码达成）
+- 落地：
+  - helpers.py：45+ 处 `-> dict` → `-> dict[str, Any]`；13 处 `tab: int = None` →
+    `tab: int | None = None`（sel/url/selector 同理）；动态构建的 res/out 显式标注；
+    `list_site_actions` 漏传 helpers_module 修复（批次 1 漏网）
+  - site_notes.py：`spec_from_file_location` 返回 Optional——None 时记错误跳过
+    （此前 spec.loader 会炸的真隐患）
+  - daemon.py：`_site_errors` 在 __init__ 初始化；Queue/list/dict 补泛型
+  - pyproject.toml：`[tool.pyright]` 严格模式 + `extraPaths=["src"]`
+    （tests 的 sys.path hack 由静态配置解析，非降级）
+  - tests：FakeDaemon 重构——真实 bridge 类替代运行时动态挂属性
+    （删掉未触发的 `__post_init__` 死代码）
+- 验收：全项目 pyright 零 error（src ×3 + tests）✅；27 测试全过 ✅
 
 ## 4. 批次间依赖
 

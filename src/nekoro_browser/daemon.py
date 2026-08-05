@@ -6,6 +6,7 @@ import contextlib
 import ast
 import json
 import logging
+from typing import Any
 
 from . import auth
 from . import config
@@ -53,7 +54,8 @@ class Daemon:
     def __init__(self, port=None):
         self.bridge = ExtensionBridge(config.daemon_port(port))
         self._tab_id = None
-        self._event_queue: asyncio.Queue = asyncio.Queue(maxsize=EVENT_BUFFER_MAX)
+        self._event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=EVENT_BUFFER_MAX)
+        self._site_errors: list[str] = []
 
     async def start(self) -> bool:
         self.bridge.set_exec_handler(self._on_exec)
@@ -88,7 +90,7 @@ class Daemon:
         """扩展 attach 状态变化时更新活动标签（重连自动换标签后仍指向可用 tab）。"""
         self._tab_id = tab_id
 
-    async def _on_exec(self, code: str) -> dict:
+    async def _on_exec(self, code: str) -> dict[str, Any]:
         from functools import partial
         import importlib
         import ast as _ast
@@ -210,9 +212,9 @@ class Daemon:
             except asyncio.QueueFull:
                 pass
 
-    async def drain_events(self) -> list[dict]:
+    async def drain_events(self) -> list[dict[str, Any]]:
         """Pull all buffered CDP events since last drain."""
-        events = []
+        events: list[dict[str, Any]] = []
         while not self._event_queue.empty():
             events.append(self._event_queue.get_nowait())
         return events

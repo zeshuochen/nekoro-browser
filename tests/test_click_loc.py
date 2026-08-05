@@ -17,6 +17,20 @@ os.environ["NEKORO_DOMAIN_SKILLS"] = tempfile.mkdtemp(prefix="nekoro-empty-skill
 from nekoro_browser import helpers
 
 
+class _FakeBridge:
+    """真 daemon 的 bridge 是实例属性且带 send/send_scripting——用真实方法而非
+    运行时挂动态属性，让 pyright 能静态解析（fake 严格照真 wire 形状来）。"""
+
+    def __init__(self, owner):
+        self.owner = owner
+
+    async def send_scripting(self, params, timeout=30.0):
+        return await self.owner._on_scripting(params)
+
+    async def send(self, method, params):
+        return await self.owner._on_cdp(method, params)
+
+
 class FakeDaemon:
     def __init__(self, evaluate_value=None, script_value=None):
         self.evaluate_calls = []
@@ -25,6 +39,7 @@ class FakeDaemon:
         self.evaluate_value = evaluate_value
         self.script_value = script_value
         self.active_tab_id = 1          # _find_tab 用它，避免走 find_tab op
+        self.bridge = _FakeBridge(self)
 
     async def evaluate(self, expr):
         self.evaluate_calls.append(expr)
@@ -32,34 +47,18 @@ class FakeDaemon:
             return self.evaluate_value(expr)
         return {"result": {"value": self.evaluate_value}}
 
-    class _Bridge:
-        pass
-
-    bridge = _Bridge()
-
-    async def _send_scripting(self, params, timeout=30.0):
+    async def _on_scripting(self, params):
         self.script_calls.append(params)
         if callable(self.script_value):
             return self.script_value(params)
         return {"value": self.script_value}
 
-    async def _send(self, method, params):
+    async def _on_cdp(self, method, params):
         self.mouse_events.append((method, params))
 
-    async def __post_init__(self):
-        self.bridge.send_scripting = self._send_scripting
-        self.bridge.send = self._send
 
-
-class FakeDaemonFactory:
-    """构造带桥接的 FakeDaemon（真 daemon 的 bridge 是实例属性，不是类属性）。"""
-
-    @staticmethod
-    def make(evaluate_value=None, script_value=None):
-        d = FakeDaemon(evaluate_value, script_value)
-        d.bridge.send_scripting = d._send_scripting
-        d.bridge.send = d._send
-        return d
+def make_fake(evaluate_value=None, script_value=None):
+    return FakeDaemon(evaluate_value, script_value)
 
 
 def run(coro):
@@ -87,7 +86,7 @@ def test_parse_loc_forms():
 # ── css ────────────────────────────────────────────────────────────────────────
 
 def test_click_css_single_match():
-    d = FakeDaemonFactory.make(evaluate_value=OK)
+    d = make_fake(evaluate_value=OK)
     r = run(helpers.click(d, "css:.btn"))
     assert r == {"ok": True}, r
     assert d.mouse_events and d.mouse_events[0][0] == "Input.dispatchMouseEvent"
@@ -97,7 +96,7 @@ def test_click_css_single_match():
 
 
 def test_click_css_not_found_is_transient():
-    d = FakeDaemonFactory.make(evaluate_value={"kind": "not-found"})
+    d = make_fake(evaluate_value={"kind": "not-found"})
     r = run(helpers.click(d, "css:.missing"))
     assert r["ok"] is False and r["kind"] == "transient", r
     assert "not found" in r["error"]
@@ -106,7 +105,7 @@ def test_click_css_not_found_is_transient():
 
 def test_click_css_ambiguous_is_permanent():
     """多匹配是歧义不是没找到：重试无用，必须改定位。ego-lite 明确反对静默点第一个。"""
-    d = FakeDaemonFactory.make(evaluate_value={"kind": "ambiguous", "count": 3})
+    d = make_fake(evaluate_value={"kind": "ambiguous", "count": 3})
     r = run(helpers.click(d, "css:.btn"))
     assert r["ok"] is False and r["kind"] == "permanent", r
     assert "matched 3 elements" in r["error"] and "nth:N" in r["error"], r
@@ -114,7 +113,7 @@ def test_click_css_ambiguous_is_permanent():
 
 
 def test_click_css_invalid_selector_is_permanent():
-    d = FakeDaemonFactory.make(evaluate_value={
+    d = make_fake(evaluate_value={
         "kind": "invalid", "error": "invalid selector: 'foo[' is not a valid selector"})
     r = run(helpers.click(d, "css:foo["))
     assert r["ok"] is False and r["kind"] == "permanent", r
@@ -122,7 +121,7 @@ def test_click_css_invalid_selector_is_permanent():
 
 
 def test_click_css_nth_picks_the_asked_one():
-    d = FakeDaemonFactory.make(evaluate_value=OK)
+    d = make_fake(evaluate_value=OK)
     r = run(helpers.click(d, "nth:2;css:.btn"))
     assert r["ok"] is True
     # nth 指定时不要求唯一，不注入多匹配检测
@@ -131,7 +130,7 @@ def test_click_css_nth_picks_the_asked_one():
 
 
 def test_click_bare_css_fallback():
-    d = FakeDaemonFactory.make(evaluate_value=OK)
+    d = make_fake(evaluate_value=OK)
     r = run(helpers.click(d, ".legacy"))
     assert r["ok"] is True, r
 
@@ -139,7 +138,7 @@ def test_click_bare_css_fallback():
 # ── text / index（走扩展 op，与 click_text / click_index 行为一致）─────────
 
 def test_click_text_via_op():
-    d = FakeDaemonFactory.make(script_value={"x": 55, "y": 66})
+    d = make_fake(script_value={"x": 55, "y": 66})
     r = run(helpers.click(d, "text:登录"))
     assert r["ok"] is True
     assert d.script_calls[0]["op"] == "getRectByText"
@@ -148,27 +147,27 @@ def test_click_text_via_op():
 
 
 def test_click_text_not_found_is_transient():
-    d = FakeDaemonFactory.make(script_value=None)
+    d = make_fake(script_value=None)
     r = run(helpers.click(d, "text:不存在的东西"))
     assert r["ok"] is False and r["kind"] == "transient", r
 
 
 def test_click_index_via_op():
-    d = FakeDaemonFactory.make(script_value={"x": 11, "y": 22})
+    d = make_fake(script_value={"x": 11, "y": 22})
     r = run(helpers.click(d, "index:3"))
     assert r["ok"] is True
     assert d.script_calls[0]["op"] == "getRectByIndex" and d.script_calls[0]["arg"] == 3
 
 
 def test_click_index_not_a_number_is_permanent():
-    d = FakeDaemonFactory.make()
+    d = make_fake()
     r = run(helpers.click(d, "index:abc"))
     assert r["ok"] is False and r["kind"] == "permanent", r
     assert "not a number" in r["error"]
 
 
 def test_click_index_not_found_is_transient():
-    d = FakeDaemonFactory.make(script_value=None)
+    d = make_fake(script_value=None)
     r = run(helpers.click(d, "index:99"))
     assert r["ok"] is False and r["kind"] == "transient", r
 
@@ -176,27 +175,27 @@ def test_click_index_not_found_is_transient():
 # ── xpath / placeholder（内联 JS + 多匹配检测）──────────────────────────────
 
 def test_click_xpath_ok():
-    d = FakeDaemonFactory.make(evaluate_value=OK)
+    d = make_fake(evaluate_value=OK)
     r = run(helpers.click(d, "xpath://button[contains(.,'登录')]"))
     assert r["ok"] is True
     assert "document.evaluate" in d.evaluate_calls[0]
 
 
 def test_click_xpath_ambiguous_is_permanent():
-    d = FakeDaemonFactory.make(evaluate_value={"kind": "ambiguous", "count": 2})
+    d = make_fake(evaluate_value={"kind": "ambiguous", "count": 2})
     r = run(helpers.click(d, "xpath://button"))
     assert r["ok"] is False and r["kind"] == "permanent", r
 
 
 def test_click_placeholder_ok():
-    d = FakeDaemonFactory.make(evaluate_value=OK)
+    d = make_fake(evaluate_value=OK)
     r = run(helpers.click(d, "placeholder:关键词"))
     assert r["ok"] is True
     assert "querySelectorAll('input[placeholder]" in d.evaluate_calls[0]
 
 
 def test_click_placeholder_ambiguous_is_permanent():
-    d = FakeDaemonFactory.make(evaluate_value={"kind": "ambiguous", "count": 4})
+    d = make_fake(evaluate_value={"kind": "ambiguous", "count": 4})
     r = run(helpers.click(d, "placeholder:搜索"))
     assert r["ok"] is False and r["kind"] == "permanent", r
     assert d.mouse_events == []
@@ -204,7 +203,7 @@ def test_click_placeholder_ambiguous_is_permanent():
 
 def test_click_value_is_json_safe():
     """定位值里带引号/反斜杠不能炸掉生成的 JS。"""
-    d = FakeDaemonFactory.make(script_value={"x": 1, "y": 2}, evaluate_value=OK)
+    d = make_fake(script_value={"x": 1, "y": 2}, evaluate_value=OK)
     r = run(helpers.click(d, "text:say \"hi\""))
     assert r["ok"] is True, r
     r2 = run(helpers.click(d, "css:[data-x='a\\\\b']"))
@@ -223,51 +222,51 @@ def test_registered():
 
 def test_click_selector_zero_x_is_clickable():
     """x==0 是合法坐标，不该被 `not rect.get('x')` 误判为未找到。"""
-    d = FakeDaemonFactory.make(script_value={"x": 0, "y": 200})
+    d = make_fake(script_value={"x": 0, "y": 200})
     r = run(helpers.click_selector(d, ".btn"))
     assert r["ok"] is True, r
     assert d.mouse_events and d.mouse_events[-1][1]["x"] == 0
 
 
 def test_click_text_zero_x_is_clickable():
-    d = FakeDaemonFactory.make(script_value={"x": 0, "y": 200})
+    d = make_fake(script_value={"x": 0, "y": 200})
     r = run(helpers.click_text(d, "喜欢"))
     assert r["ok"] is True, r
 
 
 def test_click_index_zero_x_is_clickable():
-    d = FakeDaemonFactory.make(script_value={"x": 0, "y": 200})
+    d = make_fake(script_value={"x": 0, "y": 200})
     r = run(helpers.click_index(d, 0))
     assert r["ok"] is True, r
 
 
 def test_click_selector_not_found_has_kind():
-    d = FakeDaemonFactory.make(script_value=None)
+    d = make_fake(script_value=None)
     r = run(helpers.click_selector(d, ".missing"))
     assert r["ok"] is False and r["kind"] == "transient", r
 
 
 def test_click_text_not_found_has_kind():
-    d = FakeDaemonFactory.make(script_value=None)
+    d = make_fake(script_value=None)
     r = run(helpers.click_text(d, "不存在"))
     assert r["ok"] is False and r["kind"] == "transient", r
 
 
 def test_click_index_not_found_has_kind():
-    d = FakeDaemonFactory.make(script_value=None)
+    d = make_fake(script_value=None)
     r = run(helpers.click_index(d, 99))
     assert r["ok"] is False and r["kind"] == "transient", r
 
 
 def test_wait_selector_timeout_has_transient_kind():
-    d = FakeDaemonFactory.make(script_value="timeout:.modal")
+    d = make_fake(script_value="timeout:.modal")
     r = run(helpers.wait_selector(d, ".modal"))
     assert r["ok"] is True and r["result"] == "timeout:.modal", r
     assert r["kind"] == "transient", r       # 超时=可能还没渲染完，可重试
 
 
 def test_wait_selector_no_selector_is_permanent():
-    d = FakeDaemonFactory.make(script_value="no-selector")
+    d = make_fake(script_value="no-selector")
     r = run(helpers.wait_selector(d, ""))
     assert r["ok"] is True and r["result"] == "no-selector", r
     assert r["kind"] == "permanent", r       # 调用方没给选择器，重试无用
@@ -275,7 +274,7 @@ def test_wait_selector_no_selector_is_permanent():
 
 def test_wait_selector_visible_has_no_kind():
     """正常状态（visible）不是错误，不该带 kind 噪音。"""
-    d = FakeDaemonFactory.make(script_value="visible")
+    d = make_fake(script_value="visible")
     r = run(helpers.wait_selector(d, ".modal"))
     assert r["ok"] is True and "kind" not in r, r
 
