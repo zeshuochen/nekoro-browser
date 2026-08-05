@@ -111,7 +111,7 @@ class Daemon:
         # 同名不覆盖 helpers.py 的核心函数——被站点脚本悄悄改掉 click_selector 的
         # 语义是最难查的一类 bug。
         from . import site_notes
-        site_ns, site_errors = site_notes.load_functions()
+        site_ns, site_errors = site_notes.load_functions(h)
         self._site_errors = site_errors
         core = set(h.list_helpers())
         for name, obj in site_ns.items():

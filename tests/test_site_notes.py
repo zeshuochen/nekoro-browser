@@ -138,7 +138,7 @@ def test_navigate_surfaces_actions_for_routing():
 def test_load_functions_skips_private_and_reports_broken_file():
     with _skills({"example/actions.py": _ACTION_PY,
                   "broken/bad.py": "def oops(:\n"}):
-        ns, errors = site_notes.load_functions()
+        ns, errors = site_notes.load_functions(helpers)
         assert "open_first_result" in ns
         assert "_private" not in ns                    # 下划线开头不导出
         assert len(errors) == 1 and "broken/bad.py" in errors[0], errors
@@ -150,7 +150,7 @@ def test_load_functions_ignores_imported_names():
     """`from x import y` 带进来的名字不该被当成站点函数导出。"""
     with _skills({"example/a.py": "import json\nfrom pathlib import Path\n"
                                  "async def real(daemon):\n    return 1\n"}):
-        ns, _ = site_notes.load_functions()
+        ns, _ = site_notes.load_functions(helpers)
         assert set(ns) == {"real"}, set(ns)
 
 
@@ -162,7 +162,7 @@ def test_site_script_can_call_core_helpers():
             return await navigate(daemon, 'https://www.example.com/')
     """)
     with _skills({"example/a.py": src}):
-        ns, errors = site_notes.load_functions()
+        ns, errors = site_notes.load_functions(helpers)
         assert errors == [], errors
         assert "go" in ns
         # navigate 必须在模块全局里，且注入的名字不能被当成站点函数导出
@@ -184,7 +184,7 @@ def test_site_script_own_definition_wins_over_injected():
             return await navigate(daemon, 'x')
     """)
     with _skills({"example/b.py": src}):
-        ns, _ = site_notes.load_functions()
+        ns, _ = site_notes.load_functions(helpers)
 
         async def run():
             return await ns["go"](FakeDaemon())
