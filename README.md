@@ -291,7 +291,8 @@ tab is never a candidate.
 
 - **Unpacked extensions get disabled by Chrome.** An extension installed via "Load unpacked" may be switched off automatically after a Chrome update or restart, or hidden behind the "Disable developer mode extensions" prompt. When `--doctor` reports Extension/SW not responding, re-enable it in `chrome://extensions/` first. This project is **not published to the Chrome Web Store**, so the limitation is not going away soon.
 - **Service worker keepalive is not 100%.** MV3 eviction timing is Chrome's call. The heartbeat + `onStartup` + reattach cover the vast majority of cases, but unattended long-running cron jobs should still health-check with `--doctor` and retry.
-- **One active tab at a time.** Tabs can be listed and switched (`list_tabs` / `switch_tab`), but commands always go to the current active tab — there are no parallel sessions.
+- **Everything is anchored to one active tab.** 16 helpers (`click`, `click_selector`, `state`, `wait_selector`, `fill_input`, …) take an explicit `tab=id` to target another **already attached** tab — naming a tab that is not attached is an error, never a silent fallback to the active one. The other 37 always follow the active tab, and there are still no parallel sessions: one daemon drives one Chrome, requests are serialised.
+- **Downloads land wherever Chrome is configured to put them, and the path cannot be changed from here.** `wait_for_download()` returns `{url, filename, bytes}` — a filename, not a full path. Both `Browser.setDownloadBehavior` (`-32601`) and the deprecated `Page.setDownloadBehavior` (`-32000 "Cannot not access browser-level commands"`) are browser-level and get rejected under `chrome.debugger`'s tab attach, which only ever hands out a tab target. Set the directory in Chrome's own settings.
 - **The MCP server handles requests serially.** During a `wait_selector(timeout=90)` every other request on that connection (including `ping`) queues behind it. Open separate client connections if you need concurrency.
 
 ---
@@ -312,6 +313,7 @@ tab is never a candidate.
 | `nekoro-browser --restart` | Stop and restart (foreground) |
 | `nekoro-browser --reload-ext` | Reload the extension's service worker — **required after upgrading**, also useful before a batch job for a clean state |
 | `nekoro-browser --extension-path` | Print the extension directory (for "Load unpacked") |
+| `nekoro-browser --version` | Print the installed version (check it against the extension you loaded) |
 | `nekoro-browser --port N` | Run the daemon on port N (default 28417) |
 | `nekoro-browser -c "code"` | Run one snippet, print the result |
 | `nekoro-browser --timeout N` | Seconds to allow a snippet (default 120 — page loads are slow) |
