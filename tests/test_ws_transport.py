@@ -208,7 +208,7 @@ async def run():
     async def boom(_msg):
         raise RuntimeError("extension not connected (WS)")
     orig_emit = bridge._emit
-    bridge._emit = boom
+    bridge._emit = boom      # pyright: ignore[reportAttributeAccessIssue] 故意注入失败
     try:
         await bridge.send("Wont.reach")
         assert False, "expected RuntimeError"

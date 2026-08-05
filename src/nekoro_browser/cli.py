@@ -51,7 +51,7 @@ def _healthy(timeout=8):
     return bool(r.get("ok") and (r.get("result") or {}).get("url"))
 
 
-def _post(path, data="", timeout=30):
+def _post(path, data="", timeout: float = 30):
     try:
         req = urllib.request.Request(
             f"{_url()}{path}", data=data.encode(), method="POST",

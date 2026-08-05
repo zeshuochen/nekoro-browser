@@ -18,6 +18,7 @@ HTTP `/exec`（复用 CLI 那套令牌鉴权），与 `echo ... | nekoro-browser
 import inspect
 import json
 import sys
+from typing import Any
 
 from . import __version__
 from .cli import _alive, _post
@@ -197,7 +198,7 @@ def call_tool(name: str, args: dict) -> dict:
     payload = result if result is not None else stdout
     text = payload if isinstance(payload, str) else json.dumps(
         payload, ensure_ascii=False, default=str)
-    out = {"content": [{"type": "text", "text": text}]}
+    out: dict[str, Any] = {"content": [{"type": "text", "text": text}]}
     # print() 出来的东西也要带上（exec_python 常见），但别把 stdout-only 的响应重复两遍
     if stdout and stdout != payload:
         out["content"].append({"type": "text", "text": stdout})
@@ -293,7 +294,7 @@ def main() -> None:
     # newline="" 防 Windows 把 \n 写成 \r\n（行分隔的协议帧里那是脏字节）。
     for stream, kw in ((sys.stdin, {}), (sys.stdout, {"newline": ""})):
         try:
-            stream.reconfigure(encoding="utf-8", **kw)
+            getattr(stream, "reconfigure")(encoding="utf-8", **kw)
         except (AttributeError, ValueError):
             pass          # 被替换成非 TextIOWrapper 的流（测试/嵌入场景），跳过
     serve()

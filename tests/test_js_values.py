@@ -108,7 +108,8 @@ def test_subtype_error():
 
 def test_decode_unit():
     assert helpers._decode_unserializable_js_value("Infinity") == math.inf
-    assert math.isnan(helpers._decode_unserializable_js_value("NaN"))
+    nan = helpers._decode_unserializable_js_value("NaN")
+    assert isinstance(nan, float) and math.isnan(nan)
     assert helpers._decode_unserializable_js_value("999999999999999999999n") == 999999999999999999999
     assert helpers._decode_unserializable_js_value("plain") == "plain"  # 非哨兵原样返回
 

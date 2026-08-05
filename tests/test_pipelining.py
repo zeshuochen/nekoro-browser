@@ -75,7 +75,7 @@ async def run():
     # 3. get_page_info 只发一次 evaluate（合并 title+url）
     br3 = FakeBridge(value={"title": "T", "url": "U"})
     dm = Daemon()
-    dm.bridge = br3
+    dm.bridge = br3          # pyright: ignore[reportAttributeAccessIssue] 故意换 fake 桥
     info = await dm.get_page_info()
     assert info == {"title": "T", "url": "U"}, info
     assert len(br3.calls) == 1, br3.calls                 # 一个往返，非两个

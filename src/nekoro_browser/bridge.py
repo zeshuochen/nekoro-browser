@@ -222,7 +222,7 @@ class ExtensionBridge:
                 return
             method, path = parts[0], parts[1]
 
-            headers = {}
+            headers: dict[str, str] = {}
             while True:
                 h = (await reader.readline()).decode(errors="replace").strip()
                 if not h:

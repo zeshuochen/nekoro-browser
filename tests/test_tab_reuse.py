@@ -48,7 +48,7 @@ class FakeDaemon:
 
     `grouped=None` 复现**老版本扩展**的 wire：它的 list_tabs 响应压根没有这个键。"""
 
-    def __init__(self, tabs, active=None, grouped=True, attach_fail=()):
+    def __init__(self, tabs, active=None, grouped: bool | None = True, attach_fail=()):
         self.tabs = list(tabs)
         self.active_tab_id = active
         self.grouped = grouped
@@ -60,7 +60,7 @@ class FakeDaemon:
         self.nav = []
 
     async def list_tabs(self):
-        out = {"tabs": [dict(t) for t in self.tabs]}
+        out: dict[str, object] = {"tabs": [dict(t) for t in self.tabs]}
         if self.grouped is not None:          # 老扩展：整个键都不存在
             out["grouped"] = self.grouped
         return out

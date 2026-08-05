@@ -55,8 +55,8 @@ def read_token() -> str:
         return ""
 
 
-def token_eq(a: str, b: str) -> bool:
-    """恒定时间比较；任一为空判否。转 bytes 比较，避免非 ASCII 令牌头触发 TypeError。"""
+def token_eq(a: str | None, b: str | None) -> bool:
+    """恒定时间比较；任一为空判否（None 也算空——daemon 还没签发令牌时就是 None）。转 bytes 比较，避免非 ASCII 令牌头触发 TypeError。"""
     if not a or not b:
         return False
     return hmac.compare_digest(a.encode("utf-8", "replace"), b.encode("utf-8", "replace"))
