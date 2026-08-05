@@ -756,12 +756,17 @@ async def get_response_body(daemon, request_id: str) -> dict[str, Any]:
 async def wait_for_download(daemon, timeout: float = 30.0) -> dict[str, Any]:
     """wait_for_download(30) — 点击下载后等待完成（Page.downloadWillBegin/Progress 事件）。
 
-    下载落 Chrome 默认下载目录（browser-level 的 setDownloadBehavior 被 chrome.debugger
-    tab attach 拒绝，路径无法自定义）。事件在 daemon 缓冲里，触发下载后再调也能等到。
+    下载落 Chrome 设置里的默认下载目录（通常是 ~/Downloads；browser-level 的
+    setDownloadBehavior 被 chrome.debugger tab attach 拒绝，路径无法自定义），所以
+    返回值只有 filename 没有绝对路径——要读文件请按 Chrome 那边的下载目录去拼。
+
+    事件在 daemon 缓冲里，触发下载后再调也能等到。但 drain_events 是**破坏性**的：
+    这里会把缓冲里的 Network 等事件一并取走丢弃，别和 wait_for_network_idle 套着用。
+
     返回 {url, filename, bytes}；超时 → kind:transient（可重试）；取消 → kind:permanent。
     """
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
         info = {}
         while True:
@@ -787,7 +792,7 @@ async def wait_for_download(daemon, timeout: float = 30.0) -> dict[str, Any]:
                 return {"ok": False, "error": "no download detected", "kind": "transient"}
             await asyncio.sleep(0.3)
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        return {"ok": False, "error": str(e), "kind": "transient"}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -860,66 +865,71 @@ def _parse_loc(loc: str):
     return "css", loc, nth
 
 
+# 每种 locator 只负责把命中集合算进 `hits`；之后的可见性过滤、歧义判定、滚进视口、
+# 取中心点全是共用的。三份几乎一样的 JS 抄过一遍就够了——再抄下去，改一处漏两处
+# 只是时间问题。
+_LOC_HITS_JS = {
+    "css": ("  let hits;\n"
+            "  try { hits = Array.from(document.querySelectorAll(%s)); }\n"
+            "  catch (e) { return {kind: 'invalid', error: 'invalid selector: ' + e.message}; }\n"),
+    "xpath": ("  let snap;\n"
+              "  try { snap = document.evaluate(%s, document, null,"
+              " XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null); }\n"
+              "  catch (e) { return {kind: 'invalid', error: 'invalid xpath: ' + e.message}; }\n"
+              "  const hits = [];\n"
+              "  for (let i = 0; i < snap.snapshotLength; i++) hits.push(snap.snapshotItem(i));\n"),
+    "placeholder": ("  const hits = Array.from(document.querySelectorAll("
+                    "'input[placeholder], textarea[placeholder]'))\n"
+                    "    .filter(el => (el.getAttribute('placeholder') || '').includes(%s));\n"),
+}
+
+
 def _loc_center_js(kind: str, value: str, nth) -> str:
     """构造返回 {kind:'ok'|'not-found'|'ambiguous'|'invalid', ...} 的定位表达式。
 
     text/index 走扩展 getRectByText / getRectByIndex op（与 click_text / click_index
     行为一致）；css/xpath/placeholder 用内联 JS 并做多匹配检测——多匹配歧义报
-    permanent，而不是静默点第一个。"""
+    permanent，而不是静默点第一个。
+
+    歧义只在**看得见的**匹配里判：移动端和桌面端各留一份导航是现代站点的常态，
+    `.login-btn` 命中两个、其中一个 display:none——那不是歧义，是只有一个能点。
+    拿隐藏的那份去逼调用方数 `nth:N;`，换来的是一个改版就失效的脆定位。
+    """
+    hits_js = _LOC_HITS_JS.get(kind)
+    if hits_js is None:
+        raise ValueError(f"unsupported locator kind: {kind}")
     idx = nth if nth is not None else 0
-    if kind == "css":
-        sel = json.dumps(value)
-        amb = "" if nth is not None else "  if (hits.length > 1) return {kind: 'ambiguous', count: hits.length};"
-        return ("(() => {\n"
-                "  let hits;\n"
-                f"  try {{ hits = Array.from(document.querySelectorAll({sel})); }}\n"
-                "  catch (e) { return {kind: 'invalid', error: 'invalid selector: ' + e.message}; }\n"
-                f"{amb}\n"
-                "  if (hits.length === 0) return {kind: 'not-found'};\n"
-                f"  const el = hits[{idx}];\n"
-                "  if (el === undefined) return {kind: 'not-found'};\n"
-                "  const r = el.getBoundingClientRect();\n"
-                "  if (!r.width && !r.height) return {kind: 'not-found'};\n"
-                "  return {kind: 'ok', x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2)};\n"
-                "})()")
-    if kind == "xpath":
-        xp = json.dumps(value)
-        amb = "" if nth is not None else "  if (hits.length > 1) return {kind: 'ambiguous', count: hits.length};"
-        return ("(() => {\n"
-                f"  const snap = document.evaluate({xp}, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);\n"
-                "  const hits = [];\n"
-                "  for (let i = 0; i < snap.snapshotLength; i++) hits.push(snap.snapshotItem(i));\n"
-                f"{amb}\n"
-                "  if (hits.length === 0) return {kind: 'not-found'};\n"
-                f"  const el = hits[{idx}];\n"
-                "  if (el === undefined) return {kind: 'not-found'};\n"
-                "  const r = el.getBoundingClientRect();\n"
-                "  if (!r.width && !r.height) return {kind: 'not-found'};\n"
-                "  return {kind: 'ok', x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2)};\n"
-                "})()")
-    if kind == "placeholder":
-        ph = json.dumps(value)
-        amb = "" if nth is not None else "  if (hits.length > 1) return {kind: 'ambiguous', count: hits.length};"
-        return ("(() => {\n"
-                "  const hits = Array.from(document.querySelectorAll('input[placeholder], textarea[placeholder]'))\n"
-                f"    .filter(el => (el.getAttribute('placeholder') || '').includes({ph}));\n"
-                f"{amb}\n"
-                "  if (hits.length === 0) return {kind: 'not-found'};\n"
-                f"  const el = hits[{idx}];\n"
-                "  if (el === undefined) return {kind: 'not-found'};\n"
-                "  const r = el.getBoundingClientRect();\n"
-                "  if (!r.width && !r.height) return {kind: 'not-found'};\n"
-                "  return {kind: 'ok', x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2)};\n"
-                "})()")
-    raise ValueError(f"unsupported locator kind: {kind}")
+    amb = ("" if nth is not None else
+           "  if (vis.length > 1) return {kind: 'ambiguous', count: vis.length};\n")
+    return ("(() => {\n"
+            + hits_js % json.dumps(value)
+            + "  const vis = hits.filter(el => {\n"
+              "    const b = el.getBoundingClientRect();\n"
+              "    return (b.width || b.height) && getComputedStyle(el).visibility !== 'hidden';\n"
+              "  });\n"
+            + amb
+            + "  if (vis.length === 0) return {kind: 'not-found'};\n"
+              f"  const el = vis[{idx}];\n"
+              "  if (el === undefined) return {kind: 'not-found'};\n"
+              # 视口外元素的 rect 落在视口之外，照着点等于点空还报 ok。先滚进来再取
+              # 坐标；用 IfNeeded 版——已经看得见就不动页面，别平白搅乱用户的滚动位置。
+              "  if (el.scrollIntoViewIfNeeded) el.scrollIntoViewIfNeeded(false);\n"
+              "  const r = el.getBoundingClientRect();\n"
+              "  return {kind: 'ok', x: Math.round(r.left + r.width / 2),"
+              " y: Math.round(r.top + r.height / 2)};\n"
+              "})()")
 
 
 async def click(daemon, loc: str) -> dict[str, Any]:
     """click("css:.btn") / click("text:登录") / click("index:3") /
     click("xpath://button[contains(.,'登录')]") / click("placeholder:关键词")
     — 统一定位点击（借鉴 ego-lite 的 locator 语法）。一个入口覆盖所有定位形式，
-    不用在 click_selector / click_text / click_index 之间挑；支持 `nth:N;` 前缀
-    取第 N 个匹配（`nth:2;css:.btn`）。
+    不用在 click_selector / click_text / click_index 之间挑；`nth:N;` 前缀取第 N 个
+    匹配（`nth:2;css:.btn`），**只对 css/xpath/placeholder 有效**——text/index 走的是
+    扩展 op，扩展只回第一个匹配，给了 nth 会直接报 permanent 而不是悄悄点第一个。
+
+    只作用于**当前活动标签**（走 Runtime.evaluate）。要点别的标签先 switch_tab；
+    需要显式 tab 参数的场合用 click_selector(sel, tab=...)。
 
     失败返回带 `kind` 决策信号：
     - transient — 没找到元素，页面可能还没渲染完，值得重试（配合 wait_selector）
@@ -928,6 +938,13 @@ async def click(daemon, loc: str) -> dict[str, Any]:
     kind, value, nth = _parse_loc(loc)
     try:
         if kind in ("text", "index"):
+            # nth 对这两种定位没法兑现（扩展 op 只回第一个匹配）。默默忽略等于
+            # 「让调用方以为点了第 2 个、实际点了第 1 个」——正是这个函数要消灭的事。
+            if nth is not None:
+                return {"ok": False,
+                        "error": f"nth:N; not supported for {kind}: (extension op returns "
+                                 f"only the first match) — use css:/xpath:/placeholder:",
+                        "kind": "permanent"}
             if kind == "index":
                 if not str(value).isdigit():
                     return {"ok": False, "error": f"index: not a number: {value}",
@@ -961,7 +978,21 @@ async def click(daemon, loc: str) -> dict[str, Any]:
             return {"ok": False, "error": f"locator failed: {loc}", "kind": "transient"}
         return await click_at_xy(daemon, got["x"], got["y"])
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        # 桥抖 / 超时是典型的「等会儿再来」，别让唯一没有 kind 的分支是异常分支
+        return {"ok": False, "error": str(e), "kind": "transient"}
+
+
+_REFS_SELECTOR = ("button, a, input, textarea, select, [role=\"button\"], "
+                  "[onclick], [data-testid], [contenteditable]")
+
+
+def _refs_text_js(sel: str, max_items: int) -> str:
+    """同一个 selector 在 JS 侧再查一次，只取文本——和 DOM.querySelectorAll 同为
+    文档序，按下标对齐即可。"""
+    return ("(() => Array.from(document.querySelectorAll(%s)).slice(0, %d)\n"
+            "  .map(el => (((el.innerText || el.value || '').trim())"
+            " || (el.getAttribute && el.getAttribute('aria-label')) || '').slice(0, 80)))()"
+            % (json.dumps(sel), max_items))
 
 
 async def refs(daemon, selector: str | None = None, max_items: int = 50) -> dict[str, Any]:
@@ -970,41 +1001,40 @@ async def refs(daemon, selector: str | None = None, max_items: int = 50) -> dict
     借鉴 ego-lite 的 @N ref：ref 是 backendNodeId，DOM 小变化后仍指向同一元素
     （跨轮次稳定）；页面导航/大改后失效 → click_ref 报 kind:transient，重新 refs()。
     selector 默认覆盖主流可交互元素；传 selector 可收窄。
+
+    往返次数是常数级：describeNode 全部并发下发，文本走**一条** Runtime.evaluate
+    取回。逐个元素 describe→resolve→callFunctionOn 是 3×N 个串行来回，50 个元素就是
+    150 次——而且 resolveNode 产出的 RemoteObject 不释放会把游离 DOM 钉在 JS 堆里。
+    这里根本不产生 objectId，也就无需 releaseObject。
     """
     try:
+        sel = selector or _REFS_SELECTOR
         await daemon.bridge.send("DOM.enable", {})
         r = await daemon.bridge.send("DOM.getDocument", {})
-        root = (r or {}).get("root", {})
-        sel = selector or ("button, a, input, textarea, select, [role=\"button\"], "
-                           "[onclick], [data-testid], [contenteditable]")
-        r2 = await daemon.bridge.send("DOM.querySelectorAll",
-                                      {"nodeId": root.get("nodeId"), "selector": sel})
-        out = []
-        for nid in (r2 or {}).get("nodeIds", [])[:max_items]:
-            d = await daemon.bridge.send("DOM.describeNode", {"nodeId": nid})
-            node = (d or {}).get("node", {})
+        r2 = await daemon.bridge.send(
+            "DOM.querySelectorAll",
+            {"nodeId": ((r or {}).get("root") or {}).get("nodeId"), "selector": sel})
+        nids = ((r2 or {}).get("nodeIds") or [])[:max_items]
+        described, texts_r = await asyncio.gather(
+            asyncio.gather(*(daemon.bridge.send("DOM.describeNode", {"nodeId": n})
+                             for n in nids)),
+            daemon.evaluate(_refs_text_js(sel, max_items)),
+        )
+        texts = ((texts_r or {}).get("result") or {}).get("value")
+        # 两次查询之间 DOM 可能变了；条数对不上就宁可不给文本，也不给错位的文本
+        if not isinstance(texts, list) or len(texts) != len(nids):
+            texts = []
+        out: list[dict[str, Any]] = []
+        for i, d in enumerate(described):
+            node = (d or {}).get("node") or {}
             ref = node.get("backendNodeId")
             if ref is None:
                 continue
-            tag = (node.get("nodeName") or "").lower()
-            text = ""
-            try:
-                rr = await daemon.bridge.send("DOM.resolveNode", {"backendNodeId": ref})
-                oid = ((rr or {}).get("object") or {}).get("objectId")
-                if oid:
-                    cf = await daemon.bridge.send("Runtime.callFunctionOn", {
-                        "objectId": oid,
-                        "functionDeclaration":
-                            "function(){ const t=(this.innerText||this.value||'').trim();"
-                            " return (t||(this.getAttribute&&(this.getAttribute('aria-label')||''))).slice(0,80) }",
-                        "returnByValue": True})
-                    text = str(((cf or {}).get("result") or {}).get("value") or "")
-            except Exception:
-                text = ""
-            out.append({"ref": ref, "tag": tag, "text": text})
+            out.append({"ref": ref, "tag": (node.get("nodeName") or "").lower(),
+                        "text": str(texts[i]) if i < len(texts) else ""})
         return {"ok": True, "result": out}
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        return {"ok": False, "error": str(e), "kind": "transient"}
 
 
 async def click_ref(daemon, ref: int) -> dict[str, Any]:
@@ -1012,9 +1042,18 @@ async def click_ref(daemon, ref: int) -> dict[str, Any]:
 
     ref 从 refs() 拿。DOM 小变化后仍命中同一元素；页面导航后失效 →
     kind:transient（重新 refs()），不静默点错位置。
+
+    取坐标前先 scrollIntoViewIfNeeded：box model 是视口坐标，元素在视口外时直接
+    照着点就是点空——还会返回 ok:True，正是这个函数承诺不做的事。
     """
     try:
         try:
+            # 滚不动不算失败（元素可能本来就在视口里，或页面不可滚）——尽力而为
+            try:
+                await daemon.bridge.send("DOM.scrollIntoViewIfNeeded",
+                                         {"backendNodeId": ref})
+            except Exception:
+                pass
             bm = await daemon.bridge.send("DOM.getBoxModel", {"backendNodeId": ref})
         except Exception as e:
             return {"ok": False,
@@ -1028,7 +1067,7 @@ async def click_ref(daemon, ref: int) -> dict[str, Any]:
         y = sum(content[1::2]) / 4
         return await click_at_xy(daemon, round(x), round(y))
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        return {"ok": False, "error": str(e), "kind": "transient"}
 
 
 async def click_selector(daemon, sel: str, tab: int | None = None) -> dict[str, Any]:

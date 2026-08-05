@@ -129,7 +129,7 @@ echo "await page_info()" | nekoro-browser
 
 | 函数 | 用法 | 说明 |
 |------|------|------|
-| `click(loc)` | `click("text:登录")` / `click("css:.btn")` / `click("xpath://button")` / `click("index:3")` / `click("placeholder:关键词")` | **统一定位点击**（ego-lite 风格 locator）。一个入口覆盖所有定位形式，支持 `nth:N;` 前缀取第 N 个匹配（`nth:2;css:.btn`）。失败带 `kind` 决策信号：`transient`=没找到（可重试）/ `permanent`=多匹配歧义或非法选择器（重试无用，换定位） |
+| `click(loc)` | `click("text:登录")` / `click("css:.btn")` / `click("xpath://button")` / `click("index:3")` / `click("placeholder:关键词")` | **统一定位点击**（ego-lite 风格 locator）。一个入口覆盖所有定位形式。`nth:N;` 前缀取第 N 个匹配（`nth:2;css:.btn`）——**只对 css/xpath/placeholder 有效**，text/index 走扩展 op 只回第一个匹配，给了 nth 会报 permanent 而不是悄悄点第一个。歧义只按**看得见的**匹配判（隐藏的重复元素不算歧义），取坐标前自动滚进视口。只作用于**当前活动标签**（要点别的标签先 `switch_tab`）。失败带 `kind` 决策信号：`transient`=没找到（可重试）/ `permanent`=多匹配歧义或非法选择器（重试无用，换定位） |
 | `click_at_xy(x, y)` | `click_at_xy(100, 200)` | CDP 真实鼠标点击（isTrusted:true） |
 | `click_selector(sel)` | `click_selector("#btn")` | CSS 选择器 → CDP 坐标点击 |
 | `click_text("文字")` | `click_text("喜欢")` | 按可见文本 → CDP 坐标点击 |

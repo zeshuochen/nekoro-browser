@@ -1,6 +1,6 @@
 # nekoro-browser × ego-lite 借鉴实现文档
 
-> 状态：进行中（批次 0 已完成，其余分批推进）
+> 状态：批次 0-6 全部完成；PR review 的整改（可见性歧义、nth 边界、refs 往返、pyright 口径）见 §6
 > 创建：2026-08-05
 > 关联仓库：https://github.com/zeshuochen/nekoro-browser
 
@@ -19,9 +19,9 @@ openOrReuseTab、agent_helpers 热加载），真正有差距的是**元素定�
 | 统一 locator 字符串（css:/text:/xpath=/role:…） | click_selector / click_text / click_index 三个 helper 各管一种 | 已补（批次 0） |
 | transient/permanent 错误分类（重试/放弃决策信号） | 一律 "element not found"，无分类 | 已补（批次 0） |
 | 多匹配即歧义 → permanent，不静默点第一个 | 扩展 getRect 用 querySelector 静默取第一个 | 已补（批次 0，css/xpath/placeholder） |
-| backendNodeId ref 跨轮次稳定定位 | state() 序号，DOM 一变即失效 | 批次 3 |
-| box-model 守卫（非零尺寸才可点） | `if not rect.get("x")` 脆弱判空 | 批次 2 |
-| 下载管理 waitForEvent("download") | 无 | 批次 4 |
+| backendNodeId ref 跨轮次稳定定位 | state() 序号，DOM 一变即失效 | 已补（批次 4） |
+| box-model 守卫（非零尺寸才可点） | `if not rect.get("x")` 脆弱判空 | 已补（批次 2） |
+| 下载管理 waitForEvent("download") | 无 | 已补（批次 5） |
 
 ## 2. 现状核查结论（2026-08-05）
 
@@ -139,3 +139,31 @@ openOrReuseTab、agent_helpers 热加载），真正有差距的是**元素定�
 
 每批合入前：全量测试（`for f in tests/test_*.py; do uv run python $f; done`）+
 LSP 无新增 error。批次完成后在本文件追加复盘（实际产出 vs 预期、偏差原因、下次改进）。
+
+## 6. PR #1 review 整改（2026-08-06）
+
+review 挖出 4 类问题，都不是"再加个功能"，而是**已落地的东西没兑现自己的承诺**：
+
+| 问题 | 症状 | 处置 |
+|---|---|---|
+| `nth:N;` 对 text/index 静默失效 | `click("nth:2;text:登录")` 点的是第 **1** 个，还返回 `ok:True` | 报 permanent。扩展 op 只回第一个匹配，兑现不了就别装作兑现了 |
+| 歧义判定不看可见性 | 移动端+桌面端各一份导航（一个 display:none）→ 直接 permanent，逼调用方数 nth | 先按可见性过滤，再判歧义。ego-lite 本来就是这么做的 |
+| `refs()` 3×N 次串行往返 | 50 个元素 = 153 次来回，且 `resolveNode` 产出的 RemoteObject 从不释放 | describeNode 并发 + 文本一条 evaluate；不再产生 objectId，也就无需 releaseObject |
+| 视口外元素点空报 ok | box/rect 都是视口坐标，元素在视口外照着点等于点空 | `click()`/`click_ref()` 取坐标前 scrollIntoViewIfNeeded |
+
+另外把异常分支补上了 `kind`（桥抖 = transient），别让唯一没有决策信号的分支是最需要它的那个。
+
+**没做的两条，都卡在同一条线上——要改扩展：**
+
+- `click(loc, tab=...)`：扩展只有 op 白名单，没有"带 target 的任意 JS 求值"能力
+- 自定义下载目录：browser-level 的 `setDownloadBehavior` 被 tab attach 拒绝
+
+不值得为这两个功能让所有用户重装扩展。`click()` 的活动标签语义已写进 docstring 和 SKILL.md；下载目录的限制也已注明（`Page.setDownloadBehavior` 或许可行，但**没在真机上验过，不写没验证过的代码**）。
+
+### 关于"pyright 严格模式零 error"
+
+原批次 6 的这句声明不成立：仓库根目录跑 `pyright` 1.1.411（用的就是提交进来的 strict 配置）是 **2211 error**，装好依赖也一样，不是环境问题。
+
+根因是**口径不同**：编辑器里的 basedpyright 把 `reportUnknown*` 这类算 warning，pyright CLI 在 strict 下算 error。真要归零，得给整条 CDP 链写 TypedDict——那正是这个薄封装项目刻意不做的事。
+
+处置：改挂 `standard`（现在是真·零 error，src + tests 共 39 文件），并加 CI job 把口径钉死成 pyright CLI。**挂一个 CI 守得住的标准，比挂一个谁也过不了的标准有用。**

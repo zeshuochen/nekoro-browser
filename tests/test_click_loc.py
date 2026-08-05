@@ -126,7 +126,7 @@ def test_click_css_nth_picks_the_asked_one():
     assert r["ok"] is True
     # nth 指定时不要求唯一，不注入多匹配检测
     assert "ambiguous" not in d.evaluate_calls[0]
-    assert "hits[2]" in d.evaluate_calls[0]
+    assert "vis[2]" in d.evaluate_calls[0]      # 下标落在「可见的那批」上
 
 
 def test_click_bare_css_fallback():
@@ -172,6 +172,35 @@ def test_click_index_not_found_is_transient():
     assert r["ok"] is False and r["kind"] == "transient", r
 
 
+def test_click_nth_with_text_is_permanent_not_silently_ignored():
+    """扩展 op 只回第一个匹配，兑现不了 nth。默默忽略 = 调用方以为点了第 2 个、
+    实际点了第 1 个——正是 click() 要消灭的那类静默错误。"""
+    d = make_fake(script_value={"x": 1, "y": 2})
+    r = run(helpers.click(d, "nth:2;text:登录"))
+    assert r["ok"] is False and r["kind"] == "permanent", r
+    assert "nth" in r["error"] and "text" in r["error"], r
+    assert d.mouse_events == [], "兑现不了就不能点"
+    assert d.script_calls == [], "更不能发出去让扩展点第一个"
+
+
+def test_click_nth_with_index_is_permanent():
+    d = make_fake(script_value={"x": 1, "y": 2})
+    r = run(helpers.click(d, "nth:2;index:3"))
+    assert r["ok"] is False and r["kind"] == "permanent", r
+    assert d.mouse_events == []
+
+
+def test_click_exception_carries_transient_kind():
+    """桥抖不该是唯一没有 kind 的失败分支。"""
+    def boom(_expr):
+        raise RuntimeError("bridge down")
+
+    d = make_fake(evaluate_value=boom)
+    r = run(helpers.click(d, "css:.btn"))
+    assert r["ok"] is False and r["kind"] == "transient", r
+    assert "bridge down" in r["error"]
+
+
 # ── xpath / placeholder（内联 JS + 多匹配检测）──────────────────────────────
 
 def test_click_xpath_ok():
@@ -199,6 +228,38 @@ def test_click_placeholder_ambiguous_is_permanent():
     r = run(helpers.click(d, "placeholder:搜索"))
     assert r["ok"] is False and r["kind"] == "permanent", r
     assert d.mouse_events == []
+
+
+def test_ambiguity_is_judged_on_visible_matches_only():
+    """移动端+桌面端各留一份导航是常态：命中 2 个但只有 1 个可见，不该报歧义。
+    JS 在浏览器里跑，单测能验的是「歧义判定挂在过滤后的集合上」这个不变量。"""
+    for loc in ("css:.btn", "xpath://button", "placeholder:关键词"):
+        d = make_fake(evaluate_value=OK)
+        run(helpers.click(d, loc))
+        js = d.evaluate_calls[0]
+        assert "getComputedStyle(el).visibility !== 'hidden'" in js, (loc, js)
+        assert "if (vis.length > 1) return {kind: 'ambiguous', count: vis.length};" in js, \
+            f"{loc}: 歧义必须按可见集合判，不是按全部命中"
+        assert "hits.length > 1" not in js, f"{loc}: 还在拿全部命中判歧义"
+
+
+def test_locator_scrolls_into_view_before_taking_coords():
+    """box/rect 是视口坐标：元素在视口外还照着点就是点空——而且会返回 ok。"""
+    d = make_fake(evaluate_value=OK)
+    run(helpers.click(d, "css:.btn"))
+    js = d.evaluate_calls[0]
+    assert "scrollIntoViewIfNeeded" in js, js
+    assert js.index("scrollIntoViewIfNeeded") < js.index("getBoundingClientRect();\n"
+                                                        "  return {kind: 'ok'"), \
+        "必须先滚再取坐标，反了等于没滚"
+
+
+def test_invalid_xpath_is_permanent_too():
+    """非法 xpath 以前会把整个 evaluate 掀翻 → 笼统 transient；应与非法 css 一致。"""
+    d = make_fake(evaluate_value={"kind": "invalid", "error": "invalid xpath: bad token"})
+    r = run(helpers.click(d, "xpath://["))
+    assert r["ok"] is False and r["kind"] == "permanent", r
+    assert "catch (e) { return {kind: 'invalid'" in d.evaluate_calls[0]
 
 
 def test_click_value_is_json_safe():
