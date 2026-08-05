@@ -594,16 +594,46 @@ async def ensure_real_tab(daemon) -> dict[str, Any]:
 
 
 async def iframe_target(daemon, url_substr: str) -> dict[str, Any]:
-    """iframe_target("player") → 返回第一个 URL 含 url_substr 的 iframe targetId。"""
+    """iframe_target("player") → 第一个 URL 含 url_substr 的 iframe 的 frameId。
+
+    原实现走 `Target.getTargets` 取 targetId——那是 **browser-level 命令**，在
+    chrome.debugger 的 tab attach 下恒返回 `Not allowed`（与 Browser.setDownloadBehavior
+    同一堵墙）。也就是说这个 helper 从第一个 commit 起就没成功过一次，而异常被吞成
+    `ok:false` → 看起来只是「没找到这个 iframe」。改走 page-level 的 Page.getFrameTree。
+
+    拿到 frameId 后在该 iframe 里跑 JS，两条路**语义不同**，都真机验过：
+
+    A) 只碰 DOM → isolated world（省事）。注意**页面的 JS 全局在这里看不到**
+       （`window.__x` 恒 undefined，DOM 共享而 JS 上下文隔离）：
+        r = await cdp("Page.createIsolatedWorld", frameId=fid, worldName="nekoro")
+        ctx = r["result"]["executionContextId"]
+        await cdp("Runtime.evaluate", expression="document.title", contextId=ctx,
+                  returnByValue=True)
+
+    B) 要读页面自己的 JS 变量 → 主世界，靠 Runtime.enable 的 executionContextCreated
+       事件按 frameId 挑出 isDefault 的那个上下文：
+        await cdp("Runtime.enable")
+        ctxs = [e["params"]["context"] for e in await drain_events()
+                if e.get("method") == "Runtime.executionContextCreated"]
+        main = [c for c in ctxs if (c.get("auxData") or {}).get("frameId") == fid
+                and (c.get("auxData") or {}).get("isDefault")]
+        await cdp("Runtime.evaluate", expression="window.__x",
+                  contextId=main[0]["id"], returnByValue=True)
+    """
     try:
-        r = await daemon.bridge.send("Target.getTargets", {})
-        targets = r.get("targetInfos", []) if r else []
-        for t in targets:
-            if t.get("type") == "iframe" and url_substr in t.get("url", ""):
-                return {"ok": True, "targetId": t["targetId"], "url": t["url"]}
-        return {"ok": False, "error": f"no iframe matching '{url_substr}'"}
+        r = await daemon.bridge.send("Page.getFrameTree", {})
+        stack = [(r or {}).get("frameTree") or {}]
+        while stack:
+            node = stack.pop()
+            frame = node.get("frame") or {}
+            # 只认子框架：根框架就是当前页，匹配上会把主页面当成 iframe 返回
+            if frame.get("parentId") and url_substr in (frame.get("url") or ""):
+                return {"ok": True, "frameId": frame.get("id"), "url": frame.get("url")}
+            stack.extend(node.get("childFrames") or [])
+        return {"ok": False, "error": f"no iframe matching '{url_substr}'",
+                "kind": "transient"}
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        return {"ok": False, "error": str(e), "kind": "transient"}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
