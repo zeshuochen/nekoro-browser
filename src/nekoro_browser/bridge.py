@@ -160,13 +160,18 @@ class ExtensionBridge:
             await writer.drain()
 
     async def send(self, method: str, params: dict | None = None,
-                   session_id: str | None = None, timeout: float = 30.0) -> dict:
+                   session_id: str | None = None, timeout: float = 30.0,
+                   tab: int | None = None) -> dict:
+        """`tab` 指定目标标签（须已 attach）；不传就打扩展当前的活动指针——
+        这是原有行为，绝大多数调用都该保持不传。"""
         cmd_id = _next_id()
         f = asyncio.get_running_loop().create_future()
         self._pending[cmd_id] = f
         msg = {"id": cmd_id, "method": method, "params": params or {}}
         if session_id:
             msg["sessionId"] = session_id
+        if tab is not None:
+            msg["tabId"] = tab
         try:
             await self._emit(msg)
             return await asyncio.wait_for(f, timeout=timeout)

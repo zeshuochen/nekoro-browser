@@ -444,20 +444,21 @@ async def cdp_batch(daemon, *cmds) -> dict[str, Any]:
 # Click / Input
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def click_at_xy(daemon, x: float, y: float) -> dict[str, Any]:
-    """click_at_xy(100, 200) — CDP 完整鼠标点击序列 (isTrusted:true)"""
+async def click_at_xy(daemon, x: float, y: float, tab: int | None = None) -> dict[str, Any]:
+    """click_at_xy(100, 200) — CDP 完整鼠标点击序列 (isTrusted:true)。
+    `tab` 指定目标标签（须已 attach）；不传打当前活动标签。"""
     try:
         # Step 1: mouseMoved — 关键！让 React pointer/hover 系统初始化
         await daemon.bridge.send("Input.dispatchMouseEvent",
-            {"type": "mouseMoved", "x": x, "y": y, "button": "left", "buttons": 0, "modifiers": 0})
+            {"type": "mouseMoved", "x": x, "y": y, "button": "left", "buttons": 0, "modifiers": 0}, tab=tab)
         await asyncio.sleep(0.03)
         # Step 2: mousePressed
         await daemon.bridge.send("Input.dispatchMouseEvent",
-            {"type": "mousePressed", "x": x, "y": y, "button": "left", "buttons": 1, "clickCount": 1, "modifiers": 0})
+            {"type": "mousePressed", "x": x, "y": y, "button": "left", "buttons": 1, "clickCount": 1, "modifiers": 0}, tab=tab)
         await asyncio.sleep(0.05)
         # Step 3: mouseReleased
         await daemon.bridge.send("Input.dispatchMouseEvent",
-            {"type": "mouseReleased", "x": x, "y": y, "button": "left", "buttons": 1, "clickCount": 1, "modifiers": 0})
+            {"type": "mouseReleased", "x": x, "y": y, "button": "left", "buttons": 1, "clickCount": 1, "modifiers": 0}, tab=tab)
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -920,7 +921,7 @@ def _loc_center_js(kind: str, value: str, nth) -> str:
               "})()")
 
 
-async def click(daemon, loc: str) -> dict[str, Any]:
+async def click(daemon, loc: str, tab: int | None = None) -> dict[str, Any]:
     """click("css:.btn") / click("text:登录") / click("index:3") /
     click("xpath://button[contains(.,'登录')]") / click("placeholder:关键词")
     — 统一定位点击（借鉴 ego-lite 的 locator 语法）。一个入口覆盖所有定位形式，
@@ -928,8 +929,7 @@ async def click(daemon, loc: str) -> dict[str, Any]:
     匹配（`nth:2;css:.btn`），**只对 css/xpath/placeholder 有效**——text/index 走的是
     扩展 op，扩展只回第一个匹配，给了 nth 会直接报 permanent 而不是悄悄点第一个。
 
-    只作用于**当前活动标签**（走 Runtime.evaluate）。要点别的标签先 switch_tab；
-    需要显式 tab 参数的场合用 click_selector(sel, tab=...)。
+    `tab` 指定目标标签（须已 attach，用 list_tabs() 看）；不传就打当前活动标签。
 
     失败返回带 `kind` 决策信号：
     - transient — 没找到元素，页面可能还没渲染完，值得重试（配合 wait_selector）
@@ -951,15 +951,19 @@ async def click(daemon, loc: str) -> dict[str, Any]:
                             "kind": "permanent"}
                 value = int(value)
             op = "getRectByText" if kind == "text" else "getRectByIndex"
-            r = await daemon.bridge.send_scripting(
-                {"action": "evaluate", "op": op, "arg": value}, 10)
+            req: dict[str, Any] = {"action": "evaluate", "op": op, "arg": value}
+            if tab is not None:
+                req["target"] = tab
+            r = await daemon.bridge.send_scripting(req, 10)
             rect = r.get("value") if r else None
             if not rect or rect.get("x") is None:
                 return {"ok": False, "error": f"{kind} not found: {value}",
                         "kind": "transient"}
-            return await click_at_xy(daemon, rect["x"], rect["y"])
+            return await click_at_xy(daemon, rect["x"], rect["y"], tab=tab)
         code = _loc_center_js(kind, value, nth)
-        r = await daemon.evaluate(code)
+        r = (await daemon.evaluate(code) if tab is None else
+             await daemon.bridge.send("Runtime.evaluate",
+                                      {"expression": code, "returnByValue": True}, tab=tab))
         got = (r or {}).get("result", {}).get("value")
         if not got or not isinstance(got, dict):
             return {"ok": False, "error": f"locator failed: {loc}", "kind": "transient"}
@@ -976,7 +980,7 @@ async def click(daemon, loc: str) -> dict[str, Any]:
                     "kind": "permanent"}
         if gk != "ok" or not isinstance(got.get("x"), (int, float)):
             return {"ok": False, "error": f"locator failed: {loc}", "kind": "transient"}
-        return await click_at_xy(daemon, got["x"], got["y"])
+        return await click_at_xy(daemon, got["x"], got["y"], tab=tab)
     except Exception as e:
         # 桥抖 / 超时是典型的「等会儿再来」，别让唯一没有 kind 的分支是异常分支
         return {"ok": False, "error": str(e), "kind": "transient"}

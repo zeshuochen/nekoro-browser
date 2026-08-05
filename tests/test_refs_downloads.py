@@ -52,7 +52,7 @@ class FakeDaemon:
         self.download_events = []          # 消费式，和真 daemon 一致
         return evts
 
-    async def _send(self, method, params):
+    async def _send(self, method, params, tab=None, **kw):
         self.calls.append((method, params))
         if method == "DOM.enable":
             return {}
@@ -131,7 +131,7 @@ class BoomDaemon(FakeDaemon):
     （普通函数塞进 bridge 的类字典会变成绑定方法多吃一个 self，绑定方法则不会），
     签名对不上却照样绿，是最不该出现在 fake 里的东西。"""
 
-    async def _send(self, method, params):
+    async def _send(self, method, params, tab=None, **kw):
         raise RuntimeError("bridge down")
 
 
@@ -198,7 +198,7 @@ def test_click_ref_scrolls_into_view_first():
 def test_click_ref_survives_scroll_failure():
     """滚不动不算失败——元素可能本来就在视口里，或页面根本不可滚。"""
     class NoScroll(FakeDaemon):
-        async def _send(self, method, params):
+        async def _send(self, method, params, tab=None, **kw):
             if method == "DOM.scrollIntoViewIfNeeded":
                 raise RuntimeError("Node does not have a layout object")
             return await super()._send(method, params)

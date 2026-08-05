@@ -140,6 +140,26 @@ openOrReuseTab、agent_helpers 热加载），真正有差距的是**元素定�
 每批合入前：全量测试（`for f in tests/test_*.py; do uv run python $f; done`）+
 LSP 无新增 error。批次完成后在本文件追加复盘（实际产出 vs 预期、偏差原因、下次改进）。
 
+### 复盘（2026-08-05）
+
+**实际产出 vs 预期**：批次 0-6 全部完成，功能与计划一致。偏差一处——批次 3 原计划的
+「定位 op 空态归一」没做：查证后 box/state/findText 的空结果（`[]`/`{found:false}`）是
+**正常查询语义**不是错误，强改成错误返回反而是错的，保留原状。
+
+**偏差原因（三条根因）**：
+1. **批次 0 只做了 `ensure_tab` 被批"学得太浅"**——根因是只看了 ego-lite 的 README 没读
+   源码，真正的价值（element-resolver 的统一 locator / transient-permanent 分类 /
+   backendNodeId ref）全在实现文件里。用户一句"不可能吧？我不是本来就有这功能吗"点醒。
+2. **误报 6 个测试失败**——根因是 PowerShell 的 `-notmatch` 对数组返回过滤结果而非布尔值，
+   检测脚本 `$out -notmatch "ALL OK"` 永远为真。换成退出码判断后正常。
+3. **MVP 环境干扰**——`data:` URL 导航被 Chrome 拦截、同源多次自动下载被拦。根因是对
+   Chrome 的自动下载策略（同一源限次）没预期，换真实 URL / 换源验证通过。
+
+**下次改进（行为规则级）**：
+- 学习开源项目先读 `AGENTS.md` + 核心实现文件再下结论，README 只是门面
+- 测试"全过"的判断用退出码，不用字符串匹配
+- 新功能先 MVP 验证核心链路（批次 4/5 先验 CDP 再写完整 helper，零返工）
+
 ## 6. PR #1 review 整改（2026-08-06）
 
 review 挖出 4 类问题，都不是"再加个功能"，而是**已落地的东西没兑现自己的承诺**：
@@ -167,3 +187,52 @@ review 挖出 4 类问题，都不是"再加个功能"，而是**已落地的东
 根因是**口径不同**：编辑器里的 basedpyright 把 `reportUnknown*` 这类算 warning，pyright CLI 在 strict 下算 error。真要归零，得给整条 CDP 链写 TypedDict——那正是这个薄封装项目刻意不做的事。
 
 处置：改挂 `standard`（现在是真·零 error，src + tests 共 39 文件），并加 CI job 把口径钉死成 pyright CLI。**挂一个 CI 守得住的标准，比挂一个谁也过不了的标准有用。**
+
+## 7. 真机验证与两条挂起项的了结（2026-08-06）
+
+§6 的整改此前只有单测。这一轮全部上真机（Chrome + 扩展 + 受控测试页）跑过：
+
+| 验证项 | 真机结果 |
+|---|---|
+| 可见性歧义（一显一隐的 `.login-btn`） | 点中可见那个；两个都可见时仍报 permanent（没有过度放宽） |
+| 视口外元素 | `click("css:#far")` 在 scrollY=0 点中 2501px 外的按钮 |
+| **旧路径静默点空** | 对照实测：`click_selector("#far2")` 返回 `ok:True` 但 onclick **从未触发** |
+| `refs()` 提速 | 同页同元素数：355ms → 116ms（**3.1×**），旧路径每次泄漏 50 个 objectId |
+| `click_ref()` 滚动 | 从空 hits → 命中，2500px 外的元素真点中 |
+
+**关于 3.1× 而不是 30×**：§6 说的「153 → 5 次往返」是**命令数**。墙钟只有 3×——
+`asyncio.gather` 的 50 个 describeNode 在 `chrome.debugger` 那头基本仍是串行处理的。
+还试过 `DOM.getDocument(depth=-1)` 一次拿全树、本地映射 nodeId→backendNodeId（零
+per-element 调用），实测 **164ms 反而更慢**：大 payload 的序列化代价盖过了 50 次并发
+小调用。当前实现是量过之后的最优解，不是想当然。
+
+### 下载目录：验证为不可行，不是「待验证」
+
+真机实测两条都被拒：
+
+```
+Browser.setDownloadBehavior → -32601 'Browser.setDownloadBehavior' wasn't found
+Page.setDownloadBehavior    → -32000 Cannot not access browser-level commands
+```
+
+`Page.` 那条虽已废弃，Chrome 仍把它路由到 browser 层处理器，在 `chrome.debugger` 的
+tab attach 下照样拒。而扩展只能 attach 到 tab、拿不到 browser target——**这条路彻底堵死**，
+不是「换个写法再试试」。真要自定义落盘位置，只剩「`Fetch` 拦截下载请求 + daemon 侧自己
+写盘」这一条，那是另一个功能，不在本文范围。
+
+### `click(loc, tab=...)`：扩展 3 行搞定，但差点又造出一个静默错误
+
+原始 CDP 通道本来就转发任意 method、`msg.tabId` 也一直在消息里，只是 dispatch 分支
+不读它。改动就是读一下。
+
+**第一版写成「tabId 不在 managedTabIds 就退回活动指针」——错的。** 真机上恰好撞见：
+扩展重载后 `managedTabIds` 被清空，`click(tab=A)` 悄悄打到了 B 上。调用方明说要打 A，
+结果打了 B 还回 ok，正是这个 PR 全程在消灭的那类错误。改成指名却没 attach 直接报
+`tab N not attached (switch_tab/new_tab first)`。
+
+顺带修了扩展的 `getRect` / `getRectByText` / `getRectByIndex`：三个 op 都不滚视口，
+`click_selector` / `click_text` / `click_index` 因此会静默点空——真机对照已复现。
+
+**教训**：单测把「用例定义在 `__main__` runner 之后」这种事盖得严严实实（定义时 runner
+早跑完，永不执行）。是 mutation 检验把它揪出来的——把修复改回旧行为，用例本该转红却
+全绿。全绿不等于测得到。
