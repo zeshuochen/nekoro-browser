@@ -11,11 +11,12 @@
 </p>
 
 <p align="center">
-轻量浏览器自动化 CLI + MCP server。通过 Chrome 扩展操控日常浏览器 — <b>保留登录态</b>，<b>零端口</b>，<b>零弹窗</b>。<br>
+让你的 AI 编程工具直接开你<b>自己的 Chrome</b> —— 打开网页、点击、把内容读回来，登录态照旧。<br>
 <sub><a href="https://github.com/zeshuochen/nekoro-browser/blob/master/README.md">English</a></sub>
 </p>
 
 <p align="center">
+  <a href="#横向对比">横向对比</a> ·
   <a href="#快速开始">快速开始</a> ·
   <a href="#示例">示例</a> ·
   <a href="#mcp任何-mcp-客户端">MCP</a> ·
@@ -28,21 +29,47 @@
 
 ---
 
-## 优势
+干活的是一个小扩展，所以浏览器什么都不用变：同一个 profile、同一批登录态，不另开实例，
+也不会弹「正受到自动测试软件控制」。安装就一句 `uv tool install`——纯 Python 标准库，
+不捆绑浏览器引擎，不下 200MB。
 
-- **零依赖、零浏览器下载** — `uv tool install nekoro-browser`，纯 Python 标准库。
-  不捆绑浏览器引擎，不需要 `npm i -g` 拉 200MB 的 Chrome。驱动的是你**已有的**浏览器。
-- **保留真实登录态** — 通过一个小扩展（`chrome.debugger`）连接你的日常浏览器，
-  而不是开一个没有登录态的 `--user-data-dir` 干净实例。不用重新登录任何网站。
-- **模型无关、完全免费** — 无订阅、无厂商锁定。CLI 或内置 MCP server 可接任意 LLM
-  （OpenAI、Anthropic、DeepSeek、本地模型都行）。
-- **开箱即用的 MCP** — 每个 helper 自动反射成 MCP 工具（当前 46+ 个）；
-  支持 Claude Code、Cursor、Cline、opencode、Codex、VS Code/Copilot。
-- **自愈 + 站点知识** — agent 可在运行时热重载自己的 helpers；每个站点笔记/脚本
-  会在每次 `navigate` 时交给 agent。
-- **开源（MIT）** — 扩展源码就在本仓库。改它，而不是绕开它。
+每个 helper 自动反射成 MCP 工具（53 个），Claude Code、Cursor、Cline、opencode、Codex、
+VS Code/Copilot 直接就能开浏览器。模型随便换，无订阅、无厂商锁定。MIT，扩展源码在仓库里。
+
+## 横向对比
+
+| | CDP WebSocket | playwright-cli | opencli | **nekoro-browser** |
+|------|:--:|:--:|:--:|:--:|
+| 原理 | `--remote-debugging-port` | Playwright 扩展 | OpenCLI 扩展 | 自建扩展 + 持久 WebSocket |
+| 安装 | 一行参数 | `npm i -g`（~200MB） | npm / 桌面应用 | `uv tool install`（纯标准库，零依赖） |
+| 登录态 | ❌ 独立实例 | ✅ | ✅ | ✅ |
+| 可修改扩展 | — | 需改 Playwright 源码 | 需改 OpenCLI 源码 | ✅ 扩展就在仓库里 |
+| 自愈 | ❌ | ❌ | ❌ | ✅ Agent 运行时编辑 helpers |
+| MCP | ❌ | ✅（另装 `@playwright/mcp`） | ❌ | ✅ 内置 53 个工具，`nekoro-browser-mcp` |
+| 站点知识 | ❌ | ❌ | ❌ | ✅ 你写的笔记和脚本**在导航时主动送到 agent 手里** |
+
+<sub>第三行为什么是 ❌：Chrome 136 起 <code>--remote-debugging-port</code> 不再接受默认 profile，裸 CDP 只能连一个没有你登录态的干净实例；扩展的 <code>chrome.debugger</code> 不受此限。</sub>
 
 ## 快速开始
+
+<details>
+<summary><b>懒得自己装？</b>把这段整个粘给 Claude Code / Cursor / opencode</summary>
+
+```
+帮我装 nekoro-browser：
+1. `uv tool install nekoro-browser`（没有 uv 就 `pipx install nekoro-browser`）。
+2. 跑 `nekoro-browser setup`，把它打印的扩展目录给我看。这一步归我：我去
+   chrome://extensions 打开开发者模式、点「加载已解压的扩展程序」、粘贴那个目录。
+   等我说装好了再继续——这一步你替我点不了。
+3. 然后另开一个终端启动 daemon 并保持不关：`nekoro-browser`。
+4. 最后一步看我怎么用，先问我：
+   - 在 AI 编辑器里用 → 注册 MCP server（`claude mcp add nekoro-browser --
+     nekoro-browser-mcp`，或我这个客户端对应的配置），然后我重启客户端；
+   - 只在终端用 → 不用配，`echo "page_info()" | nekoro-browser` 直接能跑。
+5. 收尾跑 `nekoro-browser --doctor`，告诉我 daemon / 扩展 / service worker 是不是全绿。
+```
+
+</details>
 
 **1 — 安装**（Python 3.12+，零第三方依赖）
 
@@ -66,13 +93,24 @@ nekoro-browser setup
 复制扩展目录到剪贴板并等待连接。期间：`chrome://extensions/` → 开**开发者模式** →
 「**加载已解压的扩展程序**」→ 粘贴目录。
 
-**3 — 启动 daemon** —— 单独一个终端，**保持打开**
+**3 — 启动 daemon** —— 另开**第二个终端**，**别关**（daemon 就是握着 Chrome 连接的后台
+进程，关掉整条链就停）
 
 ```bash
 nekoro-browser
 ```
 
-**4 — 在别处驱动浏览器**
+**4 — 驱动浏览器。** 挑你实际的用法：
+
+*从 AI 编程工具用（MCP）* —— Claude Code 一行搞定，其他客户端见 [MCP](#mcp任何-mcp-客户端)：
+
+```bash
+claude mcp add nekoro-browser -- nekoro-browser-mcp
+```
+
+重启客户端，直接让它开网页就行 —— 53 个浏览器工具会出现在工具列表里。
+
+*从终端用* —— 把代码片段管道给正在跑的 daemon：
 
 ```bash
 echo "page_info()" | nekoro-browser
@@ -83,23 +121,9 @@ echo "page_info()" | nekoro-browser
 
 ---
 
-## 为什么不用 `--remote-debugging-port`
-
-Chrome 136 起，`--remote-debugging-port` / `--remote-debugging-pipe` **不再接受默认 profile**——必须指定一个非默认的 `--user-data-dir`，也就是一个没有你登录态的干净实例。扩展的 `chrome.debugger` 不受这条限制，所以 nekoro 走扩展。
-
-| | CDP WebSocket | playwright-cli | opencli | **nekoro-browser** |
-|------|:--:|:--:|:--:|:--:|
-| 原理 | `--remote-debugging-port` | Playwright 扩展 | OpenCLI 扩展 | 自建扩展 + 持久 WebSocket |
-| 安装 | 一行参数 | `npm i -g`（~200MB） | npm / 桌面应用 | `uv tool install`（纯标准库，零依赖） |
-| 登录态 | ❌ 独立实例 | ✅ | ✅ | ✅ |
-| 可修改扩展 | — | 需改 Playwright 源码 | 需改 OpenCLI 源码 | ✅ 扩展就在仓库里 |
-| 自愈 | ❌ | ❌ | ❌ | ✅ Agent 运行时编辑 helpers |
-| MCP | ❌ | ✅（另装 `@playwright/mcp`） | ❌ | ✅ 内置 53 个工具，`nekoro-browser-mcp` |
-| 站点知识 | ❌ | ❌ | ❌ | ✅ 你写的笔记和脚本**在导航时主动送到 agent 手里** |
-
 ## 示例
 
-多步流程用 heredoc 一次发过去，所有 helper 都是顶层 `await`：
+多步流程一次发过去。所有 helper 直接顶层 `await`，不用写 `asyncio`、不用 import：
 
 ```bash
 nekoro-browser <<'PY'
@@ -110,6 +134,21 @@ print((await state(max_items=3))["result"])    # 带 index/box 的可交互元�
 await close_tab()
 PY
 ```
+
+<details>
+<summary>Windows？<code>&lt;&lt;'PY'</code> 是 bash 专用，PowerShell 这样写</summary>
+
+```powershell
+@'
+await new_tab("https://example.com")
+print((await page_info())["title"])
+'@ | nekoro-browser
+```
+
+结尾的 `'@` 必须顶格单独一行。只跑一句的话：
+`nekoro-browser -c "await navigate('https://example.com')"`。
+
+</details>
 
 `state()` 给元素编号，`click_index(n)` 按编号点——模型不用猜 CSS 选择器：
 
@@ -128,10 +167,11 @@ PY
 
 ## MCP（任何 MCP 客户端）
 
-`helpers.py` 里的函数会被反射成 MCP 工具（当前 53 个），不用写一行胶水代码。
+MCP 是 Claude Code、Cursor 这类工具调用外部能力的协议。`helpers.py` 里的函数会被自动反射
+成 MCP 工具（当前 53 个），不用写一行胶水代码——模型直接拿到 `navigate`、`click_index`、
+`get_markdown` 这些一等公民工具。
 
-**前提**：daemon 必须跑着（`nekoro-browser`，单独一个终端）。MCP server 只是转发层，
-它跟 daemon 走的是和 `echo ... | nekoro-browser` 同一条带鉴权的路径，
+**前提**：daemon 跑着（`nekoro-browser`，单独一个终端）——MCP server 只是转发层，
 真正握着 Chrome 连接的是 daemon。
 
 要注册的命令始终是 `nekoro-browser-mcp`，**不同的只是配置格式**：
@@ -179,11 +219,14 @@ command = "nekoro-browser-mcp"
 （daemon 死了和配错了表现一模一样），再看客户端的 MCP 日志
 （Claude Desktop 在 macOS 是 `~/Library/Logs/Claude`，Windows 是 `%APPDATA%\Claude\logs`）。
 
-**除了工具清单，你还会得到**：两个逃生口 —— `cdp`（原始 CDP 命令）和 `exec_python`
-（在 daemon 命名空间里跑任意 Python，多步流程一次往返）。截图以 image content 返回，
-客户端能直接渲染。helper 自己报的失败（`{"ok": false}`）会标成 `isError`，不伪装成成功。
-以及：导航到你写过笔记或脚本的站点时，它们会**跟着工具结果一起送过来** ——
-见[自愈与站点知识](#自愈与站点知识)。
+除了工具清单：
+
+- 两个逃生口 —— `cdp`（原始 CDP 命令）、`exec_python`（daemon 命名空间里跑任意 Python，
+  多步流程一次往返）。
+- 截图以 image content 返回，客户端直接渲染。
+- helper 自己报的失败（`{"ok": false}`）标成 `isError`，不伪装成成功。
+- 导航到你写过笔记/脚本的站点时，它们**跟着工具结果一起送过来** ——
+  见[自愈与站点知识](#自愈与站点知识)。
 
 ## API
 
@@ -229,11 +272,12 @@ CLI (nekoro-browser)  ·  MCP server (nekoro-browser-mcp)
 
 </details>
 
-`helpers.py`（54 个）→ CDP 薄封装，且都不认识任何具体网站。
-
-`lifecycle.py` 管 daemon 生命周期：pid 文件 + 进程指纹防误杀、僵尸自愈（CDP 探活失败自动清理重启）、localhost 请求绕过系统代理。
-
-扩展侧针对 MV3 service worker 会被 Chrome 回收这件事做了硬化：`content_scripts` 心跳（页面里的独立向量，SW 被杀也能重连唤醒）+ `onStartup`（Chrome 冷启动立即连 daemon）+ 断线后自动重挂上次操作的标签，不会漂到空白页。
+- `helpers.py` —— 54 个 CDP 薄封装，都不认识任何具体网站。
+- `lifecycle.py` —— pid 文件 + 进程指纹防误杀、僵尸自愈（CDP 探活失败自动清理重启）、
+  localhost 绕过系统代理。
+- 扩展侧针对 MV3 service worker 回收做了硬化 —— `content_scripts` 心跳（页面里的独立
+  唤醒向量，SW 被杀也能重连）+ `onStartup`（Chrome 冷启动即连）+ 断线后重挂上次操作
+  的标签，不漂到空白页。
 
 ## 自愈与站点知识
 
@@ -254,12 +298,11 @@ Agent 遇到缺口时当场补、当场用——不重新编译，不重启 daem
  'actions': ['open_first_result(query) — 搜索并打开第一条结果']}
 ```
 
-`notes` 只给标题——正文塞进每次导航，等于把一次性的写入成本变成永久的读取成本。
-`actions` 列的是已经可以直接调的函数，agent 调它就行，不必重新拼一遍流程。
+`notes` 只给标题；`actions` 列的是已经能直接调的函数，agent 调它就行，不必重拼流程。
 `list_site_actions()` 可查全部已载入的函数，含载入失败的文件。什么该记、什么不该记，
 见 [`domain-skills/README.md`](https://github.com/zeshuochen/nekoro-browser/blob/master/domain-skills/README.md)。
 
-标签同理。上次留下的标签还是同一张，登录态和页面状态都在——所以托管组里已有同站标签时，
+标签同理：上次留下的标签登录态和页面状态都还在，所以托管组里已有同站标签时，
 `new_tab()` 会多带一个 `existing`：
 
 ```python
@@ -268,10 +311,10 @@ Agent 遇到缺口时当场补、当场用——不重新编译，不重启 daem
               'tabs': [{'tabId': 17, 'title': 'Example Domain'}]}}
 ```
 
-标签照开，这个字段只是让「有得复用」这件事出现在即将造出重复标签的那一刻。要直接复用就传
-`reuse=True`。**不会自动关掉任何标签**：标签是垃圾还是资产由用户判断，所以 `sweep_tabs()`
-只*报告*候选（同站重复、游离 `about:blank`），`sweep_tabs(dry_run=False)` /
-`close_tabs([...])` 才真关，且活动标签永远不进候选。
+标签照开，这个字段只是让「有得复用」出现在即将造出重复标签的那一刻；要直接复用传
+`reuse=True`。**不会自动关掉任何标签**：`sweep_tabs()` 只*报告*候选（同站重复、游离
+`about:blank`），`sweep_tabs(dry_run=False)` / `close_tabs([...])` 才真关，活动标签永远
+不进候选。
 
 ---
 
@@ -287,7 +330,7 @@ Agent 遇到缺口时当场补、当场用——不重新编译，不重启 daem
 - **未打包的扩展会被 Chrome 停用。** 以「加载已解压的扩展程序」装的扩展，在 Chrome 更新或重启后可能被自动关掉、或弹出「停用开发者模式扩展程序」的提示。`--doctor` 报 Extension/SW 不响应时，先去 `chrome://extensions/` 把它重新打开。本项目目前**不发 Chrome 应用商店**，这条限制短期内不会消失。
 - **Service Worker 保活不是 100%。** MV3 的回收时机由 Chrome 决定。心跳 + `onStartup` + 自动重挂能覆盖绝大多数情况，但无人值守的长时 cron 任务仍建议先 `--doctor` 健康检查再重试。
 - **一切围绕一个「活动标签」。** 16 个 helper（`click`、`click_selector`、`state`、`wait_selector`、`fill_input` 等）可以传 `tab=id` 指定另一张**已 attach** 的标签——指名了却没 attach 会直接报错，**不会悄悄退回活动标签**。其余 37 个恒跟随活动标签。仍然不做并行会话：一个 daemon 驱动一个 Chrome，请求串行。
-- **下载落在 Chrome 自己设定的目录，路径改不了。** `wait_for_download()` 返回 `{url, filename, bytes}`——只有文件名，没有完整路径。`Browser.setDownloadBehavior`（`-32601`）和已废弃的 `Page.setDownloadBehavior`（`-32000 "Cannot not access browser-level commands"`）都是 browser-level 命令，在 `chrome.debugger` 的 tab attach 下一律被拒——扩展只能拿到 tab target。要改目录请在 Chrome 设置里改。
+- **下载落在 Chrome 自己设定的目录，路径改不了。** `wait_for_download()` 返回 `{url, filename, bytes}`——只有文件名，没有完整路径。要改目录请在 Chrome 设置里改。<sub>`Browser.setDownloadBehavior`（`-32601`）和已废弃的 `Page.setDownloadBehavior`（`-32000 "Cannot not access browser-level commands"`）都是 browser-level 命令，`chrome.debugger` 只拿得到 tab target，一律被拒。</sub>
 - **MCP server 串行处理请求。** 一次 `wait_selector(timeout=90)` 期间，同一连接上的其他请求（含 `ping`）会排队等它做完。要并发就开多个客户端连接。
 
 ---

@@ -11,11 +11,12 @@
 </p>
 
 <p align="center">
-Lightweight browser automation CLI + MCP server. Drives your everyday Chrome through an extension — <b>keeps your login state</b>, <b>no debug port</b>, <b>no banners</b>.<br>
+Let your AI coding tool drive <b>your own Chrome</b> — open pages, click, read them back, still logged in everywhere.<br>
 <sub><a href="https://github.com/zeshuochen/nekoro-browser/blob/master/README.zh-CN.md">中文</a></sub>
 </p>
 
 <p align="center">
+  <a href="#how-it-compares">Compare</a> ·
   <a href="#quick-start">Quick Start</a> ·
   <a href="#examples">Examples</a> ·
   <a href="#mcp-any-mcp-client">MCP</a> ·
@@ -28,22 +29,49 @@ Lightweight browser automation CLI + MCP server. Drives your everyday Chrome thr
 
 ---
 
-## Highlights
+A small extension does the driving, so nothing about your browser changes: same profile,
+same logins, no second instance, no "controlled by automated software" banner. Install is
+one `uv tool install` — Python stdlib only, no bundled engine, no 200MB download.
 
-- **Zero dependencies, zero browser downloads** — `uv tool install nekoro-browser`, Python
-  stdlib only. No bundled engines, no `npm i -g` with ~200MB of Chrome. It drives the
-  Chrome you already have.
-- **Your real login state** — connects to your everyday browser via a small extension
-  (`chrome.debugger`), not a throwaway `--user-data-dir` profile. No re-authenticating.
-- **Model-agnostic & free** — no subscription, no vendor lock-in. Bring any LLM (OpenAI,
-  Anthropic, DeepSeek, local models) through the CLI or the built-in MCP server.
-- **MCP out of the box** — every helper is reflected into an MCP tool (46+ today); works
-  with Claude Code, Cursor, Cline, opencode, Codex, VS Code/Copilot.
-- **Self-healing & site knowledge** — the agent can hot-reload its own helpers at runtime,
-  and your per-site notes/scripts are handed to it on every `navigate`.
-- **Open source (MIT)** — the extension lives in this repo. Extend it, don't fight it.
+Every helper is reflected into an MCP tool (53 of them), so Claude Code, Cursor, Cline,
+opencode, Codex and VS Code/Copilot can drive the browser directly. Bring any model — no
+subscription, no lock-in. MIT, extension source included.
+
+## How It Compares
+
+| | CDP WebSocket | playwright-cli | opencli | **nekoro-browser** |
+|------|:--:|:--:|:--:|:--:|
+| Approach | `--remote-debugging-port` | Playwright extension | OpenCLI extension | Custom extension + persistent WebSocket |
+| Install | one flag | `npm i -g` (~200MB) | npm / desktop app | `uv tool install` (stdlib only, zero deps) |
+| Login state | ❌ fresh instance | ✅ | ✅ | ✅ |
+| Modify the extension | — | Edit Playwright source | Edit OpenCLI source | ✅ right in this repo |
+| Self-healing | ❌ | ❌ | ❌ | ✅ Agent edits helpers at runtime |
+| MCP | ❌ | ✅ (separate `@playwright/mcp`) | ❌ | ✅ built in, 53 tools via `nekoro-browser-mcp` |
+| Site knowledge | ❌ | ❌ | ❌ | ✅ your notes and scripts are **handed to the agent on navigate** |
+
+<sub>Why row 3 is ❌: since Chrome 136, <code>--remote-debugging-port</code> refuses the default profile — a raw CDP connection means a fresh instance with none of your logins. An extension's <code>chrome.debugger</code> is exempt.</sub>
 
 ## Quick Start
+
+<details>
+<summary><b>Rather have your AI do it?</b> Paste this into Claude Code / Cursor / opencode</summary>
+
+```
+Install nekoro-browser for me:
+1. `uv tool install nekoro-browser` (no uv → `pipx install nekoro-browser`).
+2. Run `nekoro-browser setup` and show me the extension path it prints. This step is mine:
+   I open chrome://extensions, turn on Developer mode, click Load unpacked, paste that
+   path. Wait until I say it's loaded — you cannot click this for me.
+3. Then start the daemon in a separate terminal that stays open: `nekoro-browser`.
+4. Last step depends on how I'll use it — ask me which:
+   - from my AI editor → register the MCP server (`claude mcp add nekoro-browser --
+     nekoro-browser-mcp`, or the equivalent config for my client), then I restart it;
+   - from the terminal only → nothing to do, `echo "page_info()" | nekoro-browser` works.
+5. Finish with `nekoro-browser --doctor` and tell me if daemon / extension / service
+   worker are all green.
+```
+
+</details>
 
 **1 — Install** (Python 3.12+, zero third-party dependencies)
 
@@ -68,13 +96,25 @@ nekoro-browser setup
 Copies the extension directory to your clipboard and waits until it connects. Meanwhile:
 `chrome://extensions/` → **Developer mode** → **Load unpacked** → paste.
 
-**3 — Start the daemon** — its own terminal, **leave it open**
+**3 — Start the daemon** — open a **second terminal** and **leave it running** (it's the
+background process that holds the Chrome connection; close it and everything stops)
 
 ```bash
 nekoro-browser
 ```
 
-**4 — Drive the browser** from anywhere else
+**4 — Drive the browser.** Pick the way you actually work:
+
+*From your AI coding tool (MCP)* — one command for Claude Code, other clients in
+[MCP](#mcp-any-mcp-client):
+
+```bash
+claude mcp add nekoro-browser -- nekoro-browser-mcp
+```
+
+Restart the client and ask it to open a page. That's it — 53 browser tools show up.
+
+*From the terminal* — pipe a snippet to the running daemon:
 
 ```bash
 echo "page_info()" | nekoro-browser
@@ -86,23 +126,10 @@ and tells you which one.
 
 ---
 
-## Why Not `--remote-debugging-port`?
-
-Since Chrome 136, `--remote-debugging-port` / `--remote-debugging-pipe` **refuse the default profile** — you must point Chrome at a non-default `--user-data-dir`, i.e. a clean instance with none of your logins. An extension's `chrome.debugger` is not subject to that restriction, which is why nekoro goes through an extension.
-
-| | CDP WebSocket | playwright-cli | opencli | **nekoro-browser** |
-|------|:--:|:--:|:--:|:--:|
-| Approach | `--remote-debugging-port` | Playwright extension | OpenCLI extension | Custom extension + persistent WebSocket |
-| Install | one flag | `npm i -g` (~200MB) | npm / desktop app | `uv tool install` (stdlib only, zero deps) |
-| Login state | ❌ fresh instance | ✅ | ✅ | ✅ |
-| Modify the extension | — | Edit Playwright source | Edit OpenCLI source | ✅ right in this repo |
-| Self-healing | ❌ | ❌ | ❌ | ✅ Agent edits helpers at runtime |
-| MCP | ❌ | ✅ (separate `@playwright/mcp`) | ❌ | ✅ built in, 53 tools via `nekoro-browser-mcp` |
-| Site knowledge | ❌ | ❌ | ❌ | ✅ your notes and scripts are **handed to the agent on navigate** |
-
 ## Examples
 
-Send a multi-step flow in one shot with a heredoc. Every helper is a top-level `await`:
+Send a multi-step flow in one shot. Every helper is already `await`-able at top level — no
+`asyncio` boilerplate, no imports:
 
 ```bash
 nekoro-browser <<'PY'
@@ -113,6 +140,21 @@ print((await state(max_items=3))["result"])    # indexed interactive elements, m
 await close_tab()
 PY
 ```
+
+<details>
+<summary>On Windows? <code>&lt;&lt;'PY'</code> is bash-only — PowerShell equivalent</summary>
+
+```powershell
+@'
+await new_tab("https://example.com")
+print((await page_info())["title"])
+'@ | nekoro-browser
+```
+
+The closing `'@` must sit at the start of its own line. For a one-liner:
+`nekoro-browser -c "await navigate('https://example.com')"`.
+
+</details>
 
 `state()` numbers the elements and `click_index(n)` clicks by number — the model never has to guess a CSS selector:
 
@@ -131,11 +173,12 @@ All helpers are documented in [SKILL.md](https://github.com/zeshuochen/nekoro-br
 
 ## MCP (any MCP client)
 
-Every function in `helpers.py` is reflected into an MCP tool (46 today) — no glue code.
+MCP is how Claude Code, Cursor and friends call outside tools. Every function in `helpers.py`
+is reflected into one (53 today) — no glue code, so the model gets `navigate`, `click_index`,
+`get_markdown`… as first-class tools.
 
-**Prerequisite:** the daemon must be running (`nekoro-browser`, its own terminal). The MCP
-server is a thin forwarder — it talks to that daemon over the same authenticated path as
-`echo ... | nekoro-browser`, and the daemon is what owns the Chrome connection.
+**Prerequisite:** the daemon is running (`nekoro-browser`, its own terminal) — the MCP server
+is a thin forwarder, the daemon owns the Chrome connection.
 
 The command to register is always `nekoro-browser-mcp`. Only the config shape differs:
 
@@ -184,12 +227,14 @@ first — a dead daemon looks exactly like a broken MCP config — then check th
 log (Claude Desktop keeps them in `~/Library/Logs/Claude` on macOS, `%APPDATA%\Claude\logs`
 on Windows).
 
-**What you get beyond the tool list:** two escape hatches ship as tools — `cdp` (raw CDP
-command) and `exec_python` (arbitrary Python in the daemon namespace, so a whole multi-step
-flow costs one round trip). Screenshots come back as image content so clients render them
-inline. A helper's own failure (`{"ok": false}`) is surfaced as `isError` instead of being
-dressed up as success. And when you navigate to a site you have notes or scripts for, they
-ride along in the tool result — see [Self-Healing and Site Knowledge](#self-healing-and-site-knowledge).
+Beyond the tool list:
+
+- `cdp` — raw CDP command, and `exec_python` — arbitrary Python in the daemon namespace, so
+  a whole multi-step flow costs one round trip.
+- Screenshots return as image content; clients render them inline.
+- A helper failure (`{"ok": false}`) surfaces as `isError`, never dressed up as success.
+- Navigating to a site you have notes or scripts for ships them in the tool result — see
+  [Site Knowledge](#self-healing-and-site-knowledge).
 
 ## API
 
@@ -235,11 +280,12 @@ CLI (nekoro-browser)  ·  MCP server (nekoro-browser-mcp)
 
 </details>
 
-`helpers.py` (54 thin wrappers) → CDP commands, none of them aware of any particular website.
-
-`lifecycle.py` manages the daemon: pid file + process fingerprint (avoids killing a reused pid), self-heal on stale daemon (CDP probe fails → auto cleanup and restart), localhost requests bypass the system proxy.
-
-The extension is hardened against MV3 service worker eviction: a `content_scripts` heartbeat (an independent wake vector living in the page, reconnects and wakes the SW even after it's killed) + `onStartup` (reconnects instantly on Chrome cold start) + reattaches the last-driven tab after a restart instead of drifting to a blank tab.
+- `helpers.py` — 54 thin wrappers over CDP, none aware of any particular website.
+- `lifecycle.py` — pid file + process fingerprint (never kills a reused pid), stale-daemon
+  self-heal (CDP probe fails → cleanup and restart), localhost bypasses the system proxy.
+- Extension, against MV3 service worker eviction — `content_scripts` heartbeat (wake vector
+  living in the page, revives a killed SW) + `onStartup` (reconnects on Chrome cold start) +
+  reattaches the last-driven tab instead of drifting to a blank one.
 
 ## Self-Healing and Site Knowledge
 
@@ -262,15 +308,13 @@ The point is that this material **finds the agent instead of waiting to be disco
  'actions': ['open_first_result(query) — search and open the top hit']}
 ```
 
-`notes` lists titles only — full text on every navigation would turn a one-time write into a
-permanent read cost. `actions` lists functions that are already callable, so the agent runs
-one instead of rebuilding the flow. `list_site_actions()` shows everything loaded, including
-files that failed to load. Conventions for what to record — and what not to — are in
+`notes` lists titles only; `actions` lists functions that are already callable, so the agent
+runs one instead of rebuilding the flow. `list_site_actions()` shows everything loaded,
+failed files included. What to record — and what not to — is in
 [`domain-skills/README.md`](https://github.com/zeshuochen/nekoro-browser/blob/master/domain-skills/README.md).
 
-The same idea applies to tabs. A tab left over from last time is still the same tab — its
-login and page state are intact — so `new_tab()` adds an `existing` field when the managed
-group already holds tabs for that site:
+Tabs work the same way: a tab left over from last time still holds its login and page state,
+so `new_tab()` adds an `existing` field when the managed group already has tabs for that site:
 
 ```python
 {'ok': True, 'tabId': 42, 'loaded': True,
@@ -278,11 +322,10 @@ group already holds tabs for that site:
               'tabs': [{'tabId': 17, 'title': 'Example Domain'}]}}
 ```
 
-The tab is still opened — the field only makes reuse visible at the moment a duplicate is
-about to appear. Pass `reuse=True` to navigate an existing tab instead of opening one.
-Nothing is ever closed automatically: whether a tab is clutter or an asset is the user's
-call, so `sweep_tabs()` only *reports* candidates (same-site duplicates, stray
-`about:blank`) and `sweep_tabs(dry_run=False)` / `close_tabs([...])` act on them. The active
+The tab still opens — the field only makes reuse visible at the moment a duplicate is about
+to appear; `reuse=True` navigates the existing one instead. **Nothing is ever closed
+automatically**: `sweep_tabs()` only *reports* candidates (same-site duplicates, stray
+`about:blank`), `sweep_tabs(dry_run=False)` / `close_tabs([...])` act on them, and the active
 tab is never a candidate.
 
 ---
@@ -299,7 +342,7 @@ tab is never a candidate.
 - **Unpacked extensions get disabled by Chrome.** An extension installed via "Load unpacked" may be switched off automatically after a Chrome update or restart, or hidden behind the "Disable developer mode extensions" prompt. When `--doctor` reports Extension/SW not responding, re-enable it in `chrome://extensions/` first. This project is **not published to the Chrome Web Store**, so the limitation is not going away soon.
 - **Service worker keepalive is not 100%.** MV3 eviction timing is Chrome's call. The heartbeat + `onStartup` + reattach cover the vast majority of cases, but unattended long-running cron jobs should still health-check with `--doctor` and retry.
 - **Everything is anchored to one active tab.** 16 helpers (`click`, `click_selector`, `state`, `wait_selector`, `fill_input`, …) take an explicit `tab=id` to target another **already attached** tab — naming a tab that is not attached is an error, never a silent fallback to the active one. The other 37 always follow the active tab, and there are still no parallel sessions: one daemon drives one Chrome, requests are serialised.
-- **Downloads land wherever Chrome is configured to put them, and the path cannot be changed from here.** `wait_for_download()` returns `{url, filename, bytes}` — a filename, not a full path. Both `Browser.setDownloadBehavior` (`-32601`) and the deprecated `Page.setDownloadBehavior` (`-32000 "Cannot not access browser-level commands"`) are browser-level and get rejected under `chrome.debugger`'s tab attach, which only ever hands out a tab target. Set the directory in Chrome's own settings.
+- **Downloads land wherever Chrome is configured to put them; the path cannot be changed from here.** `wait_for_download()` returns `{url, filename, bytes}` — a filename, not a full path. Set the directory in Chrome's own settings. <sub>Both `Browser.setDownloadBehavior` (`-32601`) and the deprecated `Page.setDownloadBehavior` (`-32000 "Cannot not access browser-level commands"`) are browser-level and get rejected under `chrome.debugger`, which only ever hands out a tab target.</sub>
 - **The MCP server handles requests serially.** During a `wait_selector(timeout=90)` every other request on that connection (including `ping`) queues behind it. Open separate client connections if you need concurrency.
 
 ---
