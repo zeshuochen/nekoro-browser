@@ -154,6 +154,11 @@ print((await page_info())["title"])
 The closing `'@` must sit at the start of its own line. For a one-liner:
 `nekoro-browser -c "await navigate('https://example.com')"`.
 
+**Avoid `cmd.exe` for pipe mode.** Its `echo` keeps the quotes, so
+`echo "page_info()" | nekoro-browser` sends the *string* `"page_info()"` — Python evaluates it
+as a string literal and returns `{"ok": true, "result": "page_info()"}` without ever touching
+the browser. PowerShell handles the same line correctly.
+
 </details>
 
 `state()` numbers the elements and `click_index(n)` clicks by number — the model never has to guess a CSS selector:

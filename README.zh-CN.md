@@ -148,6 +148,10 @@ print((await page_info())["title"])
 结尾的 `'@` 必须顶格单独一行。只跑一句的话：
 `nekoro-browser -c "await navigate('https://example.com')"`。
 
+**管道模式别用 `cmd.exe`。** 它的 `echo` 不脱引号，`echo "page_info()" | nekoro-browser`
+送进去的是**字符串** `"page_info()"`，Python 当字符串字面量求值，返回
+`{"ok": true, "result": "page_info()"}`，浏览器根本没被碰过。同一行在 PowerShell 里正常。
+
 </details>
 
 `state()` 给元素编号，`click_index(n)` 按编号点——模型不用猜 CSS 选择器：
