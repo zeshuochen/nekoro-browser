@@ -138,6 +138,8 @@ PY
 <details>
 <summary>Windows？<code>&lt;&lt;'PY'</code> 是 bash 专用，PowerShell 这样写</summary>
 
+Git Bash 里上面的 heredoc 原样能跑。PowerShell 里改用 here-string：
+
 ```powershell
 @'
 await new_tab("https://example.com")

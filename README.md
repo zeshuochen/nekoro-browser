@@ -144,6 +144,8 @@ PY
 <details>
 <summary>On Windows? <code>&lt;&lt;'PY'</code> is bash-only — PowerShell equivalent</summary>
 
+In Git Bash the heredoc above runs as-is. In PowerShell, use a here-string:
+
 ```powershell
 @'
 await new_tab("https://example.com")
