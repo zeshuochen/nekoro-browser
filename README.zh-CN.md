@@ -28,6 +28,20 @@
 
 ---
 
+## 优势
+
+- **零依赖、零浏览器下载** — `uv tool install nekoro-browser`，纯 Python 标准库。
+  不捆绑浏览器引擎，不需要 `npm i -g` 拉 200MB 的 Chrome。驱动的是你**已有的**浏览器。
+- **保留真实登录态** — 通过一个小扩展（`chrome.debugger`）连接你的日常浏览器，
+  而不是开一个没有登录态的 `--user-data-dir` 干净实例。不用重新登录任何网站。
+- **模型无关、完全免费** — 无订阅、无厂商锁定。CLI 或内置 MCP server 可接任意 LLM
+  （OpenAI、Anthropic、DeepSeek、本地模型都行）。
+- **开箱即用的 MCP** — 每个 helper 自动反射成 MCP 工具（当前 46+ 个）；
+  支持 Claude Code、Cursor、Cline、opencode、Codex、VS Code/Copilot。
+- **自愈 + 站点知识** — agent 可在运行时热重载自己的 helpers；每个站点笔记/脚本
+  会在每次 `navigate` 时交给 agent。
+- **开源（MIT）** — 扩展源码就在本仓库。改它，而不是绕开它。
+
 ## 快速开始
 
 **1 — 安装**（Python 3.12+，零第三方依赖）

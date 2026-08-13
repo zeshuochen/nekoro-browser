@@ -28,6 +28,21 @@ Lightweight browser automation CLI + MCP server. Drives your everyday Chrome thr
 
 ---
 
+## Highlights
+
+- **Zero dependencies, zero browser downloads** — `uv tool install nekoro-browser`, Python
+  stdlib only. No bundled engines, no `npm i -g` with ~200MB of Chrome. It drives the
+  Chrome you already have.
+- **Your real login state** — connects to your everyday browser via a small extension
+  (`chrome.debugger`), not a throwaway `--user-data-dir` profile. No re-authenticating.
+- **Model-agnostic & free** — no subscription, no vendor lock-in. Bring any LLM (OpenAI,
+  Anthropic, DeepSeek, local models) through the CLI or the built-in MCP server.
+- **MCP out of the box** — every helper is reflected into an MCP tool (46+ today); works
+  with Claude Code, Cursor, Cline, opencode, Codex, VS Code/Copilot.
+- **Self-healing & site knowledge** — the agent can hot-reload its own helpers at runtime,
+  and your per-site notes/scripts are handed to it on every `navigate`.
+- **Open source (MIT)** — the extension lives in this repo. Extend it, don't fight it.
+
 ## Quick Start
 
 **1 — Install** (Python 3.12+, zero third-party dependencies)
