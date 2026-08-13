@@ -338,7 +338,7 @@ tab is never a candidate.
 | Platform | Status |
 |----------|--------|
 | Windows | Primary development platform, exercised end to end |
-| Linux / macOS | The code has the branches (XDG dirs, `chmod 600` token, `/proc` and `ps` liveness probes) and CI runs the unit tests on all three, **but the full "Chrome + extension" loop has never been run on a real macOS/Linux box** — reports welcome |
+| Linux / macOS | The code has the branches (`~/.config` and `~/Library/Application Support` data dirs, `chmod 600` token, `/proc` and `ps` liveness probes) and CI runs the unit tests on all three, **but the full "Chrome + extension" loop has never been run on a real macOS/Linux box** — reports welcome |
 
 ## Known Limitations
 
@@ -385,6 +385,10 @@ Both sides must agree. Clients don't need the flag repeated: the daemon records 
 actual port in `<data dir>/port`, so a plain `echo ... | nekoro-browser` finds a daemon
 running on a non-default port. Precedence is `--port` > `NEKORO_PORT` > that file > default.
 
+The data dir holding token / pid / port is `%LOCALAPPDATA%\nekoro-browser` on Windows,
+`~/Library/Application Support/nekoro-browser` on macOS, `$XDG_CONFIG_HOME/nekoro-browser`
+or `~/.config/nekoro-browser` elsewhere. `NEKORO_DATA_DIR` overrides it on any platform.
+
 ### Troubleshooting
 
 | Symptom | Cause | Fix |
@@ -399,7 +403,7 @@ running on a non-default port. Precedence is `--port` > `NEKORO_PORT` > that fil
 
 The daemon listens on `127.0.0.1` and `/exec` runs arbitrary Python, so the transport is guarded:
 
-- **CLI / MCP → daemon** (`/exec`, `/raw`): a per-session token is written to a user-private file (`%LOCALAPPDATA%\nekoro-browser\token`, `chmod 600` on POSIX). Clients read it and send `X-Nekoro-Token`; missing/wrong token → `403`. Web pages and remote hosts can't read local files, so they can't obtain it. `/ping` stays open.
+- **CLI / MCP → daemon** (`/exec`, `/raw`): a per-session token is written to a user-private file — `%LOCALAPPDATA%\nekoro-browser\token` on Windows, `~/Library/Application Support/nekoro-browser/token` on macOS, `$XDG_CONFIG_HOME` or `~/.config/nekoro-browser/token` elsewhere, `chmod 600` on POSIX. Clients read it and send `X-Nekoro-Token`; missing/wrong token → `403`. Web pages and remote hosts can't read local files, so they can't obtain it. `/ping` stays open.
 - **Extension → daemon** (`/ws`): the handshake `Origin` must be `chrome-extension://…`; a web page's `WebSocket` to localhost carries its own origin and is rejected.
 
 Same-user local processes can read the token file — that boundary matches the OS user account, as with browser-harness's `chmod 600`.

@@ -29,7 +29,7 @@ def test_start_time_and_alive():
 
 def test_pid_file_roundtrip():
     with tempfile.TemporaryDirectory() as td:
-        os.environ["LOCALAPPDATA"] = td            # token_path/pid_path 用它
+        os.environ["NEKORO_DATA_DIR"] = td         # token_path/pid_path 用它
         assert lifecycle.read_pid_file() is None    # 未写
         lifecycle.write_pid()
         assert lifecycle.read_pid_file() == os.getpid()
@@ -83,7 +83,7 @@ def test_identify():
 def test_stop_daemon_no_daemon():
     # 指向死端口 + 落一个死 pid 的 pid 文件 → stop 只清文件、不杀任何东西
     with tempfile.TemporaryDirectory() as td:
-        os.environ["LOCALAPPDATA"] = td
+        os.environ["NEKORO_DATA_DIR"] = td
         lifecycle.write_pid()                       # 建目录，随后覆盖成死 pid
         lifecycle.pid_path().write_text("2000000000", encoding="utf-8")
         old = lifecycle.URL

@@ -136,7 +136,7 @@ echo "await page_info()" | nekoro-browser
 | `type_text(text)` | `type_text("hello")` | CDP Input.insertText（往当前焦点插字符） |
 | `fill_input(sel, text)` | `fill_input("#email", "a@b.com")` | 框架感知填值：原生 setter + input/change，React/Vue 受控组件能收到 onChange |
 | `press_key(key)` | `press_key("Enter")` | 按键（带 virtual key code + char 事件，特殊键/单字符都真实触发） |
-| `press_key("c", 2)` | 同上 | Ctrl+C（1=Alt, 2=Ctrl, 4=Meta, 8=Shift） |
+| `press_key("c", 2)` | 同上 | Ctrl+C（1=Alt, 2=Ctrl, 4=Meta, 8=Shift）。**macOS 上复制/粘贴/全选走 Cmd 即 Meta=4**，Ctrl 不生效 |
 | `upload_file(sel, path)` | `upload_file("input[type=file]", r"C:\a.png")` | CDP 设置文件输入框的文件（str/Path 或其 list） |
 
 ### 索引元素树（browser-act 风格）

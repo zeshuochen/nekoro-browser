@@ -27,7 +27,7 @@ def _env(**kv):
 
 @contextlib.contextmanager
 def _tmp_data_dir():
-    with tempfile.TemporaryDirectory() as td, _env(LOCALAPPDATA=td, NEKORO_PORT=None):
+    with tempfile.TemporaryDirectory() as td, _env(NEKORO_DATA_DIR=td, NEKORO_PORT=None):
         yield td
 
 

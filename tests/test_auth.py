@@ -14,7 +14,7 @@ import tempfile
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 # 令牌文件指向临时目录，别碰真实用户目录
-os.environ["LOCALAPPDATA"] = tempfile.mkdtemp(prefix="nekoro-auth-")
+os.environ["NEKORO_DATA_DIR"] = tempfile.mkdtemp(prefix="nekoro-auth-")
 
 from nekoro_browser import auth
 from nekoro_browser.bridge import ExtensionBridge
@@ -115,4 +115,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(run())
     finally:
-        shutil.rmtree(os.environ["LOCALAPPDATA"], ignore_errors=True)
+        shutil.rmtree(os.environ["NEKORO_DATA_DIR"], ignore_errors=True)

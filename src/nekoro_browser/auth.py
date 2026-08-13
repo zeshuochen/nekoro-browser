@@ -10,9 +10,10 @@
 - 扩展（WS /ws）：Chrome 自动带 Origin: chrome-extension://<id>，daemon 校验来源。
   网页发起的 ws 带自己域名的 Origin → 拒。（扩展读不到文件，故走 Origin 而非令牌。）
 
-令牌文件放 %LOCALAPPDATA%（Windows，用户私有）/ XDG_CONFIG_HOME / ~ 下的
-nekoro-browser/token。POSIX 上 chmod 600；Windows 靠 profile 目录 ACL（无第三方依赖，
-os.chmod 只能切只读位）。
+令牌文件放 paths.data_dir()/token —— Windows %LOCALAPPDATA%、macOS
+~/Library/Application Support、其余 POSIX XDG_CONFIG_HOME 或 ~/.config，
+可用 NEKORO_DATA_DIR 覆盖。POSIX 上 chmod 600；Windows 靠 profile 目录 ACL
+（无第三方依赖，os.chmod 只能切只读位）。
 """
 
 import hmac

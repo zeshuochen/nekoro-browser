@@ -326,7 +326,7 @@ Agent 遇到缺口时当场补、当场用——不重新编译，不重启 daem
 | 平台 | 状态 |
 |------|------|
 | Windows | 主力开发平台，全链路实测 |
-| Linux / macOS | 代码有对应分支（XDG 目录、`chmod 600` 令牌、`/proc` 与 `ps` 存活探测），单测在 CI 上跑三平台；**但没有在真机上跑过「Chrome + 扩展」的完整链路**，欢迎反馈 |
+| Linux / macOS | 代码有对应分支（`~/.config` 与 `~/Library/Application Support` 数据目录、`chmod 600` 令牌、`/proc` 与 `ps` 存活探测），单测在 CI 上跑三平台；**但没有在真机上跑过「Chrome + 扩展」的完整链路**，欢迎反馈 |
 
 ## 已知限制
 
@@ -373,6 +373,11 @@ daemon 默认监听 **28417**。要改：
 所以直接 `echo ... | nekoro-browser` 也能找到跑在非默认端口上的 daemon。
 优先级 `--port` > `NEKORO_PORT` > 该文件 > 默认值。
 
+存放令牌 / pid / port 的数据目录：Windows `%LOCALAPPDATA%\nekoro-browser`、
+macOS `~/Library/Application Support/nekoro-browser`、其余 POSIX
+`$XDG_CONFIG_HOME/nekoro-browser` 或 `~/.config/nekoro-browser`。
+`NEKORO_DATA_DIR` 可在任意平台覆盖。
+
 ### 故障排查
 
 | 现象 | 原因 | 解决 |
@@ -387,7 +392,7 @@ daemon 默认监听 **28417**。要改：
 
 daemon 监听 `127.0.0.1`，`/exec` 会执行任意 Python，故传输层加了守卫：
 
-- **CLI / MCP → daemon**（`/exec`、`/raw`）：每会话签发令牌，写入用户私有文件（`%LOCALAPPDATA%\nekoro-browser\token`，POSIX 上 `chmod 600`）。客户端读取后带在 `X-Nekoro-Token` 头里；缺失/错误 → `403`。网页和远程主机读不到本地文件，拿不到令牌。`/ping` 免令牌。
+- **CLI / MCP → daemon**（`/exec`、`/raw`）：每会话签发令牌，写入用户私有文件——Windows 是 `%LOCALAPPDATA%\nekoro-browser\token`，macOS 是 `~/Library/Application Support/nekoro-browser/token`，其余 POSIX 是 `$XDG_CONFIG_HOME` 或 `~/.config/nekoro-browser/token`，POSIX 上 `chmod 600`。客户端读取后带在 `X-Nekoro-Token` 头里；缺失/错误 → `403`。网页和远程主机读不到本地文件，拿不到令牌。`/ping` 免令牌。
 - **扩展 → daemon**（`/ws`）：握手 `Origin` 必须是 `chrome-extension://…`；网页对 localhost 发起的 `WebSocket` 带自己的域名 Origin，会被拒。
 
 同用户的本地进程能读令牌文件——这条边界等于操作系统账户，与 browser-harness 的 `chmod 600` 一致。
