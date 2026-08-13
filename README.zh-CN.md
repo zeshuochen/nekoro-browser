@@ -50,16 +50,12 @@
 uv tool install nekoro-browser
 ```
 
-两个命令（`nekoro-browser`、`nekoro-browser-mcp`）装进独立环境，不污染系统 Python。
 没装 [uv](https://docs.astral.sh/uv/) 的话 `pipx install nekoro-browser` 等效。
 
 <sub>从源码装：<code>git clone https://github.com/zeshuochen/nekoro-browser && cd nekoro-browser && uv pip install -e .</code></sub>
 
-> **升级之后记得重载扩展。** `uv tool upgrade nekoro-browser` 只更新 Python 那一侧，
-> Chrome 里已加载的扩展仍在跑旧的 `background.js`——凡是涉及扩展的改动都会**静默**
-> 停留在旧行为（不报错，只是新功能不生效）。每次升级后执行 `nekoro-browser --reload-ext`
-> （或在 `chrome://extensions` 的卡片上点**重新加载**），再 `nekoro-browser --doctor`
-> 确认 service worker 有响应。
+> **升级之后记得重载扩展。** `uv tool upgrade nekoro-browser` 只更新 Python 侧——
+> 之后手动重载扩展：`nekoro-browser --reload-ext`（或 `chrome://extensions` 卡片上点**重新加载**）。
 
 **2 — 加载扩展**
 
@@ -67,11 +63,10 @@ uv tool install nekoro-browser
 nekoro-browser setup
 ```
 
-`setup` 把扩展目录复制到剪贴板，然后一直等（最多三分钟）到扩展真的连上为止——
-装没装成它当场告诉你，不用自己猜。同时你去做 Chrome 只留给人做的那步：打开
-`chrome://extensions/` → 开**开发者模式** →「**加载已解压的扩展程序**」→ 粘贴目录。
+复制扩展目录到剪贴板并等待连接。期间：`chrome://extensions/` → 开**开发者模式** →
+「**加载已解压的扩展程序**」→ 粘贴目录。
 
-**3 — 启动 daemon** —— 给它单独一个终端并**保持打开**；它是前台进程，关掉窗口就等于停掉它
+**3 — 启动 daemon** —— 单独一个终端，**保持打开**
 
 ```bash
 nekoro-browser
@@ -84,8 +79,7 @@ echo "page_info()" | nekoro-browser
 # → {"ok": true, "result": {"title": "...", "url": "..."}}
 ```
 
-就这些。第 4 步如果报 daemon 没运行、或者命令超时，跑 `nekoro-browser --doctor`——
-它会分别检查 daemon、扩展、service worker，直接告诉你是哪一环挂了。
+哪一环挂了？`nekoro-browser --doctor` 分别检查 daemon / 扩展 / service worker 并指出。
 
 ---
 

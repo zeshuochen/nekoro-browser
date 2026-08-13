@@ -51,17 +51,13 @@ Lightweight browser automation CLI + MCP server. Drives your everyday Chrome thr
 uv tool install nekoro-browser
 ```
 
-Installs both commands (`nekoro-browser`, `nekoro-browser-mcp`) into their own environment,
-so nothing lands in your system Python. No [uv](https://docs.astral.sh/uv/)? `pipx install
-nekoro-browser` works the same way.
+No [uv](https://docs.astral.sh/uv/)? `pipx install nekoro-browser` works too.
 
 <sub>From source: <code>git clone https://github.com/zeshuochen/nekoro-browser && cd nekoro-browser && uv pip install -e .</code></sub>
 
-> **Upgrading?** `uv tool upgrade nekoro-browser` updates the Python side only. The
-> extension Chrome already loaded keeps running the old `background.js`, so anything that
-> touches the extension silently stays on the old behaviour. Reload it after every upgrade:
-> `nekoro-browser --reload-ext` (or **Reload** on the card in `chrome://extensions`).
-> Run `nekoro-browser --doctor` afterwards to confirm the service worker answers.
+> **Upgrading?** `uv tool upgrade nekoro-browser` only updates the Python side — reload
+> the extension afterwards: `nekoro-browser --reload-ext` (or **Reload** on the card in
+> `chrome://extensions`).
 
 **2 — Load the extension**
 
@@ -69,13 +65,10 @@ nekoro-browser` works the same way.
 nekoro-browser setup
 ```
 
-`setup` copies the extension directory to your clipboard and then waits — up to three
-minutes — until the extension actually connects, so you find out it worked instead of
-guessing. Meanwhile you do the part Chrome reserves for humans: open `chrome://extensions/`,
-turn on **Developer mode**, click **Load unpacked**, paste the directory.
+Copies the extension directory to your clipboard and waits until it connects. Meanwhile:
+`chrome://extensions/` → **Developer mode** → **Load unpacked** → paste.
 
-**3 — Start the daemon** — give it its own terminal and **leave it open**; it runs in the
-foreground and closing that window stops it
+**3 — Start the daemon** — its own terminal, **leave it open**
 
 ```bash
 nekoro-browser
@@ -88,9 +81,8 @@ echo "page_info()" | nekoro-browser
 # → {"ok": true, "result": {"title": "...", "url": "..."}}
 ```
 
-That's it. If step 4 says the daemon isn't running, or a command times out, run
-`nekoro-browser --doctor` — it checks the daemon, the extension and the service worker
-separately and tells you which one is down.
+Something down? `nekoro-browser --doctor` checks daemon / extension / service worker
+and tells you which one.
 
 ---
 
