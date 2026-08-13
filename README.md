@@ -144,8 +144,6 @@ PY
 <details>
 <summary>On Windows? <code>&lt;&lt;'PY'</code> is bash-only — PowerShell equivalent</summary>
 
-In Git Bash the heredoc above runs as-is. In PowerShell, use a here-string:
-
 ```powershell
 @'
 await new_tab("https://example.com")
@@ -153,13 +151,11 @@ print((await page_info())["title"])
 '@ | nekoro-browser
 ```
 
-The closing `'@` must sit at the start of its own line. For a one-liner:
+The closing `'@` must sit at the start of its own line. One-liners:
 `nekoro-browser -c "await navigate('https://example.com')"`.
 
-**Avoid `cmd.exe` for pipe mode.** Its `echo` keeps the quotes, so
-`echo "page_info()" | nekoro-browser` sends the *string* `"page_info()"` — Python evaluates it
-as a string literal and returns `{"ok": true, "result": "page_info()"}` without ever touching
-the browser. PowerShell handles the same line correctly.
+Not `cmd.exe` — its `echo` keeps the quotes, so the snippet arrives as a string and comes back
+`{"ok": true, "result": "page_info()"}` with the browser untouched.
 
 </details>
 

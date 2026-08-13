@@ -138,8 +138,6 @@ PY
 <details>
 <summary>Windows？<code>&lt;&lt;'PY'</code> 是 bash 专用，PowerShell 这样写</summary>
 
-Git Bash 里上面的 heredoc 原样能跑。PowerShell 里改用 here-string：
-
 ```powershell
 @'
 await new_tab("https://example.com")
@@ -147,12 +145,11 @@ print((await page_info())["title"])
 '@ | nekoro-browser
 ```
 
-结尾的 `'@` 必须顶格单独一行。只跑一句的话：
+结尾的 `'@` 必须顶格单独一行。只跑一句：
 `nekoro-browser -c "await navigate('https://example.com')"`。
 
-**管道模式别用 `cmd.exe`。** 它的 `echo` 不脱引号，`echo "page_info()" | nekoro-browser`
-送进去的是**字符串** `"page_info()"`，Python 当字符串字面量求值，返回
-`{"ok": true, "result": "page_info()"}`，浏览器根本没被碰过。同一行在 PowerShell 里正常。
+别用 `cmd.exe`——它的 `echo` 不脱引号，代码会以字符串送达，返回
+`{"ok": true, "result": "page_info()"}` 而浏览器根本没被碰过。
 
 </details>
 
