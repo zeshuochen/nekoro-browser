@@ -14,6 +14,7 @@ import math
 import sys
 from typing import Any
 
+from . import allowlist
 from . import site_notes
 
 logger = logging.getLogger(__name__)
@@ -101,6 +102,15 @@ async def _tabs_like(daemon, url: str, exclude=(), strict: bool = False) -> list
         return []
 
 
+async def _gate(daemon, url: str | None) -> dict[str, Any] | None:
+    """白名单闸门。放行返回 None，拦截返回可直接回传的错误。
+
+    daemon 上没这个属性（老的 fake、单测桩）时按未配置处理 —— 闸门是叠加的安全层，
+    不该让缺配置变成"什么都不能做"。
+    """
+    return allowlist.check(url, getattr(daemon, "allow_domains", None))
+
+
 async def new_tab(daemon, url: str = "about:blank", timeout: float = 15.0, *,
                   reuse: bool = False) -> dict[str, Any]:
     """new_tab("https://example.com") — 开新标签，加入 nekoro 托管组，切过去并 attach；
@@ -118,6 +128,9 @@ async def new_tab(daemon, url: str = "about:blank", timeout: float = 15.0, *,
     （比如被 DevTools 占着）或压根没查成，则如实回落到开新标签并带 `reuse` 说明原因。
     默认 False：函数叫 new_tab，默认开新才是诚实的。默认路径下若发现同站已有标签，
     返回值里带 `existing`（清单+提示），标签照开、行为不变，只是让 agent 知道有得复用。"""
+    blocked = await _gate(daemon, url)
+    if blocked:
+        return blocked
     try:
         lookup_error = None
         if reuse:
@@ -324,6 +337,9 @@ async def navigate(daemon, url: str, wait: bool = True, timeout: float = 15.0,
                    tab: int | None = None) -> dict[str, Any]:
     """navigate("https://example.com") — 默认等 readyState==='complete' 再返回。
     wait=False 立即返回（Page.navigate 一发出就走）。loaded 标记是否等到加载完成。"""
+    blocked = allowlist.check(url, getattr(daemon, "allow_domains", None))
+    if blocked:
+        return blocked
     try:
         res = await daemon.navigate(url, tab=tab)
         loaded = True

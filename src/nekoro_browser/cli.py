@@ -23,6 +23,7 @@ from . import config
 # 显式 --port 的记忆位。None = 每次现算（读 NEKORO_PORT / daemon 写的端口文件），
 # 这样 MCP server 先起、daemon 后起也能连上，不会锁死在导入时的那个值。
 _EXPLICIT_PORT = None
+_ALLOW_DOMAINS = None   # 域名白名单；None = 不限制（见 allowlist.py）
 
 # 执行代码的 HTTP 超时。30 秒是原来的写死值，而"开页面 + 等水合"这种再正常
 # 不过的流程就要几十秒——第一条真实测试命令就撞上了。给个宽松默认值 + --timeout。
@@ -109,7 +110,7 @@ async def _wait_for_extension(port, timeout: float = 180.0) -> bool:
     """临时起一个 bridge 等扩展连上来——扩展只有在有人监听时才连得上，
     所以「装完了没」这件事没法离线判断，必须真的监听一次。"""
     from .daemon import Daemon
-    d = Daemon(port=port)
+    d = Daemon(port=port, allow_domains=_ALLOW_DOMAINS)
     await d.bridge.start()
     d.bridge.set_token(auth.issue_token())
     try:
@@ -233,6 +234,10 @@ def main():
     p.add_argument("--port", type=int, default=None,
                    help=f"daemon 端口（默认 {config.DEFAULT_PORT}；也可设环境变量 "
                         f"{config.ENV_VAR}）。扩展侧的端口在扩展选项页里改")
+    p.add_argument("--allow-domains", type=str, default=None,
+                   metavar="LIST",
+                   help="daemon 只允许操作这些域，逗号分隔（如 'jd.com,*.taobao.com'）。"
+                        "不传则不限制；也可用 NEKORO_ALLOW_DOMAINS 环境变量")
     p.add_argument("--timeout", type=float, default=None,
                    help=f"执行代码的超时秒数（默认 {DEFAULT_EXEC_TIMEOUT:.0f}）。"
                         "等待页面加载/水合的脚本可能需要更长")
@@ -242,6 +247,11 @@ def main():
     if args.timeout is not None and args.timeout > 0:
         global _EXEC_TIMEOUT
         _EXEC_TIMEOUT = args.timeout
+
+    if args.allow_domains:
+        from . import allowlist
+        global _ALLOW_DOMAINS
+        _ALLOW_DOMAINS = allowlist.parse(args.allow_domains)
 
     if args.port is not None:
         global _EXPLICIT_PORT
@@ -331,7 +341,7 @@ async def _run(port=None):
         for _ in range(25):
             if not _alive(): break
             time.sleep(0.2)
-    d = Daemon(port=port)
+    d = Daemon(port=port, allow_domains=_ALLOW_DOMAINS)
     try:
         ok = await d.start()
         if not ok:
