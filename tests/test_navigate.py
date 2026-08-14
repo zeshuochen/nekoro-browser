@@ -20,11 +20,11 @@ class FakeDaemon:
         self.nav = []
         self.eval_calls = 0
 
-    async def navigate(self, url):
+    async def navigate(self, url, tab=None):
         self.nav.append(url)
         return {"frameId": "1"}
 
-    async def evaluate(self, code):
+    async def evaluate(self, code, tab=None):
         self.eval_calls += 1
         if self.stuck:
             v = "loading"
@@ -57,7 +57,7 @@ async def run():
 
     # 4. daemon.navigate 抛异常 → {ok: False}，不冒泡
     class Boom(FakeDaemon):
-        async def navigate(self, url):
+        async def navigate(self, url, tab=None):
             raise RuntimeError("nav failed")
     r = await helpers.navigate(Boom([]), "https://boom.test")
     assert r["ok"] is False and "nav failed" in r["error"], r

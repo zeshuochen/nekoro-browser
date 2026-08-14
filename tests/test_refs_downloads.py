@@ -35,7 +35,7 @@ class FakeDaemon:
         self.scrolled = []
         self.texts_override: list[str] | None = None   # None = 照 nodes 的 text 回
 
-    async def evaluate(self, expr):
+    async def evaluate(self, expr, tab=None):
         # refs() 的文本走一条 Runtime.evaluate；真 daemon 带 returnByValue=True，
         # 所以拿到的是真数组而不是 objectId
         self.evaluate_calls.append(expr)

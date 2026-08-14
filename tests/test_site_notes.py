@@ -39,11 +39,11 @@ class FakeDaemon:
     def __init__(self):
         self.nav = []
 
-    async def navigate(self, url):
+    async def navigate(self, url, tab=None):
         self.nav.append(url)
         return {"frameId": "1"}
 
-    async def evaluate(self, code):
+    async def evaluate(self, code, tab=None):
         return {"result": {"value": "complete"}}
 
 
