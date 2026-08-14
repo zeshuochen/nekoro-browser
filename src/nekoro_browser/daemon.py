@@ -163,10 +163,14 @@ class Daemon:
     async def switch_tab(self, tab_id):
         """把活动标签切到 tab_id（未 attach 则 attach）。_tab_id 由 attach 回调同步。"""
         return await self.bridge.send_request("switch_tab", tabId=tab_id)
-    async def navigate(self, url): return await self.bridge.send("Page.navigate", {"url": url})
-    async def evaluate(self, expr): return await self.bridge.send("Runtime.evaluate", {"expression":expr,"returnByValue":True})
-    async def screenshot(self, format="png", quality=80):
-        r = await self.bridge.send("Page.captureScreenshot", {"format":format,"quality":quality})
+    async def navigate(self, url, tab=None): return await self.bridge.send("Page.navigate", {"url": url}, tab=tab)
+    async def evaluate(self, expr, tab=None): return await self.bridge.send("Runtime.evaluate", {"expression":expr,"returnByValue":True}, tab=tab)
+    async def screenshot(self, format="png", quality=80, clip=None, tab=None):
+        # clip 带 scale 字段可直接让 Chrome 按 CSS 尺寸出图（见 helpers.capture_screenshot），
+        # 不必走 Emulation.setDeviceMetricsOverride —— 那会真改视口、影响响应式布局。
+        p = {"format":format,"quality":quality}
+        if clip: p["clip"] = clip
+        r = await self.bridge.send("Page.captureScreenshot", p, tab=tab)
         return r.get("data","")
     async def get_document(self): return await self.bridge.send("DOM.getDocument", {"depth":-1})
     async def query_selector(self, sel):
@@ -179,13 +183,13 @@ class Daemon:
     async def click_at(self, x, y):
         await self.bridge.send("Input.dispatchMouseEvent", {"type":"mousePressed","x":x,"y":y,"button":"left","clickCount":1})
         return await self.bridge.send("Input.dispatchMouseEvent", {"type":"mouseReleased","x":x,"y":y,"button":"left","clickCount":1})
-    async def type_text(self, t): return await self.bridge.send("Input.insertText", {"text":t})
-    async def get_page_info(self):
+    async def type_text(self, t, tab=None): return await self.bridge.send("Input.insertText", {"text":t}, tab=tab)
+    async def get_page_info(self, tab=None):
         # 单次 evaluate 返回 {title,url}，省一个往返（原来 title/href 两次串行）。
         try:
             r = await self.bridge.send("Runtime.evaluate", {
                 "expression": "({title: document.title, url: location.href})",
-                "returnByValue": True})
+                "returnByValue": True}, tab=tab)
             v = r["result"].get("value") or {}
             return {"title": v.get("title", ""), "url": v.get("url", "")}
         except: return {"title":"","url":""}

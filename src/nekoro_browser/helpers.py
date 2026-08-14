@@ -320,17 +320,18 @@ async def sweep_tabs(daemon, dry_run: bool = True) -> dict[str, Any]:
     return out
 
 
-async def navigate(daemon, url: str, wait: bool = True, timeout: float = 15.0) -> dict[str, Any]:
+async def navigate(daemon, url: str, wait: bool = True, timeout: float = 15.0,
+                   tab: int | None = None) -> dict[str, Any]:
     """navigate("https://example.com") — 默认等 readyState==='complete' 再返回。
     wait=False 立即返回（Page.navigate 一发出就走）。loaded 标记是否等到加载完成。"""
     try:
-        res = await daemon.navigate(url)
+        res = await daemon.navigate(url, tab=tab)
         loaded = True
         if wait:
             # 先给导航一点提交时间，避免 readyState 读到上一页残留的 complete
             # （stale-complete 竞态）。150ms 远小于旧的硬编码 3s。
             await asyncio.sleep(0.15)
-            loaded = (await wait_for_load(daemon, timeout)).get("ok", False)
+            loaded = (await wait_for_load(daemon, timeout, tab=tab)).get("ok", False)
         # 有该站点的笔记就顺手带上——指望 agent 自己去 ls domain-skills 是不现实的
         return site_notes.attach({"ok": True, "result": res, "loaded": loaded}, url)
     except Exception as e:
@@ -341,24 +342,24 @@ async def navigate(daemon, url: str, wait: bool = True, timeout: float = 15.0) -
 # Page
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def page_info(daemon) -> dict[str, Any]:
-    """page_info() → {title, url}"""
-    return await daemon.get_page_info()
+async def page_info(daemon, tab: int | None = None) -> dict[str, Any]:
+    """page_info() → {title, url}。`tab` 不传打当前活动标签。"""
+    return await daemon.get_page_info(tab=tab)
 
 
-async def page_html(daemon) -> dict[str, Any]:
-    """page_html() → 完整 HTML"""
+async def page_html(daemon, tab: int | None = None) -> dict[str, Any]:
+    """page_html() → 完整 HTML。`tab` 不传打当前活动标签。"""
     try:
-        r = await daemon.evaluate("document.documentElement.outerHTML")
+        r = await daemon.evaluate("document.documentElement.outerHTML", tab=tab)
         return {"ok": True, "html": r.get("result", {}).get("value", "")}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
-async def page_text(daemon) -> dict[str, Any]:
-    """page_text() → 可见文本"""
+async def page_text(daemon, tab: int | None = None) -> dict[str, Any]:
+    """page_text() → 可见文本。`tab` 不传打当前活动标签。"""
     try:
-        r = await daemon.evaluate("document.body.innerText")
+        r = await daemon.evaluate("document.body.innerText", tab=tab)
         return {"ok": True, "text": r.get("result", {}).get("value", "")}
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -368,11 +369,65 @@ async def page_text(daemon) -> dict[str, Any]:
 # Screenshot
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def capture_screenshot(daemon, format: str = "png", quality: int = 80) -> dict[str, Any]:
-    """capture_screenshot() → base64 PNG"""
+def _png_size(b64: str) -> list[int] | None:
+    """从 base64 PNG 的 IHDR 里读真实像素尺寸（宽高各 4 字节大端，偏移 16/20）。
+
+    不是算出来的、是从产物里读出来的 —— clip 有没有真的生效只有这里说了算。
+    """
     try:
-        data = await daemon.screenshot(format=format, quality=quality)
-        return {"ok": True, "data": data, "format": format}
+        head = base64.b64decode(b64[:64] + "==")        # 前 48 字节足够覆盖 IHDR
+        if head[:8] != b"\x89PNG\r\n\x1a\n":
+            return None
+        return [int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big")]
+    except Exception:
+        return None
+
+
+async def capture_screenshot(daemon, format: str = "png", quality: int = 80,
+                             scale: str = "css", tab: int | None = None) -> dict[str, Any]:
+    """capture_screenshot() → base64 图 + 尺寸元信息。
+
+    `scale="css"`（默认）出图的像素尺寸 == CSS 视口尺寸，**坐标可直接喂 click_at_xy**。
+    系统缩放 125% 时裸 Page.captureScreenshot 给的是 1.25× 物理像素，而 click_at_xy
+    走 Input.dispatchMouseEvent 吃的是 CSS 像素 —— 照着图读坐标必点偏，且偏得很隐蔽
+    （点到别的元素上，不报错）。这里用 clip.scale 让 Chrome 直接按 CSS 尺寸渲染，
+    不动页面布局。
+
+    `scale="device"` 保留物理像素（旧行为），需要按 dpr 自行换算。
+    dpr / css_size / png_size 一律回传，方便出问题时定位。
+    """
+    if scale not in ("css", "device"):
+        return {"ok": False, "error": f"scale must be 'css' or 'device', got {scale!r}"}
+    try:
+        m = await js(daemon, "({d: devicePixelRatio, w: innerWidth, h: innerHeight})", tab=tab)
+        vp = m.get("result") or {} if m.get("ok") else {}
+        dpr = float(vp.get("d") or 1) or 1.0
+        css_w, css_h = int(vp.get("w") or 0), int(vp.get("h") or 0)
+
+        # 视口 0×0 = 标签没在渲染（后台标签 / 窗口最小化）。此时 Page.captureScreenshot
+        # 不会报错，而是**一直挂到超时**——先在这拦下并说清原因，别让调用方对着
+        # "CDP timed out" 猜。
+        if not (css_w and css_h):
+            return {"ok": False, "kind": "not_rendered",
+                    "error": "viewport is 0x0 — 标签未在渲染（后台标签或窗口最小化），"
+                             "截图会超时。先 switch_tab / Page.bringToFront 让它可见。"}
+
+        # clip.scale 是**叠加在 deviceScaleFactor 之上**的倍率，不是绝对目标尺寸：
+        # scale=1 出来的仍是 css*dpr 物理像素。要拿 CSS 尺寸必须传 1/dpr。
+        # （dpr==1 时 1/dpr==1，clip 是无操作，省下来别下发——少一个出错面。）
+        clip = None
+        if scale == "css" and dpr != 1:
+            clip = {"x": 0, "y": 0, "width": css_w, "height": css_h, "scale": 1 / dpr}
+
+        data = await daemon.screenshot(format=format, quality=quality, clip=clip, tab=tab)
+        out: dict[str, Any] = {"ok": True, "data": data, "format": format,
+                               "scale": scale, "dpr": dpr}
+        if css_w and css_h:
+            out["css_size"] = [css_w, css_h]
+        px = _png_size(data) if format == "png" else None
+        if px:
+            out["png_size"] = px
+        return out
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -381,15 +436,16 @@ async def capture_screenshot(daemon, format: str = "png", quality: int = 80) -> 
 # JavaScript (Runtime.evaluate via CDP)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def js(daemon, code: str, _wrapped: bool = False) -> dict[str, Any]:
-    """js("document.title") — 在当前页面执行 JS，返回完成值。
+async def js(daemon, code: str, _wrapped: bool = False,
+             tab: int | None = None) -> dict[str, Any]:
+    """js("document.title") — 在页面执行 JS，返回完成值。`tab` 不传打当前活动标签。
     先按裸表达式/脚本 eval（`document.title` 直接返回标题）；顶层 `return` 触发
     "Illegal return statement" 时自动包进函数重试（`return x` 也能用）。
     不可 JSON 序列化的值（Infinity/NaN/-0/BigInt）解码回 Python 值，不再吐原始 dict。
     页内异常 / eval 出错 → ok:false，不伪造成功。"""
     try:
         expr = _wrap_js_function(code) if _wrapped else code
-        r = await daemon.evaluate(expr)
+        r = await daemon.evaluate(expr, tab=tab)
         det = r.get("exceptionDetails")
         res = r.get("result", {})
         if det:
@@ -464,10 +520,10 @@ async def click_at_xy(daemon, x: float, y: float, tab: int | None = None) -> dic
         return {"ok": False, "error": str(e)}
 
 
-async def type_text(daemon, text: str) -> dict[str, Any]:
-    """type_text("hello") — CDP Input.insertText"""
+async def type_text(daemon, text: str, tab: int | None = None) -> dict[str, Any]:
+    """type_text("hello") — CDP Input.insertText。`tab` 不传打当前活动标签。"""
     try:
-        return {"ok": True, "result": await daemon.type_text(text)}
+        return {"ok": True, "result": await daemon.type_text(text, tab=tab)}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -528,8 +584,10 @@ _KEYS = {  # key → (windowsVirtualKeyCode, code, text)
 }
 
 
-async def press_key(daemon, key: str, modifiers: int = 0) -> dict[str, Any]:
+async def press_key(daemon, key: str, modifiers: int = 0,
+                    tab: int | None = None) -> dict[str, Any]:
     """press_key("Enter") / press_key("a") — 修饰键位: Alt=1 Ctrl=2 Meta=4 Shift=8。
+    `tab` 不传打当前活动标签。
     特殊键（Enter/Tab/Arrow*/Backspace…）带 virtual key code，监听 e.keyCode/e.which/e.key
     的页面（表单、老站）都能触发；单字符可打印键补发 char 事件（直接进 input，不走 insertText）；
     Alt/Ctrl/Meta 修饰时不发 char（让 Ctrl+A 走快捷键而非打出字符 'a'）。
@@ -546,11 +604,11 @@ async def press_key(daemon, key: str, modifiers: int = 0) -> dict[str, Any]:
         kd = dict(base)
         if text and not printable:
             kd["text"] = text
-        await daemon.bridge.send("Input.dispatchKeyEvent", {"type": "keyDown", **kd})
+        await daemon.bridge.send("Input.dispatchKeyEvent", {"type": "keyDown", **kd}, tab=tab)
         if printable:
             await daemon.bridge.send("Input.dispatchKeyEvent",
-                                     {"type": "char", "text": text, **base})
-        await daemon.bridge.send("Input.dispatchKeyEvent", {"type": "keyUp", **base})
+                                     {"type": "char", "text": text, **base}, tab=tab)
+        await daemon.bridge.send("Input.dispatchKeyEvent", {"type": "keyUp", **base}, tab=tab)
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -675,13 +733,15 @@ async def scroll_to(daemon, x: float = 0, y: float = 0) -> dict[str, Any]:
 # Wait
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def wait_for_load(daemon, timeout: float = 15.0) -> dict[str, Any]:
-    """wait_for_load(15) — poll document.readyState (无 listener 泄漏)。"""
+async def wait_for_load(daemon, timeout: float = 15.0,
+                        tab: int | None = None) -> dict[str, Any]:
+    """wait_for_load(15) — poll document.readyState (无 listener 泄漏)。
+    `tab` 不传等当前活动标签。"""
     import time
     try:
         deadline = time.time() + timeout
         while time.time() < deadline:
-            r = await js(daemon, "document.readyState")
+            r = await js(daemon, "document.readyState", tab=tab)
             if r.get("result") == "complete":
                 return {"ok": True}
             await asyncio.sleep(0.3)
@@ -1029,8 +1089,10 @@ def _refs_text_js(sel: str, max_items: int) -> str:
             % (json.dumps(sel), max_items))
 
 
-async def refs(daemon, selector: str | None = None, max_items: int = 50) -> dict[str, Any]:
+async def refs(daemon, selector: str | None = None, max_items: int = 50,
+               tab: int | None = None) -> dict[str, Any]:
     """refs() → [{ref, tag, text}] — 可交互元素 + 稳定句柄（CDP backendNodeId）。
+    `tab` 不传取当前活动标签。
 
     借鉴 ego-lite 的 @N ref：ref 是 backendNodeId，DOM 小变化后仍指向同一元素
     （跨轮次稳定）；页面导航/大改后失效 → click_ref 报 kind:transient，重新 refs()。
@@ -1043,16 +1105,16 @@ async def refs(daemon, selector: str | None = None, max_items: int = 50) -> dict
     """
     try:
         sel = selector or _REFS_SELECTOR
-        await daemon.bridge.send("DOM.enable", {})
-        r = await daemon.bridge.send("DOM.getDocument", {})
+        await daemon.bridge.send("DOM.enable", {}, tab=tab)
+        r = await daemon.bridge.send("DOM.getDocument", {}, tab=tab)
         r2 = await daemon.bridge.send(
             "DOM.querySelectorAll",
-            {"nodeId": ((r or {}).get("root") or {}).get("nodeId"), "selector": sel})
+            {"nodeId": ((r or {}).get("root") or {}).get("nodeId"), "selector": sel}, tab=tab)
         nids = ((r2 or {}).get("nodeIds") or [])[:max_items]
         described, texts_r = await asyncio.gather(
-            asyncio.gather(*(daemon.bridge.send("DOM.describeNode", {"nodeId": n})
+            asyncio.gather(*(daemon.bridge.send("DOM.describeNode", {"nodeId": n}, tab=tab)
                              for n in nids)),
-            daemon.evaluate(_refs_text_js(sel, max_items)),
+            daemon.evaluate(_refs_text_js(sel, max_items), tab=tab),
         )
         texts = ((texts_r or {}).get("result") or {}).get("value")
         # 两次查询之间 DOM 可能变了；条数对不上就宁可不给文本，也不给错位的文本
