@@ -17,7 +17,7 @@ class FakeDaemon:
         self._resp = resp
         self.exprs = []
 
-    async def evaluate(self, expr):
+    async def evaluate(self, expr, tab=None):
         self.exprs.append(expr)
         return self._resp(expr) if callable(self._resp) else self._resp
 

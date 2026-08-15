@@ -13,7 +13,7 @@ class FakeBridge:
     def __init__(self):
         self.events = []                       # 每个 dispatchKeyEvent 的 params
 
-    async def send(self, method, params=None):
+    async def send(self, method, params=None, tab=None):
         assert method == "Input.dispatchKeyEvent", method
         self.events.append(params)
         return {}
