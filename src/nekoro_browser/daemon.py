@@ -8,6 +8,7 @@ import json
 import logging
 from typing import Any
 
+from . import allowlist
 from . import auth
 from . import config
 from . import lifecycle
@@ -51,8 +52,12 @@ EVENT_BUFFER_MAX = 2000  # CDP 事件缓冲上限；满了丢最旧，防没人 
 
 
 class Daemon:
-    def __init__(self, port=None):
+    def __init__(self, port=None, allow_domains=None):
         self.bridge = ExtensionBridge(config.daemon_port(port))
+        # None = 未配置 = 不限制（fail-open，见 allowlist.py 的取舍说明）。
+        # 闸门放在 daemon 侧而不是 CLI 侧：CLI 只是客户端之一，MCP server 走的是
+        # 同一个 daemon，拦在这里两个入口才都受管。
+        self.allow_domains: list[str] | None = allow_domains or allowlist.from_env()
         self._tab_id = None
         self._event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=EVENT_BUFFER_MAX)
         self._site_errors: list[str] = []
