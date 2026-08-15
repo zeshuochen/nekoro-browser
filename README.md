@@ -32,12 +32,14 @@ Let your AI coding tool drive <b>your own Chrome</b> — open pages, click, read
 
 ---
 
+**nekoro-browser drives the Chrome you already use — logins, cookies, sessions, all intact.**
+
+Other automation tools spawn a *fresh* browser: no logins, nothing works. nekoro-browser
+just adds a small extension: same profile, no second instance, no "controlled by automated
+software" banner.
+
 > [!NOTE]
-> **nekoro-browser drives the Chrome you already use — logins, cookies, sessions, all intact.**
-> Other automation tools spawn a *fresh* browser: no logins, nothing works. nekoro-browser
-> just adds a small extension: same profile, no second instance, no "controlled by automated
-> software" banner. Install is one `uv tool install` — Python stdlib only, no bundled engine,
-> no 200MB download.
+> Install is one `uv tool install` — Python stdlib only, no bundled engine, no 200MB download.
 
 Every helper is reflected into an MCP tool (53 of them), so Claude Code, Cursor, Cline,
 opencode, Codex and VS Code/Copilot can drive the browser directly. Bring any model — no
@@ -75,6 +77,7 @@ No [uv](https://docs.astral.sh/uv/)? `pipx install nekoro-browser` works too.
 
 <sub>From source: <code>git clone https://github.com/zeshuochen/nekoro-browser && cd nekoro-browser && uv pip install -e .</code></sub>
 
+> [!WARNING]
 > **Upgrading?** `uv tool upgrade nekoro-browser` only updates the Python side — reload
 > the extension afterwards: `nekoro-browser --reload-ext` (or **Reload** on the card in
 > `chrome://extensions`).
@@ -351,7 +354,11 @@ tab is never a candidate.
 | Platform | Status |
 |----------|--------|
 | Windows | Primary development platform, exercised end to end |
-| Linux / macOS | The code has the branches (`~/.config` and `~/Library/Application Support` data dirs, `chmod 600` token, `/proc` and `ps` liveness probes) and CI runs the unit tests on all three, **but the full "Chrome + extension" loop has never been run on a real macOS/Linux box** — reports welcome |
+| Linux / macOS | Platform branches + CI, **full Chrome loop untested** — reports welcome |
+
+<sub>Linux/macOS have the platform branches (`~/.config` / `~/Library/Application Support`
+data dirs, `chmod 600` token, `/proc` + `ps` liveness probes) and CI runs unit tests on all
+three — but the full "Chrome + extension" loop has never run on a real macOS/Linux box.</sub>
 
 ## Known Limitations
 

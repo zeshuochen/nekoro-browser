@@ -32,10 +32,12 @@
 
 ---
 
+**nekoro-browser 驱动你日常用的那个 Chrome——登录态、cookie、会话，原样保留。**
+
+别的自动化工具开的是*全新*浏览器：没有登录态，什么都干不了。nekoro-browser
+只是加一个小扩展：同一个 profile，不另开实例，也不会弹「正受到自动测试软件控制」横幅。
+
 > [!NOTE]
-> **nekoro-browser 驱动你日常用的那个 Chrome——登录态、cookie、会话，原样保留。**
-> 别的自动化工具开的是*全新*浏览器：没有登录态，什么都干不了。nekoro-browser
-> 只是加一个小扩展：同一个 profile，不另开实例，也不会弹「正受到自动测试软件控制」。
 > 安装就一句 `uv tool install`——纯 Python 标准库，不捆绑浏览器引擎，不下 200MB。
 
 每个 helper 自动反射成 MCP 工具（53 个），Claude Code、Cursor、Cline、opencode、Codex、
@@ -72,6 +74,7 @@ uv tool install nekoro-browser
 
 <sub>从源码装：<code>git clone https://github.com/zeshuochen/nekoro-browser && cd nekoro-browser && uv pip install -e .</code></sub>
 
+> [!WARNING]
 > **升级之后记得重载扩展。** `uv tool upgrade nekoro-browser` 只更新 Python 侧——
 > 之后手动重载扩展：`nekoro-browser --reload-ext`（或 `chrome://extensions` 卡片上点**重新加载**）。
 
@@ -333,7 +336,11 @@ Agent 遇到缺口时当场补、当场用——不重新编译，不重启 daem
 | 平台 | 状态 |
 |------|------|
 | Windows | 主力开发平台，全链路实测 |
-| Linux / macOS | 代码有对应分支（`~/.config` 与 `~/Library/Application Support` 数据目录、`chmod 600` 令牌、`/proc` 与 `ps` 存活探测），单测在 CI 上跑三平台；**但没有在真机上跑过「Chrome + 扩展」的完整链路**，欢迎反馈 |
+| Linux / macOS | 有平台分支 + CI，**完整 Chrome 链路未实测** —— 欢迎反馈 |
+
+<sub>Linux/macOS 有对应分支（`~/.config` 与 `~/Library/Application Support` 数据目录、
+`chmod 600` 令牌、`/proc` 与 `ps` 存活探测），单测在 CI 上跑三平台；但「Chrome + 扩展」
+的完整链路从未在真机 macOS/Linux 上跑过。</sub>
 
 ## 已知限制
 
