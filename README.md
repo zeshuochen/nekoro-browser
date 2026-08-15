@@ -250,7 +250,7 @@ Beyond the tool list:
 | Dialogs | `dialog_off()`, `get_last_dialog()` |
 | Waiting | `wait_for_load()`, `wait_selector(sel)`, `wait_for_network_idle()`, `sleep(s)` |
 | Downloads | `wait_for_download()` |
-| Screenshots | `capture_screenshot()`, `capture_screenshot("jpeg", 90)` |
+| Screenshots | `capture_screenshot()` (CSS-size, default), `capture_screenshot(scale="device")` (physical pixels), `capture_screenshot("jpeg", 90)` |
 
 ---
 
@@ -370,6 +370,7 @@ tab is never a candidate.
 | `nekoro-browser --port N` | Run the daemon on port N (default 28417) |
 | `nekoro-browser -c "code"` | Run one snippet, print the result |
 | `nekoro-browser --timeout N` | Seconds to allow a snippet (default 120 — page loads are slow) |
+| `nekoro-browser --allow-domains "jd.com,*.taobao.com"` | Only allow the daemon to touch these domains (comma-separated). Unset = unrestricted. See Security below |
 | `echo "code" \| nekoro-browser` | Pipe mode (daemon must already be running) |
 
 ### Configuration
@@ -389,6 +390,9 @@ The data dir holding token / pid / port is `%LOCALAPPDATA%\nekoro-browser` on Wi
 `~/Library/Application Support/nekoro-browser` on macOS, `$XDG_CONFIG_HOME/nekoro-browser`
 or `~/.config/nekoro-browser` elsewhere. `NEKORO_DATA_DIR` overrides it on any platform.
 
+The same `--allow-domains` limit can be set via `NEKORO_ALLOW_DOMAINS` (comma-separated,
+same syntax). See **Security** below.
+
 ### Troubleshooting
 
 | Symptom | Cause | Fix |
@@ -407,6 +411,8 @@ The daemon listens on `127.0.0.1` and `/exec` runs arbitrary Python, so the tran
 - **Extension → daemon** (`/ws`): the handshake `Origin` must be `chrome-extension://…`; a web page's `WebSocket` to localhost carries its own origin and is rejected.
 
 Same-user local processes can read the token file — that boundary matches the OS user account, as with browser-harness's `chmod 600`.
+
+- **Optional domain allowlist**: `--allow-domains "jd.com,*.taobao.com"` (or `NEKORO_ALLOW_DOMAINS`) gates `navigate` / `new_tab` to the listed hosts — anything else is refused before the URL reaches CDP. `example.com` matches exactly; `*.example.com` covers subdomains and the bare domain; `*` allows everything. Unset = unrestricted (fail-open): this tool drives your personal Chrome, so the default stays permissive — the allowlist is opt-in.
 
 </details>
 

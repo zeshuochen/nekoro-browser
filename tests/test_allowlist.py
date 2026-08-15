@@ -65,7 +65,12 @@ def test_check_shape():
     assert "evil.com" in r["error"] and "jd.com" in r["error"]   # 说清拦了谁、允许谁
 
 
-async def test_navigate_gate():
+def test_navigate_gate():
+    # pytest 收集的 test_* 保持同步（项目无 pytest-asyncio），async 逻辑拆进 core。
+    asyncio.run(_navigate_gate_core())
+
+
+async def _navigate_gate_core():
     # 配了白名单：站外域被拦，且**没有真的下发导航**
     d = FakeDaemon(["jd.com"])
     r = await helpers.navigate(d, "https://evil.com/x")
@@ -88,7 +93,7 @@ async def run():
     test_parse()
     test_matching()
     test_check_shape()
-    await test_navigate_gate()
+    await _navigate_gate_core()
     print("ALL OK")
 
 
