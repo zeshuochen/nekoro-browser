@@ -15,7 +15,7 @@ Let your AI coding tool drive <b>your own Chrome</b> — open pages, click, read
 </p>
 
 <p align="center">
-  <a href="https://github.com/zeshuochen/nekoro-browser/blob/master/README.zh-CN.md"><img src="https://img.shields.io/badge/中文-简体中文-2B7CD3?style=flat-square" alt="中文"></a>
+  <a href="https://github.com/zeshuochen/nekoro-browser/blob/master/README.zh-CN.md"><img src="https://img.shields.io/badge/中文-2B7CD3?style=flat-square" alt="中文"></a>
 </p>
 
 <p align="center">

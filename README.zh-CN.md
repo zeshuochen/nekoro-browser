@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/zeshuochen/nekoro-browser/blob/master/README.md"><img src="https://img.shields.io/badge/English-English-2B7CD3?style=flat-square" alt="English"></a>
+  <a href="https://github.com/zeshuochen/nekoro-browser/blob/master/README.md"><img src="https://img.shields.io/badge/English-2B7CD3?style=flat-square" alt="English"></a>
 </p>
 
 <p align="center">
