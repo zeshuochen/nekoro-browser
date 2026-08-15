@@ -19,9 +19,9 @@
 </p>
 
 <p align="center">
-  <a href="#横向对比">横向对比</a> ·
   <a href="#快速开始">快速开始</a> ·
   <a href="#示例">示例</a> ·
+  <a href="#横向对比">横向对比</a> ·
   <a href="#mcp任何-mcp-客户端">MCP</a> ·
   <a href="#api">API</a> ·
   <a href="#架构">架构</a> ·
@@ -38,20 +38,6 @@
 
 每个 helper 自动反射成 MCP 工具（53 个），Claude Code、Cursor、Cline、opencode、Codex、
 VS Code/Copilot 直接就能开浏览器。模型随便换，无订阅、无厂商锁定。MIT，扩展源码在仓库里。
-
-## 横向对比
-
-| | CDP WebSocket | playwright-cli | opencli | **nekoro-browser** |
-|------|:--:|:--:|:--:|:--:|
-| 原理 | `--remote-debugging-port` | Playwright 扩展 | OpenCLI 扩展 | 自建扩展 + 持久 WebSocket |
-| 安装 | 一行参数 | `npm i -g`（~200MB） | npm / 桌面应用 | `uv tool install`（纯标准库，零依赖） |
-| 登录态 | ❌ 独立实例 | ✅ | ✅ | ✅ |
-| 可修改扩展 | — | 需改 Playwright 源码 | 需改 OpenCLI 源码 | ✅ 扩展就在仓库里 |
-| 自愈 | ❌ | ❌ | ❌ | ✅ Agent 运行时编辑 helpers |
-| MCP | ❌ | ✅（另装 `@playwright/mcp`） | ❌ | ✅ 内置 53 个工具，`nekoro-browser-mcp` |
-| 站点知识 | ❌ | ❌ | ❌ | ✅ 你写的笔记和脚本**在导航时主动送到 agent 手里** |
-
-<sub>第三行为什么是 ❌：Chrome 136 起 <code>--remote-debugging-port</code> 不再接受默认 profile，裸 CDP 只能连一个没有你登录态的干净实例；扩展的 <code>chrome.debugger</code> 不受此限。</sub>
 
 ## 快速开始
 
@@ -168,6 +154,22 @@ PY
 ```
 
 全部 helper 见 [SKILL.md](https://github.com/zeshuochen/nekoro-browser/blob/master/SKILL.md)。
+
+---
+
+## 横向对比
+
+| | CDP WebSocket | playwright-cli | opencli | **nekoro-browser** |
+|------|:--:|:--:|:--:|:--:|
+| 原理 | `--remote-debugging-port` | Playwright 扩展 | OpenCLI 扩展 | 自建扩展 + 持久 WebSocket |
+| 安装 | 一行参数 | `npm i -g`（~200MB） | npm / 桌面应用 | `uv tool install`（纯标准库，零依赖） |
+| 登录态 | ❌ 独立实例 | ✅ | ✅ | ✅ |
+| 可修改扩展 | — | 需改 Playwright 源码 | 需改 OpenCLI 源码 | ✅ 扩展就在仓库里 |
+| 自愈 | ❌ | ❌ | ❌ | ✅ Agent 运行时编辑 helpers |
+| MCP | ❌ | ✅（另装 `@playwright/mcp`） | ❌ | ✅ 内置 53 个工具，`nekoro-browser-mcp` |
+| 站点知识 | ❌ | ❌ | ❌ | ✅ 你写的笔记和脚本**在导航时主动送到 agent 手里** |
+
+<sub>第三行为什么是 ❌：Chrome 136 起 <code>--remote-debugging-port</code> 不再接受默认 profile，裸 CDP 只能连一个没有你登录态的干净实例；扩展的 <code>chrome.debugger</code> 不受此限。</sub>
 
 ---
 
