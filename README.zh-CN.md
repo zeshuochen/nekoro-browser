@@ -32,9 +32,11 @@
 
 ---
 
-干活的是一个小扩展，所以浏览器什么都不用变：同一个 profile、同一批登录态，不另开实例，
-也不会弹「正受到自动测试软件控制」。安装就一句 `uv tool install`——纯 Python 标准库，
-不捆绑浏览器引擎，不下 200MB。
+> **nekoro-browser：让 AI 直接开你日常的 Chrome，登录态原样保留。**
+> 别的自动化工具开的是*全新*浏览器：没有登录态、没有 cookie，什么都干不了。
+> nekoro-browser 用一个小扩展驱动**你自己的 Chrome**——同一个 profile、同一批登录态，
+> 不另开实例，也不会弹「正受到自动测试软件控制」。安装就一句 `uv tool install`：
+> 纯 Python 标准库，不捆绑浏览器引擎，不下 200MB。
 
 每个 helper 自动反射成 MCP 工具（53 个），Claude Code、Cursor、Cline、opencode、Codex、
 VS Code/Copilot 直接就能开浏览器。模型随便换，无订阅、无厂商锁定。MIT，扩展源码在仓库里。
