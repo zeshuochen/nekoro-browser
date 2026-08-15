@@ -180,9 +180,8 @@ PY
 
 ## MCP（任何 MCP 客户端）
 
-MCP 是 Claude Code、Cursor 这类工具调用外部能力的协议。`helpers.py` 里的函数会被自动反射
-成 MCP 工具（当前 53 个），不用写一行胶水代码——模型直接拿到 `navigate`、`click_index`、
-`get_markdown` 这些一等公民工具。
+MCP 是 Claude Code、Cursor 这类工具调用外部能力的协议。配好一次后，
+模型直接拿到 `navigate`、`click_index`、`get_markdown` 这些一等公民工具。
 
 **前提**：daemon 跑着（`nekoro-browser`，单独一个终端）——MCP server 只是转发层，
 真正握着 Chrome 连接的是 daemon。

@@ -187,9 +187,8 @@ All helpers are documented in [SKILL.md](https://github.com/zeshuochen/nekoro-br
 
 ## MCP (any MCP client)
 
-MCP is how Claude Code, Cursor and friends call outside tools. Every function in `helpers.py`
-is reflected into one (53 today) — no glue code, so the model gets `navigate`, `click_index`,
-`get_markdown`… as first-class tools.
+MCP is how Claude Code, Cursor and friends call outside tools. Hook it up once and the
+model gets `navigate`, `click_index`, `get_markdown`… as first-class tools.
 
 **Prerequisite:** the daemon is running (`nekoro-browser`, its own terminal) — the MCP server
 is a thin forwarder, the daemon owns the Chrome connection.
