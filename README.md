@@ -15,7 +15,7 @@ Let your AI coding tool drive <b>your own Chrome</b> — open pages, click, read
 </p>
 
 <p align="center">
-  <a href="https://github.com/zeshuochen/nekoro-browser/blob/master/README.zh-CN.md"><img src="https://img.shields.io/badge/中文-2B7CD3?style=flat-square" alt="中文"></a>
+  <a href="https://github.com/zeshuochen/nekoro-browser/blob/master/README.zh-CN.md"><img src="https://img.shields.io/badge/中文-2B7CD3?style=for-the-badge" alt="中文"></a>
 </p>
 
 <p align="center">
@@ -44,13 +44,13 @@ subscription, no lock-in. MIT, extension source included.
 
 | | CDP WebSocket | playwright-cli | opencli | **nekoro-browser** |
 |------|:--:|:--:|:--:|:--:|
-| Approach | `--remote-debugging-port` | Playwright extension | OpenCLI extension | Custom extension + persistent WebSocket |
-| Install | one flag | `npm i -g` (~200MB) | npm / desktop app | `uv tool install` (stdlib only, zero deps) |
+| Approach | `--remote-debugging-port` | Playwright ext. | OpenCLI ext. | Custom ext. + WS |
+| Install | one flag | `npm i -g` (~200MB) | npm / desktop | `uv tool install` (stdlib only) |
 | Login state | ❌ fresh instance | ✅ | ✅ | ✅ |
-| Modify the extension | — | Edit Playwright source | Edit OpenCLI source | ✅ right in this repo |
-| Self-healing | ❌ | ❌ | ❌ | ✅ Agent edits helpers at runtime |
-| MCP | ❌ | ✅ (separate `@playwright/mcp`) | ❌ | ✅ built in, 53 tools via `nekoro-browser-mcp` |
-| Site knowledge | ❌ | ❌ | ❌ | ✅ your notes and scripts are **handed to the agent on navigate** |
+| Modify ext. | — | edit source | edit source | ✅ this repo |
+| Self-healing | ❌ | ❌ | ❌ | ✅ agent edits at runtime |
+| MCP | ❌ | ✅ separate pkg | ❌ | ✅ built-in, 53 tools |
+| Site knowledge | ❌ | ❌ | ❌ | ✅ notes auto-attached |
 
 <sub>Why row 3 is ❌: since Chrome 136, <code>--remote-debugging-port</code> refuses the default profile — a raw CDP connection means a fresh instance with none of your logins. An extension's <code>chrome.debugger</code> is exempt.</sub>
 
@@ -253,7 +253,12 @@ Beyond the tool list:
 | Dialogs | `dialog_off()`, `get_last_dialog()` |
 | Waiting | `wait_for_load()`, `wait_selector(sel)`, `wait_for_network_idle()`, `sleep(s)` |
 | Downloads | `wait_for_download()` |
-| Screenshots | `capture_screenshot()` (CSS-size by default), `capture_screenshot(scale="device")`, `capture_screenshot("jpeg", 90)` |
+| Screenshots | `capture_screenshot()`, `capture_screenshot(scale="device")`, `capture_screenshot("jpeg", 90)` |
+
+<sub>All page-level helpers take an optional <code>tab=</code> (default: the active tab).
+<code>capture_screenshot</code> defaults to <code>scale="css"</code> — pixel size equals the CSS
+viewport, so coordinates can be fed straight to <code>click_at_xy</code>; <code>scale="device"</code>
+keeps physical pixels.</sub>
 
 ---
 
