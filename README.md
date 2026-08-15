@@ -32,11 +32,12 @@ Let your AI coding tool drive <b>your own Chrome</b> — open pages, click, read
 
 ---
 
-> **nekoro-browser: AI drives your everyday Chrome, logins intact.**
-> Other automation tools spawn a *fresh* browser: no logins, no cookies, nothing works.
-> nekoro-browser drives **your own Chrome** via a small extension — same profile, same logins,
-> no second instance, no "controlled by automated software" banner. Install is one
-> `uv tool install`: Python stdlib only, no bundled engine, no 200MB download.
+> [!NOTE]
+> **nekoro-browser drives the Chrome you already use — logins, cookies, sessions, all intact.**
+> Other automation tools spawn a *fresh* browser: no logins, nothing works. nekoro-browser
+> just adds a small extension: same profile, no second instance, no "controlled by automated
+> software" banner. Install is one `uv tool install` — Python stdlib only, no bundled engine,
+> no 200MB download.
 
 Every helper is reflected into an MCP tool (53 of them), so Claude Code, Cursor, Cline,
 opencode, Codex and VS Code/Copilot can drive the browser directly. Bring any model — no
