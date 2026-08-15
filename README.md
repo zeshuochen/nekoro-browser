@@ -19,9 +19,9 @@ Let your AI coding tool drive <b>your own Chrome</b> — open pages, click, read
 </p>
 
 <p align="center">
-  <a href="#how-it-compares">Compare</a> ·
   <a href="#quick-start">Quick Start</a> ·
   <a href="#examples">Examples</a> ·
+  <a href="#how-it-compares">Compare</a> ·
   <a href="#mcp-any-mcp-client">MCP</a> ·
   <a href="#api">API</a> ·
   <a href="#architecture">Architecture</a> ·
@@ -39,20 +39,6 @@ one `uv tool install` — Python stdlib only, no bundled engine, no 200MB downlo
 Every helper is reflected into an MCP tool (53 of them), so Claude Code, Cursor, Cline,
 opencode, Codex and VS Code/Copilot can drive the browser directly. Bring any model — no
 subscription, no lock-in. MIT, extension source included.
-
-## How It Compares
-
-| | CDP WebSocket | playwright-cli | opencli | **nekoro-browser** |
-|------|:--:|:--:|:--:|:--:|
-| Approach | `--remote-debugging-port` | Playwright ext. | OpenCLI ext. | Custom ext. + WS |
-| Install | one flag | `npm i -g` (~200MB) | npm / desktop | `uv tool install` (stdlib only) |
-| Login state | ❌ fresh instance | ✅ | ✅ | ✅ |
-| Modify ext. | — | edit source | edit source | ✅ this repo |
-| Self-healing | ❌ | ❌ | ❌ | ✅ agent edits at runtime |
-| MCP | ❌ | ✅ separate pkg | ❌ | ✅ built-in, 53 tools |
-| Site knowledge | ❌ | ❌ | ❌ | ✅ notes auto-attached |
-
-<sub>Why row 3 is ❌: since Chrome 136, <code>--remote-debugging-port</code> refuses the default profile — a raw CDP connection means a fresh instance with none of your logins. An extension's <code>chrome.debugger</code> is exempt.</sub>
 
 ## Quick Start
 
@@ -174,6 +160,22 @@ PY
 ```
 
 All helpers are documented in [SKILL.md](https://github.com/zeshuochen/nekoro-browser/blob/master/SKILL.md).
+
+---
+
+## How It Compares
+
+| | CDP WebSocket | playwright-cli | opencli | **nekoro-browser** |
+|------|:--:|:--:|:--:|:--:|
+| Approach | `--remote-debugging-port` | Playwright ext. | OpenCLI ext. | Custom ext. + WS |
+| Install | one flag | `npm i -g` (~200MB) | npm / desktop | `uv tool install` (stdlib only) |
+| Login state | ❌ fresh instance | ✅ | ✅ | ✅ |
+| Modify ext. | — | edit source | edit source | ✅ this repo |
+| Self-healing | ❌ | ❌ | ❌ | ✅ agent edits at runtime |
+| MCP | ❌ | ✅ separate pkg | ❌ | ✅ built-in, 53 tools |
+| Site knowledge | ❌ | ❌ | ❌ | ✅ notes auto-attached |
+
+<sub>Why row 3 is ❌: since Chrome 136, <code>--remote-debugging-port</code> refuses the default profile — a raw CDP connection means a fresh instance with none of your logins. An extension's <code>chrome.debugger</code> is exempt.</sub>
 
 ---
 
