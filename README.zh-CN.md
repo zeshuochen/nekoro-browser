@@ -11,8 +11,11 @@
 </p>
 
 <p align="center">
-让你的 AI 编程工具直接开你<b>自己的 Chrome</b> —— 打开网页、点击、把内容读回来，登录态照旧。<br>
-<sub><a href="https://github.com/zeshuochen/nekoro-browser/blob/master/README.md">English</a></sub>
+让你的 AI 编程工具直接开你<b>自己的 Chrome</b> —— 打开网页、点击、把内容读回来，登录态照旧。
+</p>
+
+<p align="center">
+  <a href="https://github.com/zeshuochen/nekoro-browser/blob/master/README.md"><img src="https://img.shields.io/badge/English-English-2B7CD3?style=flat-square" alt="English"></a>
 </p>
 
 <p align="center">
