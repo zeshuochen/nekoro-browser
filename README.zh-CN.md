@@ -284,7 +284,7 @@ CLI (nekoro-browser)  ·  MCP server (nekoro-browser-mcp)
 
 </details>
 
-- `helpers.py` —— 54 个 CDP 薄封装，都不认识任何具体网站。
+- `helpers.py` —— 54 个 helpers（53 个暴露成 MCP 工具），都不认识任何具体网站。
 - `lifecycle.py` —— pid 文件 + 进程指纹防误杀、僵尸自愈（CDP 探活失败自动清理重启）、
   localhost 绕过系统代理。
 - 扩展侧针对 MV3 service worker 回收做了硬化 —— `content_scripts` 心跳（页面里的独立

@@ -298,7 +298,7 @@ CLI (nekoro-browser)  ·  MCP server (nekoro-browser-mcp)
 
 </details>
 
-- `helpers.py` — 54 thin wrappers over CDP, none aware of any particular website.
+- `helpers.py` — 54 helpers (53 exposed as MCP tools), none aware of any particular website.
 - `lifecycle.py` — pid file + process fingerprint (never kills a reused pid), stale-daemon
   self-heal (CDP probe fails → cleanup and restart), localhost bypasses the system proxy.
 - Extension, against MV3 service worker eviction — `content_scripts` heartbeat (wake vector
