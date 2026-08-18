@@ -33,6 +33,29 @@ DEFAULT_EXEC_TIMEOUT = 120.0
 _EXEC_TIMEOUT = DEFAULT_EXEC_TIMEOUT
 
 
+def _make_output_encoding_safe():
+    """让输出在非 UTF-8 控制台上也不会把整条命令打断。
+
+    Windows 的控制台代码页默认不是 UTF-8（英文机 cp1252、中文机 cp936），而本 CLI 的
+    输出里有 `→` 和中文。**输出被重定向时** Python 按 locale 编码写，撞上编不了的字符
+    就 UnicodeEncodeError —— 而「用管道抓输出」正是 agent 调这个 CLI 的常规姿势
+    （`nekoro-browser --ensure` 的结果本来就是给程序读的）。本机 ACP=65001 所以永远
+    撞不到，是 CI 的 cp1252 runner 把它照出来的。
+
+    重定向时钉 UTF-8：读的是程序，解得开。真控制台保持原编码（Windows 控制台走
+    WriteConsoleW，本来就显示得了这些字符），只加 errors=replace 兜底。
+    两种情况都宁可字符降级，也不让一条诊断命令死在编码上。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            # getattr 而非直接调：sys.stdout 的静态类型是 TextIO，没有 reconfigure
+            # （那是 TextIOWrapper 的方法）。mcp_server.py 里也是这么绕的。
+            kw = {} if stream.isatty() else {"encoding": "utf-8"}
+            getattr(stream, "reconfigure")(errors="replace", **kw)
+        except (AttributeError, OSError, ValueError):
+            pass      # 测试里换成了 StringIO、或早期 Python：不值得为这个失败
+
+
 def _url() -> str:
     return config.client_url(_EXPLICIT_PORT)
 
@@ -651,6 +674,7 @@ def _ensure(port=None) -> int:
 
 
 def main():
+    _make_output_encoding_safe()
     p = argparse.ArgumentParser(prog="nekoro-browser")
     p.add_argument("command", nargs="?", choices=["setup"], default=None,
                    help="setup：引导式安装（给出扩展目录、打开 chrome://extensions、"

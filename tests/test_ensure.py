@@ -263,7 +263,8 @@ def test_a_busy_own_daemon_gets_the_long_budget_not_the_grace():
     cli.ENSURE_DAEMON_GRACE, cli.ENSURE_DAEMON_WAIT = 4.0, 25.0
     try:
         cli._wait = lambda pred, timeout, interval=0.5, note="": seen.append(timeout) or False
-        cli._ensure_daemon()
+        with contextlib.redirect_stdout(io.StringIO()):
+            cli._ensure_daemon()
         assert seen and seen[0] == 25.0, f"认得出是自家 daemon 就该给足耐心: {seen}"
     finally:
         cli._wait = real_wait
@@ -284,7 +285,8 @@ def test_a_busy_daemon_known_only_from_the_pid_file_still_gets_the_long_budget()
     cli.ENSURE_DAEMON_GRACE, cli.ENSURE_DAEMON_WAIT = 4.0, 25.0
     try:
         cli._wait = lambda pred, timeout, interval=0.5, note="": seen.append(timeout) or False
-        cli._ensure_daemon()
+        with contextlib.redirect_stdout(io.StringIO()):
+            cli._ensure_daemon()
         assert seen and seen[0] == 25.0, f"pid 文件认出自家 daemon 时也要给足耐心: {seen}"
     finally:
         cli._wait = real_wait
@@ -749,8 +751,9 @@ def test_cold_start_gets_the_longer_extension_budget():
         cli._alive = lambda: True
         cli._post = lambda *a, **kw: {"ok": True}
         cli._healthy = lambda timeout=8: False
-        cli._ensure_extension(cold=False)
-        cli._ensure_extension(cold=True)
+        with contextlib.redirect_stdout(io.StringIO()):
+            cli._ensure_extension(cold=False)
+            cli._ensure_extension(cold=True)
         assert 11.0 in seen and 47.0 in seen, seen
     finally:
         cli._wait = real
@@ -780,6 +783,33 @@ def test_port_probe_survives_a_holder_that_never_accepts():
     finally:
         srv.close()
     assert cli._port_in_use(port) is False, "占用者消失后必须说「空着」"
+
+
+def test_output_survives_a_non_utf8_console():
+    """输出被重定向到非 UTF-8 编码的流时不能崩。
+
+    CLI 的提示里有 `→` 和中文。Windows 的控制台代码页默认不是 UTF-8（英文机 cp1252），
+    重定向时 Python 按 locale 编码写 → UnicodeEncodeError 直接打断整条命令。而
+    **用管道抓输出正是 agent 调这个 CLI 的常规姿势**。开发机 ACP=65001 永远撞不到，
+    是 CI 的 cp1252 runner 把它照出来的（cli.py 里有 18 处 `→`，--doctor/setup 同样中招）。
+    """
+    import io as _io
+    real_out, real_err = sys.stdout, sys.stderr
+    buf = _io.BytesIO()
+    wrapper = _io.TextIOWrapper(buf, encoding="cp1252", newline="")
+    try:
+        sys.stdout = sys.stderr = wrapper
+        cli._make_output_encoding_safe()
+        print("       → 多半是它正忙着跑一条长 exec")   # 不加保护这行直接抛
+        wrapper.flush()
+        written = buf.getvalue()          # 必须在 detach 前取：wrapper 关掉会连带关 buf
+    finally:
+        sys.stdout, sys.stderr = real_out, real_err
+        try:
+            wrapper.detach()              # 摘掉底层流，免得 GC 时把 buf 一起关了
+        except ValueError:
+            pass
+    assert b"exec" in written, "内容要真的写出去，不能只是没报错"
 
 
 def test_port_probe_ignores_time_wait_corpses():
@@ -950,7 +980,8 @@ def test_spawn_detached_survives_a_missing_data_dir():
                 _t.sleep(0.1)
             # 同时钉住两件事：目录被建出来了，且子进程**真的落在这个目录里**
             # ——不接管 cwd 的话，daemon 会攥着调用方的目录（Windows 上锁死它）
-            assert Path(got) == want, f"子进程 cwd 应为 {want}，实际 {got!r}"
+            # macOS 的 /var 是 /private/var 的 symlink，两边都 resolve 再比
+            assert Path(got).resolve() == want.resolve(),                 f"子进程 cwd 应为 {want}，实际 {got!r}"
     finally:
         if real_env is None:
             os.environ.pop("NEKORO_DATA_DIR", None)
@@ -994,7 +1025,9 @@ def test_chrome_running_asks_the_os_about_the_right_process():
     import subprocess as sp
     from pathlib import Path
     real_run, real_platform, real_path = sp.run, sys.platform, cli.chrome_path
-    cli.chrome_path = lambda: Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe")
+    # 只能用「在两个平台上 .name 都等于 chrome.exe」的写法：POSIX 上反斜杠不是分隔符，
+    # 传 Windows 全路径的话 .name 会是整条字符串，模式串就跟 tasklist 输出对不上了
+    cli.chrome_path = lambda: Path("chrome.exe")
     calls = []
 
     class _R:
@@ -1160,6 +1193,7 @@ if __name__ == "__main__":
     test_wait_actually_keeps_probing()
     test_cold_start_gets_the_longer_extension_budget()
     test_port_probe_survives_a_holder_that_never_accepts()
+    test_output_survives_a_non_utf8_console()
     test_port_probe_ignores_time_wait_corpses()
     test_probe_sets_reuseaddr_on_posix_and_not_on_windows()
     test_occupied_port_is_not_mistaken_for_a_denied_one()
