@@ -362,7 +362,8 @@ Agent 遇到缺口时当场补、当场用——不重新编译，不重启 daem
 |------|------|
 | `nekoro-browser` | 前台启动 daemon |
 | `nekoro-browser setup` | 引导式安装：复制扩展路径，然后一直等到扩展真的连上 |
-| `nekoro-browser --doctor` | 端到端诊断（daemon + 扩展 + SW 是否都活着） |
+| `nekoro-browser --ensure` | 自愈式就绪检查：Chrome 没开就拉起、daemon 没跑就后台起、扩展没响应就重载 SW。全绿才退 0——跑任务前用这条，别再手动重演那几步。端口已被占着但不应答时它**不会**再起一个，只报出 pid 交给你处置 |
+| `nekoro-browser --doctor` | 端到端诊断（daemon + 扩展 + SW 是否都活着）——只报不修 |
 | `nekoro-browser --stop` | 停止 daemon |
 | `nekoro-browser --restart` | 停止后重启（前台） |
 | `nekoro-browser --reload-ext` | 命扩展重载 service worker，**升级后必须跑一次**；跑批量任务前刷干净状态也用它 |
