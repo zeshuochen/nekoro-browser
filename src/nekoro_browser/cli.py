@@ -4,6 +4,7 @@
     nekoro-browser             启动 daemon（前台）
     echo "code" | nekoro-browser  管道模式（需 daemon 已运行）
     nekoro-browser --doctor    诊断
+    nekoro-browser --ensure    自愈式就绪检查（缺什么起什么）
     nekoro-browser --exec CODE   执行代码
 """
 
@@ -11,6 +12,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import sys
 import time
 import urllib.request
@@ -218,13 +220,446 @@ def _reload_ext() -> int:
     return 1
 
 
+# ── --ensure：自愈式就绪检查 ────────────────────────────────────────────────
+# 等待预算。冷启动（刚拉起 Chrome）要给 service worker 连上来的时间，热路径不必。
+# 模块级常量而非命令行参数：这是内部节奏，不是用户要调的东西（测试会改小它们）。
+ENSURE_CHROME_WAIT = 20.0
+ENSURE_DAEMON_WAIT = 25.0
+ENSURE_DAEMON_GRACE = 4.0        # 存量进程还没开始服务时，判它"僵尸"之前给的宽限
+ENSURE_EXT_WAIT = 10.0
+ENSURE_EXT_WAIT_COLD = 45.0
+ENSURE_RELOAD_WAIT = 20.0
+
+
+def _wait(pred, timeout: float, interval: float = 0.5, note: str = "") -> bool:
+    """轮询 pred 直到为真或超时。至少探一次（timeout=0 也会探）。
+
+    超过 15 秒就周期性报还要等多久（同 `_poll_running_daemon`）：全部修复路径叠满
+    能跑到三分钟，中间一声不吭的话，跑 `--ensure` 的人分不清是在等还是卡死了。
+    """
+    deadline = time.monotonic() + timeout
+    next_note = time.monotonic() + 15
+    while True:
+        if pred():
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        if note and time.monotonic() >= next_note:
+            print(f"       …{note} ({int(deadline - time.monotonic())}s left)")
+            next_note = time.monotonic() + 15
+        time.sleep(interval)
+
+
+def _step(tag: str, name: str, msg: str):
+    print(f"[{tag:<4}] {name:<12}: {msg}")
+
+
+def chrome_path():
+    """Chrome 可执行文件路径，找不到返回 None（不猜一个不存在的路径）。"""
+    import shutil
+    from pathlib import Path
+    cands = []
+    if sys.platform == "win32":
+        cands = [Path(os.environ[v]) / "Google" / "Chrome" / "Application" / "chrome.exe"
+                 for v in ("LOCALAPPDATA", "PROGRAMFILES", "PROGRAMFILES(X86)")
+                 if os.environ.get(v)]
+    elif sys.platform == "darwin":
+        cands = [Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")]
+    for c in cands:
+        if c.is_file():
+            return c
+    for n in ("google-chrome", "google-chrome-stable", "chrome", "chromium"):
+        w = shutil.which(n)
+        if w:
+            return Path(w)
+    return None
+
+
+def _chrome_profile_dir(exe=None):
+    """默认 profile 目录，不存在则 None。
+
+    显式传一个**不存在**的 --user-data-dir 会让 Chrome 新建一个空 profile ——
+    登录态全丢。所以只在目录确实存在时才传；否则省掉这个参数，Chrome 自己会用默认的。
+
+    POSIX 上还要看**将要启动的是哪个浏览器**：Chromium 与 Google Chrome 的 profile
+    不通用，把 `~/.config/google-chrome` 传给 chromium 轻则被拒、重则跨渠道写坏
+    用户真正的 Chrome profile。
+    """
+    from pathlib import Path
+    if sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA")
+        p = Path(base) / "Google" / "Chrome" / "User Data" if base else None
+    elif sys.platform == "darwin":
+        p = Path.home() / "Library" / "Application Support" / "Google" / "Chrome"
+    elif exe is not None and "chromium" in Path(exe).name.lower():
+        p = Path.home() / ".config" / "chromium"
+    else:
+        p = Path.home() / ".config" / "google-chrome"
+    return p if p is not None and p.is_dir() else None
+
+
+def _chrome_proc_pattern():
+    """认「Chrome 进程」用的名字/模式，跟着 chrome_path() 实际解析到的可执行文件走。
+
+    写死 "chrome" 是错的：`chromium` 不含子串 `chrome`，只装了 Chromium 的机器上
+    永远扫不到自己刚拉起的浏览器 → 每次跑都 FAIL，还每次多开一个窗口。
+    """
+    exe = chrome_path()
+    if sys.platform == "win32":
+        return exe.name if exe is not None else "chrome.exe"
+    if sys.platform == "darwin":
+        return "Chromium" if exe is not None and "chromium" in exe.name.lower() \
+            else "Google Chrome"
+    # POSIX：pgrep -f 吃 ERE，匹配的是整条命令行。锚到路径分隔符/行首与词尾，
+    # 否则 chromedriver、开着 chrome.md 的编辑器、别的 agent 命令行里那句
+    # --load-extension 都算「Chrome 在跑」，于是该拉起的时候不拉起。
+    # google-chrome 的实际进程 cmdline 是 /opt/google/chrome/chrome，
+    # 所以两种写法都要覆盖，不能只匹配 which 到的那个名字。
+    stem = "chromium" if exe is not None and "chromium" in exe.name.lower() \
+        else "chrom(e|ium)"
+    return f"(^|/){stem}( |$)"
+
+
+def _chrome_running() -> bool:
+    """Chrome 进程在不在。
+
+    扩展只在 Chrome 里活着：Chrome 没开时 daemon 起得来、扩展永远连不上，
+    报错却指向扩展（实测踩过的坑）。探测失败一律当作"没在跑"——
+    多开一个窗口无害（Chrome 会转交给已有实例）。
+
+    **这个判断只用来决定要不要拉起浏览器，不参与最终就绪结论**：扩展的一次真实 CDP
+    往返是比进程扫描强得多的证据（见 `_ensure`）。误报只会浪费一次启动，不会误判就绪。
+    """
+    import subprocess
+    pat = _chrome_proc_pattern()
+    try:
+        if sys.platform == "win32":
+            out = subprocess.run(
+                ["tasklist", "/FI", f"IMAGENAME eq {pat}", "/NH", "/FO", "CSV"],
+                capture_output=True, text=True, timeout=15).stdout
+            return pat.lower() in (out or "").lower()
+        return subprocess.run(["pgrep", "-f", pat], capture_output=True,
+                              timeout=15).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _launch_chrome(ext_dir=None) -> str | None:
+    """拉起 Chrome（默认 profile，保留登录态）。detached，不阻塞。
+    成功返回 None，失败返回原因字符串。
+
+    **扩展不是这里装上去的**：Chrome 137 起 `--load-extension` 被停用，实测 151
+    上连一个最小合法 MV3 扩展也不会被加载（干净 profile 里只剩内置扩展）。
+    扩展靠的是它已经以「加载已解压」的方式常驻在 profile 里 —— 所以即使
+    `ext_dir` 是 None，把 Chrome 拉起来仍然是对的修复，别因为没有扩展目录就不启动。
+    旧版 Chrome / Chromium 上这个开关还有效，有目录就顺手带上，没有也不影响。
+    """
+    from . import lifecycle
+    exe = chrome_path()
+    if exe is None:
+        return "chrome executable not found"
+    args = [str(exe)]
+    if ext_dir is not None:
+        args.append(f"--load-extension={ext_dir}")
+    prof = _chrome_profile_dir(exe)
+    if prof is not None:
+        args.append(f"--user-data-dir={prof}")
+    try:
+        lifecycle.spawn_detached(args)
+    except OSError as e:
+        return str(e)
+    return None
+
+
+def _ensure_chrome():
+    """返回 (进程扫到了吗, 是否是我们刚拉起来的)。
+
+    第一个返回值**不进最终结论**（见 `_ensure`）：扩展答得出 CDP 往返就证明 Chrome 在跑，
+    比进程扫描强。所以这里失败一律记 WARN 不记 FAIL——否则「扫不到但扩展通了」会打出
+    自相矛盾的成绩单（FAIL Chrome + PASS Extension + Not ready），把好好的环境判死。
+    """
+    if _chrome_running():
+        _step("PASS", "Chrome", "running")
+        return True, False
+    # 扩展目录缺席也照样启动：扩展是从 profile 里加载的，不是命令行带进去的
+    # （见 _launch_chrome）。为此不启动等于白白少修一件能修的事。
+    err = _launch_chrome(extension_dir())
+    if err:
+        _step("WARN", "Chrome", f"not detected; launch failed: {err}")
+        return False, False
+    if not _wait(_chrome_running, ENSURE_CHROME_WAIT, note="waiting for Chrome"):
+        _step("WARN", "Chrome", "launched but no matching process appeared")
+        return False, True
+    _step("FIX", "Chrome", "was not running → launched (default profile)")
+    return True, True
+
+
+def _port_in_use(port=None) -> bool:
+    """端口上有没有人占着。**用 bind 试，不用 connect。**
+
+    这比「/ping 有没有 200」强：在忙的 daemon（一条 exec 就能占住事件循环好几分钟，
+    默认超时 120 秒）ping 不应答，但端口确实还占着。分不清这两者就会往一个活得
+    好好的 daemon 上再叠一个。
+
+    connect 式探测在这里会**反过来失灵**：内核把连接直接塞进 accept 队列，应用根本
+    没 accept 也算连接成功；队列一满，connect 就失败，于是「有人占着」被读成
+    「没人占」。而队列填满恰恰发生在我们最需要认出它的那两种状态——wedged 和阻塞在
+    长 exec 的 daemon 都不 accept。实测（backlog=5，从不 accept）第 6 次探测就翻车；
+    真 daemon 的 backlog 是 100，一次 --ensure 要吃掉十几个槽位，**连跑七八次这道闸门
+    就整个失效**，重新退回「两个 daemon 抢一个端口」。
+
+    探测的地址与 daemon 完全一致（`127.0.0.1`，AF_INET）：判据必须是「daemon 能不能
+    bind 上去」，别改成绑通配地址——那样别人占着 0.0.0.0 时会误判，而 daemon 其实
+    绑得上环回。
+
+    **SO_REUSEADDR 按平台分：POSIX 设、Windows 不设。** 两边语义相反：
+    - POSIX：`Connection: close` 让 daemon 每次都先关连接，于是 28417 上会留下一串
+      TIME_WAIT。裸 bind 撞上它们直接 EADDRINUSE —— 于是 `--stop` 之后最长一分钟内，
+      明明没人监听也被判成「占着」，`--ensure` 拒绝启动，而 daemon 自己（`bridge` 传了
+      `reuse_address=True`）本来是起得来的。设了 SO_REUSEADDR 就跳过这些尸体，
+      同时**仍然盖不过活着的 LISTEN**（那要 SO_REUSEPORT），所以判真占用者照样准。
+    - Windows：TIME_WAIT 不挡裸 bind（实测），而设了 SO_REUSEADDR 反倒能**抢占**别人
+      正在监听的端口 → 占用者被读成不存在。所以这边必须素身。
+      （SO_EXCLUSIVEADDRUSE 对结果没有影响：实测带不带都正确判出 WSAEADDRINUSE。
+      它保护的是「自己长期持有的 socket 不被别人抢」，而探测用完立刻就关。）
+
+    bind 失败一律按「占着」处理（EADDRINUSE / EACCES 都轮不到我们启动 daemon；
+    其它异常宁可拦下，也好过往一个可能活着的 daemon 上再叠一个）。
+    """
+    import socket
+    s = None
+    try:
+        s = socket.socket()
+        if sys.platform != "win32":
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind(("127.0.0.1", config.client_port(port)))
+        return False
+    except OSError:
+        return True
+    finally:
+        if s is not None:
+            s.close()
+
+
+def _port_bind_denied(port=None) -> bool:
+    """端口不是被人占着，而是**这台机器不让绑**（保留段 / 特权端口）。
+
+    Windows 上 `netsh int ipv4 show excludedportrange` 里的段（Hyper-V、Docker 会动态
+    占走一批）、POSIX 上非 root 绑 <1024，都会给 EACCES 而不是 EADDRINUSE。这时叫人
+    「去找占着端口的进程」是白费力气——根本没有那个进程，换端口才是出路。
+    """
+    import errno
+    import socket
+    s = None
+    try:
+        s = socket.socket()
+        if sys.platform != "win32":
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind(("127.0.0.1", config.client_port(port)))
+        return False
+    except OSError as e:
+        return e.errno == errno.EACCES
+    finally:
+        if s is not None:
+            s.close()
+
+
+def _pid_file_is_ours(port=None) -> bool:
+    """pid/端口/令牌文件都是单槽的。端口文件记着别的端口时，那份 pid 文件属于
+    另一个 daemon —— 与这次 --ensure 无关，绝不能去清它、更不能把它的 pid 报成
+    「占着这个端口的那个」（清了就把人家的生命周期机制卸了，而人家还在跑）。
+
+    端口文件缺失 = **不知道**那份 pid 属于谁，一律按「不是我的」处理。
+    这种状态是真会出现的：`Daemon.stop()` 无条件清端口文件，所以 daemon B 退出
+    就把 daemon A 写的那份抹掉了 —— 此时在默认端口上跑 --ensure，会去删还在跑的
+    A 的 pid 文件。不清的代价则几乎为零：端口空着照样 spawn，新 daemon 起来会把
+    pid 文件重写一遍，清理本来就只是顺手。
+    """
+    recorded = config.read_port_file()
+    if recorded is None:
+        return False
+    return recorded == config.client_port(port)
+
+
+def _ensure_daemon(port=None) -> bool:
+    from . import lifecycle
+    # lifecycle.URL 是导入时算好的，而 _alive()/_port_in_use() 每次现算。端口文件
+    # 在这中间被改写（别的 daemon 起停都会重写它）时，identify() 问的就是另一个
+    # 端口上的 daemon —— 拿它的 pid 去说「占着我这个端口」又是一次张冠李戴。
+    lifecycle.set_port(config.client_port(port))
+    if _alive():
+        _step("PASS", "Daemon", f"running ({_url()})")
+        return True
+    if _port_bind_denied(port):
+        # 不是被占，是这台机器不让绑。拒绝启动是对的（daemon 自己也绑不上），
+        # 但绝不能让人去找一个根本不存在的占用者。
+        _step("FAIL", "Daemon", f"the OS refuses to bind port "
+                                f"{config.client_port(port)} (reserved or privileged)")
+        print("       → 没有占用者可找。换个端口："
+              "nekoro-browser --ensure --port <N>（扩展选项页里要改成同一个）")
+        return False
+    if _port_in_use(port):
+        # 有人监听但不应答。可能正在启动、可能正忙着跑一条长 exec、也可能真 wedged——
+        # **从外面分不清**。而猜错的代价严重不对称：猜"死了"就去 spawn，结果是两个
+        # daemon 抢同一个端口（Windows 的 SO_REUSEADDR 允许第二个绑上去，不会报错），
+        # 新 daemon 还会轮换共享令牌，把原来那个打成 403 —— 正是这条命令要防的事。
+        # 所以只等，不动手；等不到就据实报，把处置权交回去。
+        # 占着端口的到底是不是「我们这个端口的 daemon」，决定了等多久、以及怎么措辞。
+        # identify() 是问 /pid，天然按端口走（--port 会经 set_port 改写 lifecycle.URL），
+        # 可信；pid 文件那条是 advisory 且不认端口，只有确认属于本端口时才敢用。
+        verified = lifecycle.identify()          # 它自己应答的，可信
+        held = verified
+        if held is None and _pid_file_is_ours(port):
+            held = lifecycle.existing_daemon_pid()   # advisory，只够用来决定等多久
+        # 认得出是自家 daemon 时给足耐心：它多半只是在跑一条长 exec（默认超时 120 秒），
+        # 这时「有个健康 daemon 在」的证据最强，4 秒就判死是本末倒置。
+        budget = ENSURE_DAEMON_WAIT if held is not None else ENSURE_DAEMON_GRACE
+        if _wait(_alive, budget, note="waiting for the daemon to answer"):
+            # 「还在启动」和「刚才忙着」两种都会走到这里，措辞别把话说死
+            _step("PASS", "Daemon", f"running ({_url()}, was busy or still starting)")
+            return True
+        # 措辞要跟证据强度对齐：identify() 是那个进程自己应答的 /pid，可以点名；
+        # pid 文件只是块石头上的记号（不认端口、不防 pid 复用），只能存疑地提一句。
+        if verified is not None:
+            who = f"nekoro daemon (pid {verified}) "
+        elif held is not None:
+            who = f"something (pid file says {held}, unverified) "
+        else:
+            who = "something "
+        _step("FAIL", "Daemon", f"{who}holds {_url()} but isn't answering "
+                                f"— refusing to start a second daemon on the same port")
+        if verified is not None:
+            print("       → 多半是它正忙着跑一条长 exec：等它跑完再来一次。"
+                  "确认是真僵了再 nekoro-browser --stop")
+        else:
+            # 认不出身份时别乱指方向：--stop 在这个状态下只会回一句「No daemon running.」，
+            # 把人堵死。据实说清占着端口的可能不是 nekoro，并给出真的走得通的那条路。
+            print("       → 刚跑过 --stop/--restart 的话，等一两秒再试一次"
+                  "（socket 释放有延迟）。")
+            print(f"         否则占用者未必是 nekoro，也可能是彻底僵死的 daemon："
+                  f"查一下谁占着 {config.client_port(port)} 并处理掉，"
+                  f"或者换个端口 nekoro-browser --ensure --port <N>"
+                  f"（扩展选项页里要改成同一个）")
+        return False
+    # 端口没人监听 = 没有活着的 daemon。这时 pid 文件必然是陈的，可以清——
+    # 但只清属于这个端口的那份。
+    stale = lifecycle.existing_daemon_pid() if _pid_file_is_ours(port) else None
+    if stale is not None:
+        lifecycle.cleanup_pid()
+    try:
+        # _ALLOW_DOMAINS 必须显式带上：子进程读不到父进程的模块全局，漏传就是
+        # `--allow-domains` 被静默丢掉、起一个不设防的 daemon 却报绿。
+        pid = lifecycle.spawn_daemon(port, _ALLOW_DOMAINS)
+    except OSError as e:
+        _step("FAIL", "Daemon", f"spawn failed: {e}")
+        return False
+    if not _wait(_alive, ENSURE_DAEMON_WAIT, note="waiting for the daemon"):
+        _step("FAIL", "Daemon", f"spawned (pid {pid}) but not serving {_url()} — "
+                                f"see {lifecycle.daemon_log_path()}")
+        return False
+    # 措辞按实际发生的说：那个 pid 早就不在了（端口无人监听是前提），
+    # 我们清掉的只是它留下的文件，没杀任何东西。
+    cleaned = f"cleared stale pid file (pid {stale}), " if stale is not None else ""
+    # 报**在服务的那个** pid，不报 Popen 拿到的：venv 里的 python.exe 常是个
+    # trampoline，它 spawn 出真解释器后自己留在中间，两个 pid 不是一个进程。
+    # 打印的 pid 要是能拿去 kill 的那个。
+    served = lifecycle.identify() or pid
+    _step("FIX", "Daemon", f"was down → {cleaned}started detached "
+                           f"(pid {served}, {_url()})")
+    return True
+
+
+def _ext_hint():
+    print(f"       → chrome://extensions：确认扩展已加载且已启用"
+          f"（未打包扩展会被 Chrome 更新后自动停用）\n"
+          f"       → 扩展目录：{extension_dir() or '未找到'}；"
+          f"端口两侧要一致（扩展选项页）")
+
+
+def _ensure_extension(port=None, cold=False) -> bool:
+    budget = ENSURE_EXT_WAIT_COLD if cold else ENSURE_EXT_WAIT
+    if _wait(lambda: _healthy(timeout=5), budget, note="waiting for the extension"):
+        _step("PASS", "Extension/SW", "responding")
+        return True
+    why = ""
+    if _alive():
+        r = _post("/exec", "await reload_extension()", timeout=ENSURE_RELOAD_WAIT)
+        err = r.get("error", "") if not r.get("ok") else ""
+        # 只认 _post 为 403 造的那句原话，不做宽泛的 "token" 子串匹配——
+        # daemon 侧任何提到 token 的 traceback 都会被误判成令牌问题。
+        if "bad/missing token" in err:
+            # 令牌对不上 = daemon 侧的事，扩展是无辜的。多半是又起了一个 daemon
+            # 把共享令牌轮换了。这里指错方向的代价很实在：人会跑去 chrome://extensions
+            # 反复重载一个根本没坏的扩展。--doctor 有这条分支，ensure 不能比它还差。
+            _step("FAIL", "Daemon", f"token mismatch: {err}")
+            print("       → 多半是有第二个 daemon 轮换了共享令牌。"
+                  "先 nekoro-browser --stop，再重跑 --ensure")
+            return False
+        if err:
+            why = f"; reload failed: {err}"
+        elif _wait(lambda: _healthy(timeout=5), ENSURE_RELOAD_WAIT,
+                   note="waiting for the reloaded worker"):
+            _step("FIX", "Extension/SW", "was not responding → reloaded service worker")
+            return True
+    # daemon 等不到扩展会自己退出：start() 先等 10s auto-attach，再 send_control 撞上
+    # bridge 自己的 10s ready_timeout 才抛 RuntimeError ——**约 20 秒**，比热路径的
+    # 探活预算长。所以它可能死在上面任何一步之后，这个检查必须放在最后而不是最前。
+    if not _alive():
+        if not _ensure_daemon(port):
+            _step("SKIP", "Extension/SW", "daemon gone and could not be restarted")
+            return False
+        if _wait(lambda: _healthy(timeout=5), budget, note="waiting for the extension"):
+            _step("FIX", "Extension/SW", "responding after daemon respawn")
+            return True
+    _step("FAIL", "Extension/SW", f"still not responding{why}")
+    _ext_hint()
+    return False
+
+
+def _ensure(port=None) -> int:
+    """--ensure：逐项检查、缺什么修什么，最后据实报状态。
+
+    与 --doctor 的分工：doctor 只诊断不动手；ensure 会真的拉起 Chrome / daemon /
+    重载扩展。修不好的照样报 FAIL + 人工提示，不假装绿。
+    """
+    print("nekoro-browser Ensure\n" + "=" * 46)
+    if _alive() and _healthy(timeout=5):
+        # 端到端已通 → Chrome、daemon、扩展三者必然都活着，无须逐项探（也省掉进程扫描）
+        _step("PASS", "Chrome", "running (CDP round-trip ok)")
+        _step("PASS", "Daemon", f"running ({_url()})")
+        _step("PASS", "Extension/SW", "responding")
+        print("=" * 46 + "\n[PASS] Ready.")
+        return 0
+    chrome_ok, cold = _ensure_chrome()
+    daemon_ok = _ensure_daemon(port)
+    if daemon_ok:
+        ext_ok = _ensure_extension(port, cold=cold)
+    else:
+        ext_ok = False
+        _step("SKIP", "Extension/SW", "no daemon to ask")
+    print("=" * 46)
+    # 结论只看 daemon + 扩展：扩展答得出一次真实 CDP 往返，就已经证明 Chrome 在跑，
+    # 而且是比进程扫描更强的证据。把进程扫描算进结论只会制造假红——扫不到的原因
+    # 可能只是 tasklist 被拦、或那台机器上浏览器叫 chromium。
+    if daemon_ok and ext_ok:
+        if not chrome_ok:
+            print("       (Chrome 进程没扫到，但扩展答了 CDP 往返 → 它确实在跑)")
+        print("[PASS] Ready.")
+        return 0
+    print("[FAIL] Not ready — see the failing line above.")
+    return 1
+
+
 def main():
     p = argparse.ArgumentParser(prog="nekoro-browser")
     p.add_argument("command", nargs="?", choices=["setup"], default=None,
                    help="setup：引导式安装（给出扩展目录、打开 chrome://extensions、"
                         "等扩展连上并当场确认）")
     p.add_argument("--version", action="version", version=f"nekoro-browser {__version__}")
-    p.add_argument("--doctor", action="store_true")
+    p.add_argument("--doctor", action="store_true", help="纯诊断，不动手")
+    p.add_argument("--ensure", action="store_true",
+                   help="自愈式就绪检查：Chrome 没开就带扩展拉起、daemon 没跑就后台起、"
+                        "扩展没响应就重载。全绿退出码 0，修不好非 0")
     p.add_argument("--stop", action="store_true", help="停止正在运行的 daemon")
     p.add_argument("--restart", action="store_true", help="停止后重启（前台）")
     p.add_argument("--reload-ext", action="store_true",
@@ -298,6 +733,8 @@ def main():
             time.sleep(0.2)
         # 不 return：下方 pipe 分支被 `not args.restart` 跳过，直落 daemon 前台启动
 
+    if args.ensure:
+        sys.exit(_ensure(args.port))
     if args.doctor:
         _doctor(); return
     if args.exec:

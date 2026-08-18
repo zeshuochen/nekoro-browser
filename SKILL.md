@@ -11,7 +11,9 @@ nekoro-browser 是浏览器自动化 CLI，通过 Chrome 扩展的 `chrome.debug
 ```bash
 nekoro-browser setup           # 引导式安装（首次用；给路径+开页面+等扩展连上）
 nekoro-browser                 # 前台启动 daemon
-nekoro-browser --doctor        # 端到端诊断（daemon + 扩展 + SW 是否都活着）
+nekoro-browser --ensure        # 自愈就绪检查：Chrome 没开就拉起、daemon 没跑就后台起、
+                               #   扩展没响应就重载 SW。跑任务前用这条，全绿退 0
+nekoro-browser --doctor        # 端到端诊断（daemon + 扩展 + SW 是否都活着）；只报不修
 nekoro-browser --version       # 版本
 nekoro-browser --stop          # 停止 daemon
 nekoro-browser --restart       # 停止后重启（前台）
@@ -272,6 +274,6 @@ echo "await page_info()" | nekoro-browser
 
 | 问题 | 解决 |
 |------|------|
-| `Extension not connected` | 确保扩展已安装并在 chrome://extensions 中启用 |
-| `Address already in use` | 端口被占：先 `nekoro-browser --stop`，或杀掉占用进程，或换端口 `--port N`（扩展侧也要在选项页改成同一个） |
+| `Daemon not running` / `Extension not connected` | 先跑 `nekoro-browser --ensure`（缺什么起什么）；仍红再看它给的那行提示 |
+| `Address already in use` | 端口被占：先 `nekoro-browser --stop`，或杀掉占用进程，或换端口 `--port N`（扩展侧也要在选项页改成同一个）。`--ensure` 遇到「端口有人占着却不应答」会拒绝再起一个并报出 pid——那不是 bug，是不让两个 daemon 抢同一端口 |
 | CDP 命令超时 | 扩展 service worker 可能睡死/卡住；`nekoro-browser --doctor` 定位，`--reload-ext` 或 chrome://extensions 手动重载 |

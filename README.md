@@ -380,7 +380,8 @@ three — but the full "Chrome + extension" loop has never run on a real macOS/L
 |---------|---------------|
 | `nekoro-browser` | Start the daemon (foreground) |
 | `nekoro-browser setup` | Guided install: copies the extension path, then waits until the extension actually connects |
-| `nekoro-browser --doctor` | End-to-end diagnostic (daemon + extension + SW all alive?) |
+| `nekoro-browser --ensure` | Self-healing readiness check: launches Chrome if it isn't running, starts the daemon in the background if it isn't up, reloads the service worker if it isn't answering. Exit 0 only when all green — run this before a task instead of doing the steps by hand. It never starts a second daemon on a port that is already held; it reports the pid and stops |
+| `nekoro-browser --doctor` | End-to-end diagnostic (daemon + extension + SW all alive?) — reports only, repairs nothing |
 | `nekoro-browser --stop` | Stop the daemon |
 | `nekoro-browser --restart` | Stop and restart (foreground) |
 | `nekoro-browser --reload-ext` | Reload the extension's service worker — **required after upgrading**, also useful before a batch job for a clean state |
