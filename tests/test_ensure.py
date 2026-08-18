@@ -47,7 +47,8 @@ class _World:
     def __init__(self, chrome=True, alive=True, healthy=True, stale_pid=None,
                  launch_error=None, spawn_serves=True, reload_heals=True,
                  stale_starts_serving=False, dies_on_probe=None, served_pid=None,
-                 port_held=None, pid_file_is_ours=True):
+                 port_held=None, pid_file_is_ours=True,
+                 wakes_on_probe=None, probe_error=None):
         self.chrome, self.alive, self.healthy = chrome, alive, healthy
         self.stale_pid = stale_pid
         self.launch_error = launch_error
@@ -62,7 +63,13 @@ class _World:
         # pid 文件是不是本端口的。真函数要读端口文件——不钉住的话用例会跟着
         # 本机上真有没有 daemon 漂移。
         self.pid_file_is_ours = pid_file_is_ours
+        # 睡着的 MV3 service worker：第 N 次 page_info 探活才答得上（前面几次正是把它
+        # 叫醒的那几次）。建模成「世界在第 N 次探活后变健康」，不是「第 N 次返回 X」——
+        # 后者一旦被无关改动挪了顺序就假红。
+        self.wakes_on_probe = wakes_on_probe
+        self.probe_error = probe_error            # 探活直接失败时的原话
         self.probes = 0
+        self.page_info_probes = 0                 # 只数 doctor 那条 _post 探活
         self.acts = []                            # 按序记录动手行为
 
     def install(self):
@@ -136,6 +143,20 @@ class _World:
         self.acts.append(f"post:{data}")
         if "reload_extension" in data:
             self.healthy = self.reload_heals
+            return {"ok": True}
+        if "page_info" in data:
+            # doctor 直接用 _post 探扩展（不经 _healthy），所以这条路要单独建模。
+            # 形状必须跟真 daemon 一致：不通时是 ok=True 而 result 里没 url
+            # （get_page_info 吞异常），不是 ok=False —— 假件把它做成 ok=False
+            # 就等于替被测代码挡掉了「只信 ok 会误报 PASS」那个真分支。
+            self.page_info_probes += 1
+            if self.probe_error is not None:
+                return {"ok": False, "error": self.probe_error}
+            if (self.wakes_on_probe is not None
+                    and self.page_info_probes >= self.wakes_on_probe):
+                self.healthy = True
+            return {"ok": True,
+                    "result": {"url": "https://example.test/"} if self.healthy else {}}
         return {"ok": True}
 
 
@@ -144,6 +165,14 @@ def _run_ensure(port=None):
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         rc = cli._ensure(port)
+    return rc, buf.getvalue()
+
+
+def _run_doctor():
+    """跑一次 _doctor，返回 (退出码, 输出)。"""
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = cli._doctor()
     return rc, buf.getvalue()
 
 
@@ -1107,6 +1136,105 @@ def test_doctor_stays_diagnostic_only():
         _restore()
 
 
+def test_doctor_retries_a_sleeping_worker():
+    """MV3 的 SW 空闲会被 Chrome 回收，第一次探活正是把它叫醒的那一次，往往赶不上
+    自己那 8 秒窗口。只报第一次的结果 = 把健康环境判成「扩展没连上」，人就去
+    chrome://extensions 反复重载一个没坏的扩展（实测冷启动六轮四轮首探失败，
+    紧接着的第二次六轮全过）。"""
+    w = _World(alive=True, healthy=False, wakes_on_probe=2).install()
+    try:
+        rc, out = _run_doctor()
+        assert rc == 0, out
+        assert "[PASS] Extension/SW" in out, out
+        assert w.page_info_probes == 2, f"该探两次: {w.page_info_probes}"
+    finally:
+        _restore()
+
+
+def test_doctor_retry_is_one_extra_probe_not_a_loop():
+    """扩展是真没连上时，重试只加一次，不许转圈——每次探活是 8 秒，
+    转圈就把诊断变成了挂起。"""
+    w = _World(alive=True, healthy=False).install()
+    try:
+        rc, out = _run_doctor()
+        assert rc == 1, out
+        assert "[FAIL] Extension/SW" in out, out
+        assert w.page_info_probes == 2, f"只该探两次: {w.page_info_probes}"
+    finally:
+        _restore()
+
+
+def test_doctor_does_not_retry_a_token_mismatch():
+    """令牌对不上是确定性失败（多半是第二个 daemon 轮换了共享令牌），
+    重试只是白等 8 秒；而且要指向 daemon，不能把人指去查扩展。"""
+    w = _World(alive=True, healthy=False,
+               probe_error="Forbidden: bad/missing token (restart daemon?)").install()
+    try:
+        rc, out = _run_doctor()
+        assert rc == 1, out
+        assert "[FAIL] Token" in out, out
+        assert "[FAIL] Extension/SW" not in out, out
+        assert w.page_info_probes == 1, f"不该重试: {w.page_info_probes}"
+    finally:
+        _restore()
+
+
+def test_doctor_does_not_blame_the_token_for_any_error_mentioning_it():
+    """判据是 _post 为 403 造的那句原话，不是宽泛的 "token" 子串——daemon 侧任何
+    提到 token 的 traceback 都会被误判成令牌问题（doctor 原来就是这么写的），
+    然后把人指去 --stop 重启，而真正坏的是别的东西。"""
+    w = _World(alive=True, healthy=False,
+               probe_error="RuntimeError: tokenizer failed on page text").install()
+    try:
+        rc, out = _run_doctor()
+        assert rc == 1, out
+        assert "[FAIL] Token" not in out, out
+        assert "[FAIL] Extension/SW" in out, out
+    finally:
+        _restore()
+
+
+def test_doctor_reports_the_extension_even_without_a_daemon():
+    """daemon 没跑时也要给扩展那一格——早退只打一行，会让人以为诊断只有 daemon
+    一项，而「装完第一次跑」最常见的恰恰是扩展那半边没弄好。"""
+    w = _World(alive=False).install()
+    try:
+        rc, out = _run_doctor()
+        assert rc == 1, out
+        assert "Extension/SW" in out, out
+        assert w.page_info_probes == 0, "没有 daemon 可问，不该发探活"
+    finally:
+        _restore()
+
+
+def test_doctor_exit_code_follows_the_verdict():
+    """退出码恒 0 时，拿 doctor 当就绪门禁的脚本/agent（README 收尾那步就是这么用的）
+    永远看到绿灯。三种世界必须给出三种口径一致的退出码。"""
+    try:
+        _World(alive=True, healthy=True).install()
+        assert _run_doctor()[0] == 0
+        _restore()
+        _World(alive=True, healthy=False).install()
+        assert _run_doctor()[0] != 0
+        _restore()
+        _World(alive=False).install()
+        assert _run_doctor()[0] != 0
+    finally:
+        _restore()
+
+
+def test_doctor_does_not_call_a_broken_page_info_healthy():
+    """ok=True 但 result 里没 url = get_page_info 吞了异常。只信 ok 就会误报 PASS。"""
+    w = _World(alive=True, healthy=False).install()
+    try:
+        assert w._post("/exec", "await page_info()") == {"ok": True, "result": {}}, \
+            "假件得复现真 daemon 的形状，否则挡掉的正是被测分支"
+        rc, out = _run_doctor()
+        assert rc == 1 and "[PASS] Extension/SW" not in out, out
+    finally:
+        _restore()
+
+
 def test_existing_daemon_pid_ignores_dead_pid():
     """pid 文件里躺着一个早死的 pid：必须报『没有存量』，否则永远不敢 spawn。"""
     real_identify, real_read = lifecycle.identify, lifecycle.read_pid_file
@@ -1206,6 +1334,13 @@ if __name__ == "__main__":
     test_token_mismatch_is_blamed_on_the_daemon_not_the_extension()
     test_main_routes_to_ensure()
     test_doctor_stays_diagnostic_only()
+    test_doctor_retries_a_sleeping_worker()
+    test_doctor_retry_is_one_extra_probe_not_a_loop()
+    test_doctor_does_not_retry_a_token_mismatch()
+    test_doctor_does_not_blame_the_token_for_any_error_mentioning_it()
+    test_doctor_reports_the_extension_even_without_a_daemon()
+    test_doctor_exit_code_follows_the_verdict()
+    test_doctor_does_not_call_a_broken_page_info_healthy()
     test_existing_daemon_pid_ignores_dead_pid()
     test_spawn_detached_really_starts_a_process()
     test_spawn_daemon_command_does_not_hit_pipe_mode()

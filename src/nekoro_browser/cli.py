@@ -70,6 +70,16 @@ def _alive():
     except: return False
 
 
+def _is_token_error(r) -> bool:
+    """这次失败是不是令牌对不上。
+
+    只认 `_post` 为 403 造的那句原话，不做宽泛的 `"token" in error` 子串匹配——
+    daemon 侧任何提到 token 的 traceback 都会被误判成令牌问题，然后把人指去查一个
+    根本没坏的扩展。判据跟着 `_post` 那行字面量走，两处改一处必须一起改。
+    """
+    return "bad/missing token" in (r.get("error") or "")
+
+
 def _healthy(timeout=8):
     """端到端探活：一次真实 CDP 往返（page_info）。仅 /ping 200 不够——
     僵尸 daemon 端口还占着、ping 照样过，但扩展/SW 已死、CDP 往返失败。"""
@@ -608,9 +618,9 @@ def _ensure_extension(port=None, cold=False) -> bool:
     if _alive():
         r = _post("/exec", "await reload_extension()", timeout=ENSURE_RELOAD_WAIT)
         err = r.get("error", "") if not r.get("ok") else ""
-        # 只认 _post 为 403 造的那句原话，不做宽泛的 "token" 子串匹配——
-        # daemon 侧任何提到 token 的 traceback 都会被误判成令牌问题。
-        if "bad/missing token" in err:
+        # 判据收在 _is_token_error 里：doctor 和 ensure 必须是同一个口径，
+        # 两边各写一份就会像以前那样飘开（doctor 曾经是宽泛的 "token" 子串匹配）。
+        if not r.get("ok") and _is_token_error(r):
             # 令牌对不上 = daemon 侧的事，扩展是无辜的。多半是又起了一个 daemon
             # 把共享令牌轮换了。这里指错方向的代价很实在：人会跑去 chrome://extensions
             # 反复重载一个根本没坏的扩展。--doctor 有这条分支，ensure 不能比它还差。
@@ -760,7 +770,9 @@ def main():
     if args.ensure:
         sys.exit(_ensure(args.port))
     if args.doctor:
-        _doctor(); return
+        # 退出码必须跟着结论走：doctor 恒 0 时，任何拿它当就绪门禁的脚本/agent
+        # （README 收尾那步就是这么用的）永远看到绿灯。
+        sys.exit(_doctor())
     if args.exec:
         r = _post("/exec", args.exec, timeout=_EXEC_TIMEOUT)
         sys.stdout.write(json.dumps(r, default=str) + "\n")
@@ -828,30 +840,73 @@ async def _run(port=None):
         await d.stop()
 
 
-def _doctor():
+DOCTOR_PROBE_TIMEOUT = 8.0
+
+
+def _doctor_probe():
+    """一次端对端探活：真实 CDP 往返，证明扩展 + Service Worker 都活着，
+    而不只是 Python 进程在。SW 被 Chrome 回收时这步会失败。"""
+    return _post("/exec", "await page_info()", timeout=DOCTOR_PROBE_TIMEOUT)
+
+
+def _probe_url(r) -> str:
+    """探活结果里的页面 URL，拿不到就是没通。
+
+    `ok=True` 但 url 空 = get_page_info 吞了异常——只信 ok 会误报 PASS。
+    result 不是 dict 时也当没通：诊断工具自己抛 AttributeError 是最坏的结果。
+    """
+    if not r.get("ok"):
+        return ""
+    info = r.get("result")
+    return info.get("url", "") or "" if isinstance(info, dict) else ""
+
+
+def _doctor() -> int:
+    """--doctor：纯诊断，不动手。返回退出码（0 = 全绿）。
+
+    扩展那一步**探两次**。MV3 的 service worker 空闲会被 Chrome 回收，daemon 停过
+    一会儿再起来时它必然是睡着的；第一次探活正好把它叫醒，却往往赶不上自己那 8 秒
+    窗口。实测冷启动六轮里四轮首探失败，而紧接着的第二次探活六轮全部立刻成功——
+    只报第一次的结果，等于把一个健康的环境判成「扩展没连上」，人就会跑去
+    chrome://extensions 反复重载一个根本没坏的扩展。
+
+    令牌不匹配不重试：那是确定性失败（多半是第二个 daemon 轮换了共享令牌），
+    再探一次只是白等 8 秒。判据只认 `_post` 为 403 造的那句原话，不做宽泛的
+    `"token" in error` 子串匹配——daemon 侧任何提到 token 的 traceback 都会被
+    误判成令牌问题，然后把人指去查一个没坏的扩展。`_ensure_extension` 早就是
+    这个口径，doctor 不该比它还差。
+    """
     print("nekoro-browser Doctor\n" + "=" * 40)
     import platform
     print(f"[PASS] Python 3.12+ : v{platform.python_version()}")
     if not _alive():
         print(f"[INFO] Daemon       : not running on {_url()} (start: nekoro-browser)")
-        print("=" * 40); return
+        # 扩展这一格不是「通过」，是「没法测」。省掉它会让人以为诊断只有 daemon 一项，
+        # 而扩展没装恰恰是装完第一次跑最常见的那半边故障。
+        print("[SKIP] Extension/SW : no daemon to ask")
+        print("=" * 40)
+        return 1
     print(f"[PASS] Daemon       : running ({_url()})")
-    # 端对端探活：一次真实 CDP 往返，证明扩展 + Service Worker 都活着，
-    # 而不只是 Python 进程在。SW 被 Chrome 回收时这步会失败。
-    r = _post("/exec", "await page_info()", timeout=8)
-    info = (r.get("result") or {}) if r.get("ok") else {}
-    url = info.get("url", "")
-    if r.get("ok") and url:
+    r = _doctor_probe()
+    if not _probe_url(r) and not _is_token_error(r):
+        r = _doctor_probe()          # SW 多半刚被上一次探活叫醒，给它第二次机会
+    url = _probe_url(r)
+    if url:
         print(f"[PASS] Extension/SW : responding ({url})")
-    elif "token" in r.get("error", "").lower():
+        print("=" * 40)
+        return 0
+    if _is_token_error(r):
         print(f"[FAIL] Token        : {r['error']}")
-    else:
-        # ok=True 但 url 空 = get_page_info 吞了异常（不能只信 ok，否则误报 PASS）；
-        # 或往返直接失败。两者都说明 SW/扩展没响应。
-        why = r.get("error") or "no response within 8s (SW asleep / extension not connected)"
-        print(f"[FAIL] Extension/SW : {why}")
-        print("        → 检查 chrome://extensions，或重开普通网页后重启 daemon")
+        print("       → 多半是有第二个 daemon 轮换了共享令牌。"
+              "先 nekoro-browser --stop，再重启 daemon")
+        print("=" * 40)
+        return 1
+    why = r.get("error") or (f"no response within {DOCTOR_PROBE_TIMEOUT:.0f}s ×2 "
+                             f"(SW asleep / extension not connected)")
+    print(f"[FAIL] Extension/SW : {why}")
+    print("        → 检查 chrome://extensions，或重开普通网页后重启 daemon")
     print("=" * 40)
+    return 1
 
 
 if __name__ == "__main__":
