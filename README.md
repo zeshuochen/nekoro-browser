@@ -423,6 +423,13 @@ bare domain; `*` allows everything. See **Security** below.
 | Extension disabled by Chrome | Unpacked extension + Chrome update | Re-enable it in `chrome://extensions/`, then re-run `--doctor` |
 | Page unchanged | Extension not attached to tab | Open a regular (non-chrome://) page, restart daemon |
 | Port in use | Stale process | Kill the process on port 28417, or just run `nekoro-browser --stop` |
+| Red **Errors** badge on the extension card in `chrome://extensions` | Daemon isn't running; the extension keeps retrying | **The extension is not broken.** Start the daemon (`nekoro-browser`) — no new entries after that; clear the old ones with "Clear all" on the card |
+
+<sub>Nearly everyone hits the last one: between loading the extension and starting the daemon, every
+reconnect logs <code>WebSocket connection to 'ws://127.0.0.1:28417/ws' failed: ERR_CONNECTION_REFUSED</code>.
+Chrome's network stack emits that message below the JS layer — the extension's <code>try/catch</code> and
+<code>ws.onerror</code> cannot suppress it, and probing with <code>fetch</code> first logs the same thing.
+It can be explained, not silenced.</sub>
 
 ### Security
 

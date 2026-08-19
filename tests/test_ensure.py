@@ -1207,6 +1207,19 @@ def test_doctor_reports_the_extension_even_without_a_daemon():
         _restore()
 
 
+def test_doctor_explains_the_extension_error_badge_when_the_daemon_is_down():
+    """daemon 不在时扩展一直重连，每次失败 Chrome 都记一条，chrome://extensions 上
+    就是红色「错误」徽章。那条消息由网络栈发出、扩展侧抑制不了，人看到的第一反应
+    永远是「扩展坏了」→ 去卸载重装。诊断必须当场把它解释掉。"""
+    _World(alive=False).install()
+    try:
+        rc, out = _run_doctor()
+        assert rc == 1, out
+        assert "chrome://extensions" in out and "不是扩展坏了" in out, out
+    finally:
+        _restore()
+
+
 def test_doctor_exit_code_follows_the_verdict():
     """退出码恒 0 时，拿 doctor 当就绪门禁的脚本/agent（README 收尾那步就是这么用的）
     永远看到绿灯。三种世界必须给出三种口径一致的退出码。"""
@@ -1339,6 +1352,7 @@ if __name__ == "__main__":
     test_doctor_does_not_retry_a_token_mismatch()
     test_doctor_does_not_blame_the_token_for_any_error_mentioning_it()
     test_doctor_reports_the_extension_even_without_a_daemon()
+    test_doctor_explains_the_extension_error_badge_when_the_daemon_is_down()
     test_doctor_exit_code_follows_the_verdict()
     test_doctor_does_not_call_a_broken_page_info_healthy()
     test_existing_daemon_pid_ignores_dead_pid()
