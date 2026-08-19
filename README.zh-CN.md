@@ -401,6 +401,12 @@ macOS `~/Library/Application Support/nekoro-browser`、其余 POSIX
 | 扩展被 Chrome 停用 | 未打包扩展 + Chrome 更新 | `chrome://extensions/` 重新启用，再 `--doctor` 复验 |
 | 页面没变化 | 扩展未 attach | 打开普通网页（非 chrome://），重启 daemon |
 | 端口占用 | 旧进程残留 | 杀掉占用 28417 的进程，或直接 `nekoro-browser --stop` |
+| `chrome://extensions` 上扩展卡片出现红色**错误** | daemon 没跑，扩展在反复重连 | **不是扩展坏了。** 起 daemon（`nekoro-browser`）后不再新增，卡片上点「清除全部」清掉旧的 |
+
+<sub>最后一条几乎人人都会碰到：装完扩展、还没来得及起 daemon，那段时间每次重连都会记一条
+<code>WebSocket connection to 'ws://127.0.0.1:28417/ws' failed: ERR_CONNECTION_REFUSED</code>。
+这条消息由 Chrome 网络栈发出，在 JS 层之下 —— 扩展里的 <code>try/catch</code> 和
+<code>ws.onerror</code> 都抑制不了它，改用 <code>fetch</code> 先探活也一样。所以它只能被解释，不能被消掉。</sub>
 
 ### 安全
 

@@ -884,6 +884,12 @@ def _doctor() -> int:
         # 扩展这一格不是「通过」，是「没法测」。省掉它会让人以为诊断只有 daemon 一项，
         # 而扩展没装恰恰是装完第一次跑最常见的那半边故障。
         print("[SKIP] Extension/SW : no daemon to ask")
+        # daemon 不在时扩展会一直重连，每次失败 Chrome 都往扩展的错误列表里记一条，
+        # chrome://extensions 上就是个红色「错误」徽章。这条消息由网络栈发出、在 JS 层
+        # 之下，扩展侧抑制不了——所以人看到的第一反应总是「扩展坏了」，然后去卸载重装。
+        # 诊断当场把它解释掉，比让人自己猜便宜得多。
+        print("       → chrome://extensions 上那个红色「错误」（WebSocket … "
+              "ERR_CONNECTION_REFUSED）就是这个原因，不是扩展坏了")
         print("=" * 40)
         return 1
     print(f"[PASS] Daemon       : running ({_url()})")
