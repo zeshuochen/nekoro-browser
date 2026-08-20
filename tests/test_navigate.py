@@ -62,6 +62,31 @@ async def run():
     r = await helpers.navigate(Boom([]), "https://boom.test")
     assert r["ok"] is False and "nav failed" in r["error"], r
 
+    # 5. Page.navigate 不抛异常，而是在结果里带 errorText（域名解析不了、连接被拒…），
+    #    页面停在 chrome-error://。不提升成 ok:false 的话，调用方拿到「导航成功」、
+    #    MCP 侧也标成成功——正是 README 承诺不会发生的事。实测坏域名回的是
+    #    net::ERR_CONNECTION_CLOSED 而 ok 为 True。
+    class Failing(FakeDaemon):
+        def __init__(self, err):
+            super().__init__([])
+            self.err = err
+
+        async def navigate(self, url, tab=None):
+            self.nav.append(url)
+            return {"frameId": "1", "errorText": self.err}
+
+    d = Failing("net::ERR_NAME_NOT_RESOLVED")
+    r = await helpers.navigate(d, "https://nope.test")
+    assert r["ok"] is False, r
+    assert "ERR_NAME_NOT_RESOLVED" in r["error"], r
+    assert d.eval_calls == 0, "导航都没成，不该再去轮 readyState"
+
+    # 6. ERR_ABORTED 是例外，**不算失败**：导航被下一次导航取代、或这个 URL 触发的是
+    #    下载而不是页面，都会报它。把它算失败会把正常流程判死。
+    d = Failing("net::ERR_ABORTED")
+    r = await helpers.navigate(d, "https://dl.test", wait=False)
+    assert r["ok"] is True, r
+
     print("ALL OK")
 
 
