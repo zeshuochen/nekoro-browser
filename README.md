@@ -160,9 +160,14 @@ Not `cmd.exe` — its `echo` keeps the quotes, so the snippet arrives as a strin
 nekoro-browser <<'PY'
 await navigate("https://github.com/search?q=browser+automation&type=repositories")
 await wait_for_load()
-print((await state(max_items=40))["result"])
-await click_index(12)
+print((await state(max_items=40))["result"])   # every interactive element carries an index
 PY
+```
+
+Then click the one you saw — **indices shift with page content, so don't copy a fixed number**:
+
+```bash
+nekoro-browser -c "await click_index(7)"
 ```
 
 All helpers are documented in [SKILL.md](https://github.com/zeshuochen/nekoro-browser/blob/master/SKILL.md).
@@ -408,7 +413,7 @@ running on a non-default port. Precedence is `--port` > `NEKORO_PORT` > that fil
 
 The data dir holding token / pid / port is `%LOCALAPPDATA%\nekoro-browser` on Windows,
 `~/Library/Application Support/nekoro-browser` on macOS, `$XDG_CONFIG_HOME/nekoro-browser`
-or `~/.config/nekoro-browser` elsewhere. `NEKORO_DATA_DIR` overrides it on any platform.
+or `~/.config/nekoro-browser` elsewhere. `NEKORO_DATA_DIR` overrides it on any platform — it replaces the **parent** of that path; a `nekoro-browser/` directory is still created inside it. So with `NEKORO_DATA_DIR=/my/dir` the token lives at `/my/dir/nekoro-browser/token`, not `/my/dir/token`.
 
 The same limit can be set via `NEKORO_ALLOW_DOMAINS` (comma-separated, same syntax).
 Rule syntax: `example.com` matches exactly; `*.example.com` matches subdomains and the

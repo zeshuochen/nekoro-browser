@@ -822,6 +822,11 @@ async def _run(port=None):
         print(f"Ready on 127.0.0.1:{d.port}. "
               f"Pipe: echo 'page_info()' | nekoro-browser", file=sys.stderr)
         await d.wait_forever()
+        # wait_forever 只在 shutdown_requested 置位时返回。曾经有 detached daemon
+        # 在启动后一分钟内无声消失，日志里只有一行 Ready——没有这行退出记录的话，
+        # 「正常收到关闭请求」和「被外部终止」在日志上完全无法区分。
+        print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] daemon exiting "
+              f"(shutdown requested)", file=sys.stderr, flush=True)
     except RuntimeError as e:
         # 扩展没装/没启用时 start() 里 auto_attach 会抛 "extension not connected (WS)"。
         # 不兜住的话用户看到的是一坨 traceback，还得自己猜是扩展的问题。
