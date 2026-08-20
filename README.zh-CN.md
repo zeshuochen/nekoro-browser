@@ -406,6 +406,7 @@ macOS `~/Library/Application Support/nekoro-browser`、其余 POSIX
 | CDP 命令超时 | 扩展未连接 / service worker 睡死 | `nekoro-browser --doctor` 定位；必要时 `--reload-ext` 或 `chrome://extensions` 手动重载 |
 | 扩展被 Chrome 停用 | 未打包扩展 + Chrome 更新 | `chrome://extensions/` 重新启用，再 `--doctor` 复验 |
 | 页面没变化 | 扩展未 attach | 打开普通网页（非 chrome://），重启 daemon |
+| `Another debugger is already attached` | 该标签已被**别的调试类扩展**占着（Playwright / OpenCLI / Claude in Chrome 等都用 `chrome.debugger`）| 同一标签只能挂一个调试器。换一个标签，或在 `chrome://extensions` 停用另一个 |
 | 端口占用 | 旧进程残留 | 杀掉占用 28417 的进程，或直接 `nekoro-browser --stop` |
 | `chrome://extensions` 上扩展卡片出现红色**错误** | daemon 没跑，扩展在反复重连 | **不是扩展坏了。** 起 daemon（`nekoro-browser`）后不再新增，卡片上点「清除全部」清掉旧的 |
 

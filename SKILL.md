@@ -74,6 +74,7 @@ echo "await page_info()" | nekoro-browser
 | `page_text()` | `text` |
 | `page_html()` | `html` |
 | `capture_screenshot()` | `data`（base64），另有 `png_size` / `css_size` / `dpr` |
+| `list_tabs()` | `tabs`（另有 `active`）|
 
 ### Tab 管理
 

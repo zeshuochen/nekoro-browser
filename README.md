@@ -427,6 +427,7 @@ bare domain; `*` allows everything. See **Security** below.
 | CDP timeout | Extension not connected / service worker asleep | `nekoro-browser --doctor` to diagnose; try `--reload-ext` or manually reload in `chrome://extensions` |
 | Extension disabled by Chrome | Unpacked extension + Chrome update | Re-enable it in `chrome://extensions/`, then re-run `--doctor` |
 | Page unchanged | Extension not attached to tab | Open a regular (non-chrome://) page, restart daemon |
+| `Another debugger is already attached` | Another debugging extension owns that tab (Playwright, OpenCLI, Claude in Chrome all use `chrome.debugger`) | Only one debugger per tab. Use a different tab, or disable the other extension in `chrome://extensions` |
 | Port in use | Stale process | Kill the process on port 28417, or just run `nekoro-browser --stop` |
 | Red **Errors** badge on the extension card in `chrome://extensions` | Daemon isn't running; the extension keeps retrying | **The extension is not broken.** Start the daemon (`nekoro-browser`) — no new entries after that; clear the old ones with "Clear all" on the card |
 
