@@ -9,6 +9,7 @@ lifecycle.spawn_daemon / existing_daemon_pid / stop_daemon。
 有没有先清存量（不清就是两个 daemon 抢同一端口）、扩展无响应时 reload 只重试一次
 而不是转圈、以及任一步没修好时退出码必须非 0。
 """
+import asyncio
 import contextlib
 import io
 import os
@@ -1116,6 +1117,87 @@ def test_main_routes_to_ensure():
     finally:
         sys.argv = argv
         cli._ensure = real
+
+
+def test_daemon_start_refuses_to_kill_a_foreign_daemon():
+    """**403 恰恰证明它活着并在服务，不是僵尸。**
+
+    真凶复盘：A 健康跑着（数据目录 dirA），换个 NEKORO_DATA_DIR 起 B。B 的探活拿到
+    403（令牌不同）→ 旧逻辑当成「CDP 不通」→ 判僵尸 → stop_daemon() → /shutdown 也被
+    403 拒 → 兜底 os.kill，Windows 上就是 TerminateProcess：A 不跑任何清理、日志里
+    一行都不留。这就是困扰整场的「daemon 无声消失」——不是环境、不是 Job Object，
+    是产品自己杀的。A 的日志实测留下 `/exec rejected: bad token` +
+    `/shutdown rejected: bad token`，然后进程就没了。
+
+    正确行为：认出「活着但不归我管」，据实报错并退出，一个字都别动它。
+    """
+    from nekoro_browser import daemon as _dm
+    w = _World(alive=True, healthy=False).install()
+    real_post, real_daemon_cls = cli._post, _dm.Daemon
+
+    def token_403(path, data="", timeout=30):
+        w.acts.append(f"post:{data}")
+        if "page_info" in data:
+            return {"ok": False, "error": "Forbidden: bad/missing token (restart daemon?)"}
+        return real_post(path, data, timeout)
+
+    class _Sentinel(Exception):
+        pass
+
+    # 防护被拿掉时，_run 会一路走到起真 Daemon（绑端口、等扩展、永不返回），用例就
+    # **挂死**而不是干净地红 —— 挂死是最差的失败信号（写这条时 mutation 就挂了一次）。
+    # 哨兵保证那种情况下立刻抛出来，让下面的断言说话。
+    cli._post, _dm.Daemon = token_403, lambda *a, **k: (_ for _ in ()).throw(_Sentinel())
+    err = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(err):
+            try:
+                asyncio.run(cli._run())
+                assert False, "应当据实报错并退出，而不是继续去起 daemon"
+            except SystemExit as e:
+                assert e.code == 1, e.code
+            except _Sentinel:
+                pass          # 走到起 daemon = 防护没生效，交给下面的断言报清楚
+        out = err.getvalue()
+        assert "Stale daemon" not in out, f"403 被当成僵尸了: {out}"
+        assert "令牌对不上" in out, out
+        assert "stop-daemon" not in w.acts, f"绝不能去停一个健康的外部 daemon: {w.acts}"
+    finally:
+        cli._post, _dm.Daemon = real_post, real_daemon_cls
+        _restore()
+
+
+def test_daemon_start_still_cleans_a_real_stale_daemon():
+    """真僵尸（令牌对得上、就是不应答 CDP）仍要被清掉——别让上面那条防护把自愈也挡了。
+
+    清完之后 _run 会去起真 Daemon（绑端口、等扩展、永不返回），所以这里必须把
+    Daemon 换成一个立刻抛的哨兵：抛出来就说明「已经走过清理、进到启动」了。
+    不换的话这个用例会挂死在真 daemon 上（写这条时就挂了一次）。
+    """
+    from nekoro_browser import daemon as _dm
+    w = _World(alive=True, healthy=False).install()
+    real_daemon_cls = _dm.Daemon
+
+    class _Sentinel(Exception):
+        pass
+
+    def _boom(*a, **k):
+        raise _Sentinel()
+
+    _dm.Daemon = _boom
+    err = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(err):
+            try:
+                asyncio.run(cli._run())
+                assert False, "应当走到起 daemon 那步"
+            except _Sentinel:
+                pass
+        assert "Stale daemon" in err.getvalue(), err.getvalue()
+        assert "stop-daemon" in w.acts, w.acts
+    finally:
+        _dm.Daemon = real_daemon_cls
+        _restore()
 
 
 def test_stop_does_not_claim_no_daemon_while_the_port_is_held():

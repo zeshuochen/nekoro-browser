@@ -760,6 +760,13 @@ def main():
                 print("  确认真僵了就手动结束那个进程。", file=sys.stderr)
                 sys.exit(1)
             print("No daemon running.", file=sys.stderr); return
+        # 它应答 ping，但令牌对不上 = 这个 daemon 不是本数据目录起的。--stop 是显式意图，
+        # 照停（否则端口永远释放不掉），但必须说出来：优雅停会被 403 拒，只能兜底硬杀，
+        # 对方不会跑任何清理。默不作声地杀掉别人的进程是最不该有的行为。
+        if _is_token_error(_post("/exec", "await page_info()", timeout=5)):
+            print("Warning: 端口上这个 daemon 的令牌与本数据目录对不上"
+                  "（它是另一套安装 / 另一个 NEKORO_DATA_DIR 起的）。\n"
+                  "  优雅停会被它拒绝，只能强制结束——它不会跑任何清理。", file=sys.stderr)
         lifecycle.stop_daemon()
         for _ in range(15):                  # 复核最多 3s
             if not _alive(): break
@@ -816,12 +823,31 @@ async def _run(port=None):
     # 端口已占 = 多半已有 daemon 在跑。友好提示而非抛 bind 栈。
     from . import lifecycle
     if _alive():
-        if _healthy():
+        probe = _post("/exec", "await page_info()", timeout=8)
+        # **403 恰恰证明它活着并在服务。** 探活失败的原因必须分开看：连不上 = 死了，
+        # 令牌不对 = 活得好好的，只是不归这个数据目录管（两个 NEKORO_DATA_DIR、
+        # 两套安装、令牌轮换过，都会这样）。
+        #
+        # 不分开的代价是**静默硬杀一个健康进程**：旧逻辑把 403 当成「CDP 不通」→
+        # 判僵尸 → stop_daemon() → /shutdown 也被 403 拒 → 兜底 os.kill，而 Windows 上
+        # 那是 TerminateProcess：被杀的 daemon 不跑任何清理、日志里一行都不留。
+        # 这正是「daemon 无声消失」的真凶——实测复现：A 健康跑着，换个数据目录起 B，
+        # A 的日志留下 `/exec rejected: bad token` + `/shutdown rejected: bad token`
+        # 然后就没了。
+        if _is_token_error(probe):
+            print("ERROR: 端口上已经有一个 daemon 在服务，但令牌对不上——"
+                  "它不是这个数据目录起的。\n"
+                  "  拒绝把它当僵尸清掉：403 说明它活着且在正常应答。\n"
+                  "  用它自己的数据目录 nekoro-browser --stop，"
+                  "或换个端口 nekoro-browser --port N（扩展选项页里要改成同一个）。",
+                  file=sys.stderr)
+            sys.exit(1)
+        if _probe_url(probe):
             print("Daemon already running (healthy) on 127.0.0.1:28417.\n"
                   "Use it (echo ... | nekoro-browser), or restart: nekoro-browser --restart",
                   file=sys.stderr)
             sys.exit(1)
-        # 端口占着但 CDP 不通 = 僵尸。自动清掉再启，免用户手动 taskkill。
+        # 端口占着、令牌也对、但 CDP 不通 = 真僵尸。自动清掉再启，免用户手动 taskkill。
         print("Stale daemon detected (port held, not serving). Cleaning up...",
               file=sys.stderr)
         lifecycle.stop_daemon()
