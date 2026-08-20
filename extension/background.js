@@ -542,10 +542,15 @@ async function runOp(op, sel, arg) {
             // Extract page content as clean markdown (browser-act style)
             function toMd(node, depth) {
                 if (!node) return '';
-                const tag = (node.tagName || '').toLowerCase();
+                // tagName 对 HTML 元素本来就是大写，下面每一条规则也都按大写写的。
+                // 这里曾经是 toLowerCase() —— 于是从标题到链接到列表，整个格式化层
+                // 一条都命不中，全部掉进最后那段纯文本递归：get_markdown() 产出的是
+                // 没有任何换行、所有文字粘在一起的纯文本，比 page_text() 还差。
+                // 归一到大写（SVG/XML 里的 tagName 可能是小写或混合，所以不能省这一步）。
+                const tag = (node.tagName || '').toUpperCase();
                 const txt = (node.textContent || '').trim();
                 // Skip hidden/style/script
-                if (['STYLE','SCRIPT','NOSCRIPT','SVG','PATH'].includes(node.tagName)) return '';
+                if (['STYLE','SCRIPT','NOSCRIPT','SVG','PATH'].includes(tag)) return '';
                 // Headings
                 if (/^H[1-6]$/.test(tag)) return '#'.repeat(parseInt(tag[1])) + ' ' + txt + '\n\n';
                 // Links

@@ -342,6 +342,17 @@ async def navigate(daemon, url: str, wait: bool = True, timeout: float = 15.0,
         return blocked
     try:
         res = await daemon.navigate(url, tab=tab)
+        # Page.navigate 导航失败时**不抛异常**，而是在结果里带一个 errorText
+        # （域名解析不了、连接被拒、证书错误…），页面停在 chrome-error://。
+        # 不把它提升成 ok:false，调用方拿到的就是「导航成功」，MCP 侧也跟着标成成功——
+        # 正是 README 承诺不会发生的那件事（helper 自报的失败不伪装成成功）。
+        #
+        # ERR_ABORTED 是唯一的例外，它不代表失败：导航被下一次导航取代、或者这个 URL
+        # 触发的是下载而不是页面，都会报它。把它算失败会把正常流程判死。
+        err = res.get("errorText") if isinstance(res, dict) else None
+        if err and err != "net::ERR_ABORTED":
+            return {"ok": False, "error": f"navigation failed: {err}",
+                    "url": url, "result": res}
         loaded = True
         if wait:
             # 先给导航一点提交时间，避免 readyState 读到上一页残留的 complete
