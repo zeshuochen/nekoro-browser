@@ -1118,6 +1118,51 @@ def test_main_routes_to_ensure():
         cli._ensure = real
 
 
+def test_stop_does_not_claim_no_daemon_while_the_port_is_held():
+    """--stop 有和 --doctor 同一个盲区，而 doctor 的新提示正好把人指过来。
+
+    忙碌的 daemon 答不上 ping，但端口占着。`--stop` 只看 ping 时会回一句
+    「No daemon running.」并 exit 0——而 doctor 的 WARN 说的是「确认是真僵了再
+    nekoro-browser --stop」。两条提示接起来是死路：诊断说被占着、停止说没在跑，
+    daemon 其实还活着。实测复现过（netstat 全程 LISTENING，--stop 仍报没在跑）。
+
+    所以判据要和 doctor / ensure 统一成 bind 探测，且这种情况必须非 0 退出。
+    """
+    w = _World(alive=False, port_held=True, stale_pid=8828).install()
+    argv = sys.argv
+    sys.argv = ["nekoro-browser", "--stop"]
+    err = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(err):
+            try:
+                cli.main()
+                assert False, "端口被占着却没有非 0 退出"
+            except SystemExit as e:
+                assert e.code == 1, f"应以 1 退出，got {e.code}"
+        out = err.getvalue()
+        assert "No daemon running" not in out, f"端口占着还说没在跑: {out}"
+        assert "8828" in out and "held" in out, out
+        assert "stop-daemon" not in w.acts, "应答不了 HTTP 的 daemon 优雅停不掉，别装作停了"
+    finally:
+        sys.argv = argv
+        _restore()
+
+
+def test_stop_still_says_no_daemon_when_the_port_is_really_free():
+    """端口真空着时不能被上面那条防护带偏——照常报「没在跑」并正常退出。"""
+    w = _World(alive=False, port_held=False).install()
+    argv = sys.argv
+    sys.argv = ["nekoro-browser", "--stop"]
+    err = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(err):
+            cli.main()            # 不该抛 SystemExit
+        assert "No daemon running" in err.getvalue(), err.getvalue()
+    finally:
+        sys.argv = argv
+        _restore()
+
+
 def test_doctor_stays_diagnostic_only():
     """--doctor 是纯诊断：不许因为加了 ensure 就顺手动手修。
 

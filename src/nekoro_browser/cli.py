@@ -745,6 +745,20 @@ def main():
     if args.stop:
         from . import lifecycle
         if not _alive():
+            # 和 --doctor 同一个盲区：ping 答不上不等于没在跑。一条阻塞的 exec 就能
+            # 占死单线程事件循环，daemon 活着、端口占着，只是这几秒不应答。
+            # 这里说「No daemon running.」+ exit 0 尤其有害：--doctor 的 WARN 正是建议
+            # 「确认是真僵了再 nekoro-browser --stop」，用户照做却被告知没有 daemon，
+            # 而它其实还活着 —— 两条提示接成死路。判据跟 doctor / ensure 统一成 bind 探测。
+            if _port_in_use(args.port):
+                held = lifecycle.existing_daemon_pid() if _pid_file_is_ours(args.port) else None
+                who = f"(pid file says {held}, unverified) " if held is not None else ""
+                print(f"Port {config.client_port(args.port)} is held {who}but not answering "
+                      f"— refusing to report 'no daemon'.", file=sys.stderr)
+                print("  优雅停需要它能应答 HTTP。多半是正忙着跑一条长 exec："
+                      "等它跑完再 --stop。", file=sys.stderr)
+                print("  确认真僵了就手动结束那个进程。", file=sys.stderr)
+                sys.exit(1)
             print("No daemon running.", file=sys.stderr); return
         lifecycle.stop_daemon()
         for _ in range(15):                  # 复核最多 3s

@@ -67,7 +67,7 @@ echo "await page_info()" | nekoro-browser
 | `drain_events()` | 裸 list |
 | `http_get()` | 裸 str |
 
-**另外三个有 `ok` 但内容不在 `result` 里**（照着 `result` 读会拿到 None）：
+**另外几个有 `ok` 但内容不在 `result` 里**（照着 `result` 读会拿到 None）：
 
 | 函数 | 内容所在的键 |
 |------|-------------|
