@@ -67,6 +67,14 @@ echo "await page_info()" | nekoro-browser
 | `drain_events()` | 裸 list |
 | `http_get()` | 裸 str |
 
+**另外三个有 `ok` 但内容不在 `result` 里**（照着 `result` 读会拿到 None）：
+
+| 函数 | 内容所在的键 |
+|------|-------------|
+| `page_text()` | `text` |
+| `page_html()` | `html` |
+| `capture_screenshot()` | `data`（base64），另有 `png_size` / `css_size` / `dpr` |
+
 ### Tab 管理
 
 | 函数 | 用法 | 说明 |

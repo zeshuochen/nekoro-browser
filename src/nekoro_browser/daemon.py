@@ -3,6 +3,7 @@
 import asyncio
 import io
 import contextlib
+import contextvars
 import ast
 import json
 import logging
@@ -15,6 +16,54 @@ from . import lifecycle
 from .bridge import ExtensionBridge
 
 logger = logging.getLogger(__name__)
+
+# 每个 exec 任务自己的 stdout 缓冲。**不能用 contextlib.redirect_stdout**：那是改
+# 进程全局的 sys.stdout，而 daemon 会并发跑多条 exec。实测两条并发时，先发起的那条
+# 在客户端超时后仍在跑，它后来的 print 落进了**另一条请求**的响应里，而后者自己的
+# 输出反倒丢到 daemon 控制台去了（A 超时 → B 拿到 "B_START\nA_LATE"，B_END 不见了）。
+# ContextVar 在 asyncio 里按任务隔离，各写各的缓冲，互不串台。
+_EXEC_STDOUT: contextvars.ContextVar[io.StringIO | None] = \
+    contextvars.ContextVar("nekoro_exec_stdout", default=None)
+
+
+class _TaskRoutedStdout:
+    """把 print 路由到「当前任务自己的缓冲」，没有缓冲时落回真正的 stdout。
+
+    装一次就长期占着 sys.stdout。落回分支保证 daemon 自己的启动横幅、以及任何不在
+    exec 上下文里的输出照常可见——不是把 stdout 吞掉。
+    """
+
+    def __init__(self, real):
+        self._real = real
+
+    def _target(self):
+        return _EXEC_STDOUT.get() or self._real
+
+    def write(self, s):
+        return self._target().write(s)
+
+    def flush(self):
+        try:
+            self._target().flush()
+        except Exception:
+            pass
+
+    def isatty(self):
+        return False
+
+    def writable(self):
+        return True
+
+    @property
+    def encoding(self):
+        return getattr(self._real, "encoding", "utf-8")
+
+
+def install_task_routed_stdout():
+    """把 sys.stdout 换成按任务路由的代理。重复调用无副作用。"""
+    import sys
+    if not isinstance(sys.stdout, _TaskRoutedStdout):
+        sys.stdout = _TaskRoutedStdout(sys.stdout)
 
 
 def _auto_await_code(code: str):
@@ -135,31 +184,41 @@ class Daemon:
             if getattr(obj, "__module__", None) != ah.__name__:
                 continue
             v[name] = partial(obj, self) if asyncio.iscoroutinefunction(obj) else obj
+        # **globals 和 locals 必须是同一个映射。**分开传时，脚本里 `import math` /
+        # `x = 42` 绑进的是 locals，而模块级 `def` 的函数体只查 globals（那是个只有
+        # __builtins__ 的空壳）——于是 `import math; def f(): return math.pi; f()`
+        # 报 NameError: name 'math' is not defined。这直接废掉了「多步流程一次发过去」
+        # 和 agent 自己写脚本这两件事，只能把代码全展平、或在每个函数内部重新 import。
+        # v 是每次 exec 新建的，共用一个映射不会跨请求串。
+        v["__builtins__"] = __builtins__
         stdout_buf = io.StringIO()
+        install_task_routed_stdout()
+        tok = _EXEC_STDOUT.set(stdout_buf)
         try:
-            with contextlib.redirect_stdout(stdout_buf):
-                # 单表达式 → eval（返回 result 字段，兼容旧脚本）
-                try:
-                    _ast.parse(code, mode="eval")
-                    compiled = compile(code, "<nekoro-expr>", "eval",
-                                       flags=_ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
-                    result = eval(compiled, {"__builtins__": __builtins__}, v)
-                    if asyncio.iscoroutine(result):
-                        result = await result
-                    return {"ok": True, "result": result,
-                            "stdout": stdout_buf.getvalue()}
-                except SyntaxError:
-                    pass
-                # 多行语句 → auto-await + exec
-                compiled = _auto_await_code(code)
-                coro = eval(compiled, {"__builtins__": __builtins__}, v)
-                if asyncio.iscoroutine(coro):
-                    await coro
+            # 单表达式 → eval（返回 result 字段，兼容旧脚本）
+            try:
+                _ast.parse(code, mode="eval")
+                compiled = compile(code, "<nekoro-expr>", "eval",
+                                   flags=_ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
+                result = eval(compiled, v)
+                if asyncio.iscoroutine(result):
+                    result = await result
+                return {"ok": True, "result": result,
+                        "stdout": stdout_buf.getvalue()}
+            except SyntaxError:
+                pass
+            # 多行语句 → auto-await + exec
+            compiled = _auto_await_code(code)
+            coro = eval(compiled, v)
+            if asyncio.iscoroutine(coro):
+                await coro
             return {"ok": True, "stdout": stdout_buf.getvalue()}
         except Exception:
             import traceback
             return {"ok": False, "error": traceback.format_exc(),
                     "stdout": stdout_buf.getvalue()}
+        finally:
+            _EXEC_STDOUT.reset(tok)
 
     # ── API ───────────────────────────────────────────────────────────────
     async def list_tabs(self):

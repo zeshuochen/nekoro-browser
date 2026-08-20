@@ -153,9 +153,14 @@ print((await page_info())["title"])
 nekoro-browser <<'PY'
 await navigate("https://github.com/search?q=browser+automation&type=repositories")
 await wait_for_load()
-print((await state(max_items=40))["result"])
-await click_index(12)
+print((await state(max_items=40))["result"])   # 每个可交互元素都带 index
 PY
+```
+
+看清编号之后再点它 —— **编号随页面内容而变，别照抄某个固定数字**：
+
+```bash
+nekoro-browser -c "await click_index(7)"
 ```
 
 全部 helper 见 [SKILL.md](https://github.com/zeshuochen/nekoro-browser/blob/master/SKILL.md)。
@@ -370,6 +375,7 @@ Agent 遇到缺口时当场补、当场用——不重新编译，不重启 daem
 | `nekoro-browser --extension-path` | 打印扩展目录（加载已解压扩展时用） |
 | `nekoro-browser --version` | 打印已安装版本（和你加载的扩展对一下） |
 | `nekoro-browser --port N` | daemon 监听 N 端口（默认 28417） |
+| `nekoro-browser --allow-domains LIST` | daemon 只允许操作这些域，逗号分隔（如 `jd.com,*.taobao.com`）。不传则不限制；也可用 `NEKORO_ALLOW_DOMAINS` 环境变量 |
 | `nekoro-browser -c "code"` | 执行一段代码并返回结果 |
 | `nekoro-browser --timeout N` | 单次执行的超时秒数（默认 120，等页面加载很费时） |
 | `echo "code" \| nekoro-browser` | 管道模式（需 daemon 已运行） |
@@ -390,7 +396,7 @@ daemon 默认监听 **28417**。要改：
 存放令牌 / pid / port 的数据目录：Windows `%LOCALAPPDATA%\nekoro-browser`、
 macOS `~/Library/Application Support/nekoro-browser`、其余 POSIX
 `$XDG_CONFIG_HOME/nekoro-browser` 或 `~/.config/nekoro-browser`。
-`NEKORO_DATA_DIR` 可在任意平台覆盖。
+`NEKORO_DATA_DIR` 可在任意平台覆盖 —— 覆盖的是**上面那串路径的父目录**，程序仍会在其下建一层 `nekoro-browser/`。即 `NEKORO_DATA_DIR=/my/dir` 时 token 落在 `/my/dir/nekoro-browser/token`，不是 `/my/dir/token`。
 
 ### 故障排查
 

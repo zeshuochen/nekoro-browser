@@ -134,6 +134,23 @@ async function runOp(op, sel, arg) {
 
     /** Checks if element is actually visible. */
     function isVisible(el) {
+        // 视口 0×0 = 标签没在渲染（窗口最小化 / 后台标签）。这时**所有块级元素**的
+        // rect 宽度都是 0，于是「不可见」和「页面上没有」在结果上无法区分：
+        // find_text() 返回空数组、state() 只剩零星几条行内元素——全都带着 ok:true。
+        // 无人值守的 agent 会据此认定「页面上没这段文字」然后走错分支。
+        //
+        // 防护放在 isVisible 里而不是逐个 op 上：受影响的 op 是开放集合（findText、
+        // state、dump、clickIndex、waitSelector…），枚举必漏；而它们的共同依赖只有
+        // 这一处。不看可见性的 op（title/url/text/html/getMarkdown）不受影响，
+        // 窗口最小化时照样能用——这是对的。
+        //
+        // capture_screenshot 对完全相同的条件早就有 not_rendered 防护并给出可行建议，
+        // 它的兄弟函数没有，反而伪造成「成功但没找到」。这里补齐口径。
+        if (!window.innerWidth || !window.innerHeight) {
+            throw new Error('not_rendered: viewport is 0x0 — 标签未在渲染' +
+                '（后台标签或窗口最小化），元素可见性无法判定，结果会是空的而不是错的。' +
+                '先 switch_tab / Page.bringToFront 让它可见。');
+        }
         if (!el || el.nodeType !== 1) return false;
         const r = el.getBoundingClientRect();
         if (r.width === 0 || r.height === 0) return false;
@@ -551,45 +568,50 @@ async function runOp(op, sel, arg) {
                 const txt = (node.textContent || '').trim();
                 // Skip hidden/style/script
                 if (['STYLE','SCRIPT','NOSCRIPT','SVG','PATH'].includes(tag)) return '';
-                // Headings
-                if (/^H[1-6]$/.test(tag)) return '#'.repeat(parseInt(tag[1])) + ' ' + txt + '\n\n';
-                // Links
-                if (tag === 'A') {
-                    const href = node.getAttribute('href') || '';
-                    const label = txt || href;
-                    return href && !href.startsWith('javascript:') ? '[' + label + '](' + href + ')' : label;
-                }
-                // Lists
-                if (tag === 'LI') return '- ' + txt + '\n';
-                if (tag === 'P') return txt + '\n\n';
+
+                // ── 叶子：不递归，textContent 就是全部内容 ──
                 if (tag === 'BR') return '\n';
                 if (tag === 'HR') return '---\n';
-                if (tag === 'BLOCKQUOTE') return '> ' + txt + '\n\n';
-                if (tag === 'CODE' || tag === 'PRE') return '`' + txt + '`';
                 if (tag === 'IMG') {
                     const alt = node.getAttribute('alt') || '';
                     const src = node.getAttribute('src') || '';
                     return src ? '![' + alt + '](' + src + ')' : '';
                 }
-                if (tag === 'BUTTON') return '**[Button: ' + txt + ']**\n';
                 if (tag === 'INPUT') return '**[Input' + (node.type ? ' ' + node.type : '') + ': ' + (node.getAttribute('placeholder')||txt) + ']**\n';
                 if (tag === 'TEXTAREA') return '**[Textarea: ' + (node.getAttribute('placeholder')||'') + ']**\n';
                 if (tag === 'SELECT') return '**[Select: ' + txt.slice(0,30) + ']**\n';
-                // Recurse children
-                let out = '';
+                if (tag === 'CODE' || tag === 'PRE') return '`' + txt + '`';
+                // 链接自己就是叶子：标签文字 + href，内部再有结构也没有意义
+                if (tag === 'A') {
+                    const href = node.getAttribute('href') || '';
+                    const label = txt || href;
+                    return href && !href.startsWith('javascript:') ? '[' + label + '](' + href + ')' : label;
+                }
+
+                // ── 容器：**先递归渲染子节点，再包装** ──
+                // 这几条以前用的是 node.textContent，于是 <p><a href=…>Learn more</a></p>
+                // 里的链接被压成一句纯文字 —— 而「链接嵌在段落/列表项里」正是网页最常见的
+                // 形状，等于 markdown 里基本看不到链接。先递归就能保住内层的所有格式。
+                let inner = '';
                 for (const child of node.childNodes) {
                     if (child.nodeType === Node.TEXT_NODE) {
                         const t = (child.textContent || '').replace(/\s+/g, ' ');
-                        if (t.trim()) out += t;
+                        if (t.trim()) inner += t;
                     } else if (child.nodeType === Node.ELEMENT_NODE) {
-                        out += toMd(child, depth + 1);
+                        inner += toMd(child, depth + 1);
                     }
                 }
+                const body = inner.trim();
+                if (/^H[1-6]$/.test(tag)) return body ? '#'.repeat(parseInt(tag[1])) + ' ' + body + '\n\n' : '';
+                if (tag === 'LI') return body ? '- ' + body + '\n' : '';
+                if (tag === 'P') return body ? body + '\n\n' : '';
+                if (tag === 'BLOCKQUOTE') return body ? '> ' + body + '\n\n' : '';
+                if (tag === 'BUTTON') return '**[Button: ' + body + ']**\n';
                 // Block elements get newlines
                 if (['DIV','SECTION','ARTICLE','MAIN','HEADER','FOOTER','NAV','ASIDE','UL','OL','TABLE','FORM','FIELDSET'].includes(tag)) {
-                    out = '\n' + out + '\n';
+                    return '\n' + inner + '\n';
                 }
-                return out;
+                return inner;
             }
             const root = sel ? document.querySelector(sel) : document.body;
             if (!root) return '';

@@ -20,6 +20,8 @@ import json
 import logging
 import os
 import struct
+import sys
+import time
 
 from . import auth
 from . import config
@@ -267,6 +269,14 @@ class ExtensionBridge:
                 else:
                     await _http_resp(writer, 200, json.dumps({"ok": True}),
                                      "Content-Type: application/json")
+                    # 留痕：daemon 只有这一条路会被要求退出。曾经有 detached daemon
+                    # 在启动后一分钟内无声消失，日志里只有一行 Ready、没有任何 traceback，
+                    # Windows 事件日志也没有崩溃记录——分不清是「有人关了它」还是
+                    # 「被外部杀掉」。写下这一行之后，下次再撞上就能一眼分开这两种：
+                    # 有这行 = 有人请求关闭；没有 = 进程是被外部终止的。
+                    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] shutdown requested "
+                          f"via HTTP /shutdown — daemon will exit", file=sys.stderr,
+                          flush=True)
                     self.shutdown_requested.set()
             elif path in ("/exec", "/raw"):
                 # /exec 跑任意 Python、/raw 直发 CDP —— 必须持有令牌
