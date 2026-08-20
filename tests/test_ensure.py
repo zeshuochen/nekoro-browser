@@ -1220,6 +1220,22 @@ def test_doctor_explains_the_extension_error_badge_when_the_daemon_is_down():
         _restore()
 
 
+def test_doctor_does_not_call_a_busy_daemon_dead():
+    """ping 不应答 ≠ 没在跑。一条阻塞的 exec 就能占死单线程事件循环——daemon 活着、
+    端口占着，只是这几秒答不上 ping。只看 ping 的话 doctor 会给出**反向结论**
+    （not running + 建议 start），而再起一个会让两个 daemon 抢同一端口、轮换令牌，
+    把原来那个打成 403。干净环境实测过：netstat 明明 LISTENING，doctor 说 not running。"""
+    w = _World(alive=False, port_held=True, stale_pid=777).install()
+    try:
+        rc, out = _run_doctor()
+        assert rc == 1, out
+        assert "not running" not in out, f"端口占着还说没在跑，是反向结论: {out}"
+        assert "held" in out and "777" in out, out
+        assert w.page_info_probes == 0, "答不上 ping 的 daemon 不必再去探扩展"
+    finally:
+        _restore()
+
+
 def test_doctor_exit_code_follows_the_verdict():
     """退出码恒 0 时，拿 doctor 当就绪门禁的脚本/agent（README 收尾那步就是这么用的）
     永远看到绿灯。三种世界必须给出三种口径一致的退出码。"""
@@ -1301,61 +1317,10 @@ def test_spawn_daemon_command_does_not_hit_pipe_mode():
 
 
 if __name__ == "__main__":
-    test_all_green_touches_nothing()
-    test_daemon_down_gets_spawned()
-    test_reports_the_pid_that_actually_serves()
-    test_port_is_passed_through_to_the_spawned_daemon()
-    test_stale_pid_file_cleared_before_spawn()
-    test_never_stacks_a_second_daemon_on_a_held_port()
-    test_an_unidentifiable_holder_is_not_blamed_on_some_other_daemon()
-    test_a_busy_own_daemon_gets_the_long_budget_not_the_grace()
-    test_a_busy_daemon_known_only_from_the_pid_file_still_gets_the_long_budget()
-    test_an_unverified_pid_is_not_called_a_nekoro_daemon()
-    test_unverified_pid_gets_the_hedged_advice_too()
-    test_a_daemon_on_another_port_is_left_alone()
-    test_starting_daemon_is_not_killed()
-    test_spawn_that_never_serves_fails_honestly()
-    test_extension_unresponsive_reloaded_once()
-    test_extension_dead_after_reload_fails_with_hint()
-    test_chrome_down_is_launched_with_extension()
-    test_chrome_launch_failure_is_not_green()
-    test_blind_process_scan_does_not_fail_a_working_stack()
-    test_chrome_is_launched_even_without_an_extension_dir()
-    test_daemon_that_exits_while_waiting_is_respawned()
-    test_respawn_failure_does_not_ask_a_dead_daemon_to_reload()
-    test_daemon_dying_after_the_reload_attempt_is_still_respawned()
-    test_allow_domains_reaches_the_spawned_daemon()
-    test_spawned_daemon_binds_the_port_the_client_probes()
-    test_launch_chrome_argv()
-    test_chrome_profile_dir_requires_the_directory_to_exist()
-    test_chrome_proc_pattern_follows_the_resolved_binary()
-    test_chromium_is_not_pointed_at_google_chromes_profile()
-    test_wait_probes_at_least_once_and_gives_up()
-    test_wait_actually_keeps_probing()
-    test_cold_start_gets_the_longer_extension_budget()
-    test_port_probe_survives_a_holder_that_never_accepts()
-    test_output_survives_a_non_utf8_console()
-    test_port_probe_ignores_time_wait_corpses()
-    test_probe_sets_reuseaddr_on_posix_and_not_on_windows()
-    test_occupied_port_is_not_mistaken_for_a_denied_one()
-    test_denied_port_says_switch_ports_not_hunt_for_a_holder()
-    test_ensure_points_lifecycle_at_the_port_it_probes()
-    test_pid_file_ownership_when_the_port_file_is_missing()
-    test_spawn_detached_survives_a_missing_data_dir()
-    test_oversized_daemon_log_is_trimmed_at_spawn()
-    test_chrome_running_asks_the_os_about_the_right_process()
-    test_token_mismatch_is_blamed_on_the_daemon_not_the_extension()
-    test_main_routes_to_ensure()
-    test_doctor_stays_diagnostic_only()
-    test_doctor_retries_a_sleeping_worker()
-    test_doctor_retry_is_one_extra_probe_not_a_loop()
-    test_doctor_does_not_retry_a_token_mismatch()
-    test_doctor_does_not_blame_the_token_for_any_error_mentioning_it()
-    test_doctor_reports_the_extension_even_without_a_daemon()
-    test_doctor_explains_the_extension_error_badge_when_the_daemon_is_down()
-    test_doctor_exit_code_follows_the_verdict()
-    test_doctor_does_not_call_a_broken_page_info_healthy()
-    test_existing_daemon_pid_ignores_dead_pid()
-    test_spawn_detached_really_starts_a_process()
-    test_spawn_daemon_command_does_not_hit_pipe_mode()
+    # **自动发现，不写清单。** 手写清单漏登记一个，用例就永远不执行、却照报 ALL OK
+    # ——本文件真栽过：新增的 doctor 用例只是忘了加进清单，mutation 把修复改回旧行为
+    # 时全绿，差点当成「测过了」。仓库里另外两个测试文件早就是这个写法。
+    for _name, _fn in sorted(globals().items()):
+        if _name.startswith("test_"):
+            _fn()
     print("ALL OK")

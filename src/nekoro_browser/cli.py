@@ -885,6 +885,23 @@ def _doctor() -> int:
     import platform
     print(f"[PASS] Python 3.12+ : v{platform.python_version()}")
     if not _alive():
+        # **ping 不应答 ≠ 没在跑。** 一条阻塞的 exec（脚本里一句 time.sleep 就够）会
+        # 占死单线程事件循环，daemon 活得好好的、端口也占着，只是这几秒答不上 ping。
+        # 只看 ping 就报「not running（start: nekoro-browser）」——诊断工具给出的是
+        # **反向结论**，还建议再起一个；而两个 daemon 抢同一个端口会轮换共享令牌，把
+        # 原来那个打成 403，正是这个项目踩过的坑。
+        # 判据用 bind 探测（`_port_in_use`），`_ensure_daemon` 早就是这个口径。
+        if _port_in_use():
+            from . import lifecycle
+            held = lifecycle.existing_daemon_pid() if _pid_file_is_ours() else None
+            who = f"(pid file says {held}, unverified) " if held is not None else ""
+            print(f"[WARN] Daemon       : {_url()} is held {who}but not answering")
+            print("       → 多半是它正忙着跑一条长 exec（默认超时 120 秒）：等它跑完再来一次")
+            print("       → 确认是真僵了再 nekoro-browser --stop。"
+                  "**别在这时候另起一个**——两个 daemon 抢同一端口会轮换令牌")
+            print("[SKIP] Extension/SW : daemon not answering")
+            print("=" * 40)
+            return 1
         print(f"[INFO] Daemon       : not running on {_url()} (start: nekoro-browser)")
         # 扩展这一格不是「通过」，是「没法测」。省掉它会让人以为诊断只有 daemon 一项，
         # 而扩展没装恰恰是装完第一次跑最常见的那半边故障。
