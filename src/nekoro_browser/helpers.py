@@ -1007,8 +1007,11 @@ _LOC_DISPATCH_JS = (
     # 元素**：被浮层盖住、或窗口没在前台时，返回 ok:true 而页面纹丝不动，且没有任何
     # 线索。covered 只作诊断——盖住了照样派发给 el 本身，页内点击本就不受遮挡影响。
     "  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;\n"
-    "  const at = document.elementFromPoint(cx, cy);\n"
-    "  const covered = !(at && (at === el || el.contains(at)));\n"
+    # 视口 0×0（最小化/未渲染）时 elementFromPoint 恒为 null —— 那不是「被盖住」，
+    # 是判据不成立。此时报 covered 会给每次点击挂一个假的诊断位，比没有诊断更糟。
+    "  const vp = !!(window.innerWidth && window.innerHeight);\n"
+    "  const at = vp ? document.elementFromPoint(cx, cy) : null;\n"
+    "  const covered = vp && !(at && (at === el || el.contains(at)));\n"
     "  const tgt = covered ? el : (at || el);\n"
     "  const o = {bubbles: true, cancelable: true, view: window,\n"
     "    clientX: cx, clientY: cy, screenX: cx, screenY: cy + 80,\n"
@@ -1196,8 +1199,9 @@ _REF_CLICK_JS = """function() {
   const r = this.getBoundingClientRect();
   if (!(r.width || r.height)) return {clicked: false, reason: 'no box'};
   const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-  const at = document.elementFromPoint(cx, cy);
-  const covered = !(at && (at === this || this.contains(at)));
+  const vp = !!(window.innerWidth && window.innerHeight);
+  const at = vp ? document.elementFromPoint(cx, cy) : null;
+  const covered = vp && !(at && (at === this || this.contains(at)));
   const tgt = covered ? this : (at || this);
   const o = {bubbles: true, cancelable: true, view: window,
     clientX: cx, clientY: cy, screenX: cx, screenY: cy + 80,
@@ -1315,8 +1319,13 @@ async def click_text(daemon, text: str, tab: int | None = None) -> dict[str, Any
         r = await daemon.bridge.send_scripting({
             "action": "evaluate", "target": t, "op": "clickText", "arg": text}, 10)
         v = r.get("value") if r else None
-        if isinstance(v, str) and v.startswith("clicked:"):
-            return {"ok": True, "via": "in-page"}
+        # 两个前缀都要认。只认 "clicked:" 的话，op 一旦报出遮挡（clicked-covered:）
+        # 就会被判成失败——明明点成功了却返回 ok:false，比漏个诊断位严重得多。
+        if isinstance(v, str) and v.startswith(("clicked:", "clicked-covered:")):
+            out: dict[str, Any] = {"ok": True, "via": "in-page"}
+            if v.startswith("clicked-covered:"):
+                out["covered"] = True
+            return out
         if v in ("not-found", None):
             return {"ok": False, "error": f"text not found: {text}", "kind": "transient"}
         return {"ok": False, "error": f"click_text 未成功: {v}", "kind": "transient"}

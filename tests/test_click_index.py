@@ -114,10 +114,59 @@ def test_extension_measures_coverage_before_dispatching():
     start = src.index("case 'clickIndex'")
     end = src.index("case '", start + 10)
     block = src[start:end]
-    assert "elementFromPoint" in block, "clickIndex 没测量遮挡"
-    assert block.index("elementFromPoint") < block.index("dispatchEvent"), \
+    assert "hitAt(" in block, "clickIndex 没测量遮挡"
+    assert block.index("hitAt(") < block.index("dispatchEvent"), \
         "遮挡测量排在派发之后，量到的会是点击后的 DOM"
     assert "clicked-covered:" in block, "没有把遮挡结果带回给调用方"
+
+
+def _op_block(name):
+    ext = os.path.join(os.path.dirname(__file__), "..", "extension", "background.js")
+    with open(ext, encoding="utf-8") as f:
+        src = f.read()
+    start = src.index("case '%s'" % name)
+    end = src.index("case '", start + 10)
+    return src[start:end]
+
+
+def test_click_op_dispatches_to_the_element_not_the_thing_covering_it():
+    """**这条是补的空档。** 扩展 `click` op 原来用
+    `document.elementFromPoint(cx, cy) || el` 当派发目标——目标被浮层盖住时，
+    事件就落在遮挡物上，调用方拿到 ok:true 而页面纹丝不动。
+
+    实测过：用旧写法时 click_selector / click(css:) 在遮挡下正是「返回成功却不导航」。
+    而把它改回去时**38 个测试文件一个都不红**——静默空点能原样复活而 CI 全绿。
+    所以这里直接钉住那行的形状。
+    """
+    block = _op_block("click")
+    assert "hitAt(" in block, "click op 没走统一的命中判定"
+    assert "elementFromPoint(cx, cy) || el" not in block,         "又退回「盖住就派发给遮挡物」的写法了"
+    assert "covered ? el :" in block,         "被盖住时必须直接派发给 el 本身，而不是中心点上那个元素"
+
+
+def test_every_click_op_reports_coverage():
+    """四个点击 op 的诊断位要一致：调用方拿到的信息不该随走哪条路而变。
+
+    clickText 一度是唯一不报 covered 的，纯粹是漏了。
+    """
+    for name in ("click", "clickIndex", "clickText"):
+        block = _op_block(name)
+        assert "covered" in block, f"{name} op 没有遮挡诊断位"
+
+
+def test_coverage_is_not_claimed_when_the_viewport_is_zero():
+    """视口 0×0 时 elementFromPoint 恒为 null —— 那不是「被盖住」，是判据不成立。
+
+    不加这层判断的话，窗口最小化时每一次点击都挂着一个假的 covered，
+    比没有诊断更糟：它会把排查引向根本不存在的遮挡物。
+    """
+    ext = os.path.join(os.path.dirname(__file__), "..", "extension", "background.js")
+    with open(ext, encoding="utf-8") as f:
+        src = f.read()
+    start = src.index("function hitAt(")
+    block = src[start:start + 600]
+    assert "innerWidth" in block and "innerHeight" in block,         "hitAt 没有排除视口 0×0，最小化时会假报 covered"
+    assert block.index("innerWidth") < block.index("elementFromPoint"),         "视口判断必须在 elementFromPoint 之前"
 
 
 if __name__ == "__main__":

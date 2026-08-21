@@ -132,6 +132,21 @@ async function runOp(op, sel, arg) {
         return text.replace(/\s+/g, ' ').trim();
     }
 
+    /** 中心点上实际是谁，以及目标是否被盖住。
+     *
+     *  两个用途：选派发目标（命中才用叶子元素，处理嵌套 SVG/span），以及回一个纯诊断
+     *  的 covered 位。**页内点击不受遮挡影响**——covered 只是给调用方省一轮排查。
+     *
+     *  视口 0×0（窗口最小化 / 标签没在渲染）时 elementFromPoint 恒为 null，那不代表
+     *  被盖住，而是判据根本不成立。此时报 covered 会让每一次点击都挂着一个假的诊断位，
+     *  比没有诊断更糟——所以直接返回 false（不知道就别说）。
+     */
+    function hitAt(el, cx, cy) {
+        const rendered = !!(window.innerWidth && window.innerHeight);
+        const at = rendered ? document.elementFromPoint(cx, cy) : null;
+        return {at: at, covered: rendered && !(at && (at === el || el.contains(at)))};
+    }
+
     /** Checks if element is actually visible. */
     function isVisible(el) {
         // 视口 0×0 = 标签没在渲染（窗口最小化 / 后台标签）。这时**所有块级元素**的
@@ -321,9 +336,7 @@ async function runOp(op, sel, arg) {
             // sticky 头 / cookie 横幅盖住时，事件落在遮挡物上，而调用方拿到的仍是
             // ok:true —— 什么都没发生却报成功。把命中信息一起回去，让 Python 侧决定
             // 是照常坐标点击（真 isTrusted），还是退回页内点击。
-            const at = document.elementFromPoint(x, y);
-            const hit = !!at && (at === el || el.contains(at));
-            return {x, y, hit};
+            return {x, y, hit: !hitAt(el, x, y).covered};
         }
         case 'click': {
             const el = document.querySelector(sel);
@@ -335,9 +348,9 @@ async function runOp(op, sel, arg) {
             // 原来是 `elementFromPoint(cx,cy) || el`：目标被浮层/sticky 头/cookie 横幅
             // 盖住时，事件就派发到遮挡物上，调用方拿到 ok:true 而页面纹丝不动。
             // 盖住了就直接派发给 el 本身 —— 页内点击本就不该受遮挡影响。
-            const at = document.elementFromPoint(cx, cy);
-            const covered = !(at && (at === el || el.contains(at)));
-            const target = covered ? el : (at || el);
+            const h = hitAt(el, cx, cy);
+            const covered = h.covered;
+            const target = covered ? el : (h.at || el);
             const opts = {
                 bubbles: true, cancelable: true, view: window,
                 clientX: cx, clientY: cy, screenX: cx, screenY: cy + 80,
@@ -396,8 +409,7 @@ async function runOp(op, sel, arg) {
             // 中心点上实际是谁 —— **点击前**问，点完页面一跳 DOM 就变了，问了也白问。
             // 纯诊断：页内点击照样点得到（不受遮挡影响），但调用方发现页面没反应时，
             // 这一位能省掉一轮排查。
-            const _at = document.elementFromPoint(_cx, _cy);
-            const _covered = !(_at && (_at === _el || _el.contains(_at)));
+            const _covered = hitAt(_el, _cx, _cy).covered;
             _el.dispatchEvent(new PointerEvent('pointerdown', _opts));
             _el.dispatchEvent(new MouseEvent('mousedown', _opts));
             _el.dispatchEvent(new PointerEvent('pointerup', _opts));
@@ -424,7 +436,14 @@ async function runOp(op, sel, arg) {
         case 'clickText': {
             // Find by visible text using TreeWalker + direct-text matching
             const el = findFirstText(arg);
-            if (el) { el.click(); return 'clicked:' + (el.textContent||'').trim().slice(0,30); }
+            if (el) {
+                // 遮挡位跟其它点击 op 对齐：原来只有 clickText 不报，调用方拿到的
+                // 诊断信息随走哪条路而变，是没必要的不一致。
+                const r = el.getBoundingClientRect();
+                const cov = hitAt(el, r.left + r.width / 2, r.top + r.height / 2).covered;
+                el.click();
+                return (cov ? 'clicked-covered:' : 'clicked:') + (el.textContent||'').trim().slice(0,30);
+            }
             return 'not-found';
         }
         case 'findText': {
