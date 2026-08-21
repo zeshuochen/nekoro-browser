@@ -1363,6 +1363,30 @@ def test_doctor_does_not_call_a_busy_daemon_dead():
         _restore()
 
 
+def test_doctor_probes_the_port_it_reports_on():
+    """`--port N --doctor` 的探测必须打 N，不能打默认端口。
+
+    `_url()` 认 --port（走 _EXPLICIT_PORT），而端口探测早先没接参数 —— 于是标题写着
+    28503、判据却看的是 28417。默认端口上恰好有别人时就报
+    「28503 is held (pid file says <另一台的 pid>)」：指着一个空端口说被占着，
+    还点了个不相干的 pid。--stop 和 _ensure_daemon 都传了 port，只有 doctor 漏了。
+    """
+    seen = []
+    w = _World(alive=False, port_held=False).install()
+    real_used, real_ours = cli._port_in_use, cli._pid_file_is_ours
+    cli._port_in_use = lambda port=None: (seen.append(("used", port)), False)[1]
+    cli._pid_file_is_ours = lambda port=None: (seen.append(("ours", port)), True)[1]
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            cli._doctor(30500)
+        ports = {p for _, p in seen}
+        assert seen, "根本没探端口"
+        assert ports == {30500}, f"探测没用上 --port，实际打的是 {ports}"
+    finally:
+        cli._port_in_use, cli._pid_file_is_ours = real_used, real_ours
+        _restore()
+
+
 def test_doctor_exit_code_follows_the_verdict():
     """退出码恒 0 时，拿 doctor 当就绪门禁的脚本/agent（README 收尾那步就是这么用的）
     永远看到绿灯。三种世界必须给出三种口径一致的退出码。"""
