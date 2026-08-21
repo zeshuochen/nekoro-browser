@@ -1,8 +1,9 @@
 """test_click_loc.py — 统一 locator click()：语法解析、transient/permanent 错误分类。
 
 fake 严格照真 wire 形状来：`evaluate` 回 {result:{value:...}}（CDP Runtime.evaluate 形状，
-定位 JS 的返回值），`send_scripting` 回 getRectByText/getRectByIndex 的 {value:{x,y}|null}，
-`send` 记录 Input.dispatchMouseEvent（click_at_xy 的落点）。
+定位 JS 的返回值），`send_scripting` 回页内点击 op 的 {value:'clicked:…'|'clicked'|'not-found'|None}，
+`send` 记录 Input.dispatchMouseEvent —— 现在只有 click_at_xy 还该产生它，
+其余 click_* 一律走页内点击，所以「没有坐标事件」本身就是一条断言。
 """
 import asyncio
 import os
@@ -74,7 +75,10 @@ def run(coro):
     return asyncio.run(coro)
 
 
-OK = {"kind": "ok", "x": 100, "y": 200}
+# 新 wire：定位 JS **就地派发**并回 clicked，不再把坐标交回 Python 走 CDP 坐标点击
+# （坐标点击打的是屏幕位置而不是元素，被遮挡或窗口没前台时静默空点）。
+OK = {"kind": "ok", "clicked": True}
+OK_COVERED = {"kind": "ok", "clicked": True, "covered": True}
 
 
 # ── _parse_loc ─────────────────────────────────────────────────────────────────
@@ -97,9 +101,10 @@ def test_parse_loc_forms():
 def test_click_css_single_match():
     d = make_fake(evaluate_value=OK)
     r = run(helpers.click(d, "css:.btn"))
-    assert r == {"ok": True}, r
-    assert d.mouse_events and d.mouse_events[0][0] == "Input.dispatchMouseEvent"
-    assert d.mouse_events[-1][1]["x"] == 100 and d.mouse_events[-1][1]["y"] == 200
+    assert r == {"ok": True, "via": "in-page"}, r
+    # 定位 JS 自己派发，绝不再回到 CDP 坐标点击那条路
+    assert "dispatchEvent" in d.evaluate_calls[0], d.evaluate_calls[0]
+    assert d.mouse_events == [], f"还在走坐标点击: {d.mouse_events}"
     # 定位表达式确实带了多匹配检测
     assert "ambiguous" in d.evaluate_calls[0]
 
@@ -109,7 +114,11 @@ def test_click_css_not_found_is_transient():
     r = run(helpers.click(d, "css:.missing"))
     assert r["ok"] is False and r["kind"] == "transient", r
     assert "not found" in r["error"]
-    assert d.mouse_events == [], "没找到绝不能点"
+    # 新实现里没有坐标事件，断 mouse_events 恒真=永远不会红。真正要守的是：
+    # 定位 JS 必须在 not-found 时**提前 return**、走不到派发那几行。
+    js = d.evaluate_calls[0]
+    assert js.index("not-found") < js.index("dispatchEvent"), \
+        "not-found 分支排在派发之后，等于没找到也会点"
 
 
 def test_click_css_ambiguous_is_permanent():
@@ -118,7 +127,7 @@ def test_click_css_ambiguous_is_permanent():
     r = run(helpers.click(d, "css:.btn"))
     assert r["ok"] is False and r["kind"] == "permanent", r
     assert "matched 3 elements" in r["error"] and "nth:N" in r["error"], r
-    assert d.mouse_events == []
+    assert d.evaluate_calls[0].index("ambiguous") < d.evaluate_calls[0].index("dispatchEvent"),         "歧义分支排在派发之后，等于多匹配也会点第一个"
 
 
 def test_click_css_invalid_selector_is_permanent():
@@ -147,12 +156,12 @@ def test_click_bare_css_fallback():
 # ── text / index（走扩展 op，与 click_text / click_index 行为一致）─────────
 
 def test_click_text_via_op():
-    d = make_fake(script_value={"x": 55, "y": 66})
+    d = make_fake(script_value="clicked:登录")
     r = run(helpers.click(d, "text:登录"))
-    assert r["ok"] is True
-    assert d.script_calls[0]["op"] == "getRectByText"
+    assert r["ok"] is True and r["via"] == "in-page", r
+    assert d.script_calls[0]["op"] == "clickText", d.script_calls[0]
     assert d.script_calls[0]["arg"] == "登录"
-    assert d.mouse_events[-1][1]["x"] == 55
+    assert d.mouse_events == [], "text 定位也不该再走坐标点击"
 
 
 def test_click_text_not_found_is_transient():
@@ -162,10 +171,11 @@ def test_click_text_not_found_is_transient():
 
 
 def test_click_index_via_op():
-    d = make_fake(script_value={"x": 11, "y": 22})
+    d = make_fake(script_value="clicked:3")
     r = run(helpers.click(d, "index:3"))
-    assert r["ok"] is True
-    assert d.script_calls[0]["op"] == "getRectByIndex" and d.script_calls[0]["arg"] == 3
+    assert r["ok"] is True and r["via"] == "in-page", r
+    assert d.script_calls[0]["op"] == "clickIndex" and d.script_calls[0]["arg"] == 3
+    assert d.mouse_events == [], "index 定位也不该再走坐标点击"
 
 
 def test_click_index_not_a_number_is_permanent():
@@ -184,19 +194,19 @@ def test_click_index_not_found_is_transient():
 def test_click_nth_with_text_is_permanent_not_silently_ignored():
     """扩展 op 只回第一个匹配，兑现不了 nth。默默忽略 = 调用方以为点了第 2 个、
     实际点了第 1 个——正是 click() 要消灭的那类静默错误。"""
-    d = make_fake(script_value={"x": 1, "y": 2})
+    d = make_fake(script_value="clicked:登录")
     r = run(helpers.click(d, "nth:2;text:登录"))
     assert r["ok"] is False and r["kind"] == "permanent", r
     assert "nth" in r["error"] and "text" in r["error"], r
-    assert d.mouse_events == [], "兑现不了就不能点"
-    assert d.script_calls == [], "更不能发出去让扩展点第一个"
+    assert d.script_calls == [], "兑现不了就不能发出去让扩展点第一个"
+    assert d.evaluate_calls == [], "也不能退回内联 JS 那条路"
 
 
 def test_click_nth_with_index_is_permanent():
-    d = make_fake(script_value={"x": 1, "y": 2})
+    d = make_fake(script_value="clicked:3")
     r = run(helpers.click(d, "nth:2;index:3"))
     assert r["ok"] is False and r["kind"] == "permanent", r
-    assert d.mouse_events == []
+    assert d.script_calls == [], "兑现不了就不能发出去"
 
 
 def test_click_exception_carries_transient_kind():
@@ -236,7 +246,7 @@ def test_click_placeholder_ambiguous_is_permanent():
     d = make_fake(evaluate_value={"kind": "ambiguous", "count": 4})
     r = run(helpers.click(d, "placeholder:搜索"))
     assert r["ok"] is False and r["kind"] == "permanent", r
-    assert d.mouse_events == []
+    assert d.evaluate_calls[0].index("ambiguous") < d.evaluate_calls[0].index("dispatchEvent")
 
 
 def test_ambiguity_is_judged_on_visible_matches_only():
@@ -252,15 +262,20 @@ def test_ambiguity_is_judged_on_visible_matches_only():
         assert "hits.length > 1" not in js, f"{loc}: 还在拿全部命中判歧义"
 
 
-def test_locator_scrolls_into_view_before_taking_coords():
-    """box/rect 是视口坐标：元素在视口外还照着点就是点空——而且会返回 ok。"""
+def test_locator_scrolls_into_view_before_dispatching():
+    """元素在视口外时 rect 为空，派发等于点空——还会返回 ok。必须先滚、再量、再派发。
+
+    锚点从「取坐标那行」换成「派发那行」：定位 JS 现在就地派发，不再返回坐标。
+    """
     d = make_fake(evaluate_value=OK)
     run(helpers.click(d, "css:.btn"))
     js = d.evaluate_calls[0]
     assert "scrollIntoViewIfNeeded" in js, js
-    assert js.index("scrollIntoViewIfNeeded") < js.index("getBoundingClientRect();\n"
-                                                        "  return {kind: 'ok'"), \
-        "必须先滚再取坐标，反了等于没滚"
+    # 锚到**测量**那一行：可见性过滤里也有一次 getBoundingClientRect，
+    # 直接 index() 取到的是它，比 scroll 更靠前，断言会假红。
+    measure = js.index("const r = el.getBoundingClientRect")
+    assert js.index("scrollIntoViewIfNeeded") < measure, "必须先滚再量，反了等于没滚"
+    assert measure < js.index("dispatchEvent"), "必须先量再派发"
 
 
 def test_invalid_xpath_is_permanent_too():
@@ -273,7 +288,7 @@ def test_invalid_xpath_is_permanent_too():
 
 def test_click_value_is_json_safe():
     """定位值里带引号/反斜杠不能炸掉生成的 JS。"""
-    d = make_fake(script_value={"x": 1, "y": 2}, evaluate_value=OK)
+    d = make_fake(script_value="clicked:登录", evaluate_value=OK)
     r = run(helpers.click(d, "text:say \"hi\""))
     assert r["ok"] is True, r
     r2 = run(helpers.click(d, "css:[data-x='a\\\\b']"))
@@ -290,18 +305,40 @@ def test_registered():
 
 # ── 批次 2/3：旧 click_* 判空修正 + 错误分类（借鉴 ego-lite 的 box-model 守卫）────
 
-def test_click_selector_zero_x_is_clickable():
-    """x==0 是合法坐标，不该被 `not rect.get('x')` 误判为未找到。"""
-    d = make_fake(script_value={"x": 0, "y": 200})
-    r = run(helpers.click_selector(d, ".btn"))
+def test_click_at_xy_zero_x_is_clickable():
+    """x==0 是合法坐标，不该被 `not x` 这类判空误判成没找到。
+
+    这条原来挂在 click_selector / click_text 上——那时它们先取坐标再走 CDP 坐标点击。
+    现在整条 click_* 家族都改走页内点击（坐标点击打的是屏幕位置而不是元素，被遮挡
+    或窗口没前台时静默空点），**只剩 click_at_xy 还吃坐标**，所以守卫挪到它身上。
+    留在原处的话就是一条永远不会红的用例：那两个函数根本不再看 x。
+    """
+    d = make_fake()
+    r = run(helpers.click_at_xy(d, 0, 200))
     assert r["ok"] is True, r
     assert d.mouse_events and d.mouse_events[-1][1]["x"] == 0
 
 
-def test_click_text_zero_x_is_clickable():
-    d = make_fake(script_value={"x": 0, "y": 200})
+def test_click_selector_uses_the_in_page_op():
+    d = make_fake(script_value="clicked")
+    r = run(helpers.click_selector(d, ".btn"))
+    assert r["ok"] is True and r["via"] == "in-page", r
+    assert d.script_calls[0]["op"] == "click", d.script_calls[0]
+    assert d.mouse_events == [], "click_selector 不该再走坐标点击"
+
+
+def test_click_selector_reports_covered():
+    d = make_fake(script_value="clicked-covered")
+    r = run(helpers.click_selector(d, ".btn"))
+    assert r["ok"] is True and r["covered"] is True, r
+
+
+def test_click_text_uses_the_in_page_op():
+    d = make_fake(script_value="clicked:喜欢")
     r = run(helpers.click_text(d, "喜欢"))
-    assert r["ok"] is True, r
+    assert r["ok"] is True and r["via"] == "in-page", r
+    assert d.script_calls[0]["op"] == "clickText", d.script_calls[0]
+    assert d.mouse_events == [], "click_text 不该再走坐标点击"
 
 
 def test_click_index_zero_is_clickable():
@@ -361,30 +398,37 @@ def test_wait_selector_visible_has_no_kind():
 # ── tab 路由（扩展侧按 msg.tabId 分发；真机验过跨标签点击）─────────────────
 
 def test_click_with_tab_routes_locate_and_click_to_that_tab():
-    """定位在 A、点击落 B 是最难查的一类错——两端必须带同一个 tab。"""
+    """定位在 A、点击落 B 是最难查的一类错。
+
+    改走页内点击之后，定位与派发在**同一次** Runtime.evaluate 里完成，这类错在结构上
+    不再可能——所以这里守的是那个结构本身：只有一次 evaluate、带着 tab=77、且那段 JS
+    里同时有定位和派发。原来断 `d.mouse_events`（点击落在 77）在新实现下恒假，
+    留着就是条永远会红/永远无意义的用例。
+    """
     d = make_fake(evaluate_value=OK)
     r = run(helpers.click(d, "css:.btn", tab=77))
-    assert r == {"ok": True}, r
-    assert d.evaluate_calls, "带 tab 时走原始 CDP Runtime.evaluate"
+    assert r == {"ok": True, "via": "in-page"}, r
+    assert len(d.evaluate_calls) == 1, "定位与点击必须在同一次往返里"
+    assert "dispatchEvent" in d.evaluate_calls[0], "那段 JS 里没有派发"
     assert set(d.cdp_tabs) == {77}, f"每条命令都得带 tab=77: {d.cdp_tabs}"
-    assert d.mouse_events, "点击本身也要落在 tab 77"
+    assert d.mouse_events == [], "不该再有独立的坐标点击落到别的标签"
 
 
 def test_click_without_tab_keeps_pointer_semantics():
     """不传 tab 就打活动指针——原有行为，绝不能被新参数改掉。"""
     d = make_fake(evaluate_value=OK)
     r = run(helpers.click(d, "css:.btn"))
-    assert r == {"ok": True}, r
+    assert r == {"ok": True, "via": "in-page"}, r
     assert d.cdp_tabs == [None] * len(d.cdp_tabs), d.cdp_tabs
 
 
 def test_click_text_with_tab_passes_target_to_extension_op():
     """text/index 走扩展 op，tab 要变成 op 的 target 字段。"""
-    d = make_fake(script_value={"x": 5, "y": 6})
+    d = make_fake(script_value="clicked:登录")
     r = run(helpers.click(d, "text:登录", tab=88))
-    assert r["ok"] is True, r
+    assert r["ok"] is True and r["via"] == "in-page", r
+    assert d.script_calls[0]["op"] == "clickText", d.script_calls[0]
     assert d.script_calls[0]["target"] == 88, d.script_calls[0]
-    assert set(d.cdp_tabs) == {88}, d.cdp_tabs
 
 
 if __name__ == "__main__":

@@ -1002,7 +1002,28 @@ _LOC_HITS_JS = {
 }
 
 
-def _loc_center_js(kind: str, value: str, nth) -> str:
+_LOC_DISPATCH_JS = (
+    # 就地派发，不把坐标交回 Python 再走 CDP 坐标点击。坐标点击打的是**屏幕位置而不是
+    # 元素**：被浮层盖住、或窗口没在前台时，返回 ok:true 而页面纹丝不动，且没有任何
+    # 线索。covered 只作诊断——盖住了照样派发给 el 本身，页内点击本就不受遮挡影响。
+    "  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;\n"
+    "  const at = document.elementFromPoint(cx, cy);\n"
+    "  const covered = !(at && (at === el || el.contains(at)));\n"
+    "  const tgt = covered ? el : (at || el);\n"
+    "  const o = {bubbles: true, cancelable: true, view: window,\n"
+    "    clientX: cx, clientY: cy, screenX: cx, screenY: cy + 80,\n"
+    "    button: 0, buttons: 1, pointerId: 1, pointerType: 'mouse',\n"
+    "    isPrimary: true, pressure: 0.5, detail: 1};\n"
+    "  tgt.dispatchEvent(new PointerEvent('pointerdown', o));\n"
+    "  tgt.dispatchEvent(new MouseEvent('mousedown', o));\n"
+    "  tgt.dispatchEvent(new PointerEvent('pointerup', o));\n"
+    "  tgt.dispatchEvent(new MouseEvent('mouseup', o));\n"
+    "  tgt.dispatchEvent(new MouseEvent('click', o));\n"
+    "  return {kind: 'ok', clicked: true, covered: covered};\n"
+)
+
+
+def _loc_center_js(kind: str, value: str, nth, dispatch: bool = False) -> str:
     """构造返回 {kind:'ok'|'not-found'|'ambiguous'|'invalid', ...} 的定位表达式。
 
     text/index 走扩展 getRectByText / getRectByIndex op（与 click_text / click_index
@@ -1033,9 +1054,10 @@ def _loc_center_js(kind: str, value: str, nth) -> str:
               # 坐标；用 IfNeeded 版——已经看得见就不动页面，别平白搅乱用户的滚动位置。
               "  if (el.scrollIntoViewIfNeeded) el.scrollIntoViewIfNeeded(false);\n"
               "  const r = el.getBoundingClientRect();\n"
-              "  return {kind: 'ok', x: Math.round(r.left + r.width / 2),"
-              " y: Math.round(r.top + r.height / 2)};\n"
-              "})()")
+            + (_LOC_DISPATCH_JS if dispatch else
+               "  return {kind: 'ok', x: Math.round(r.left + r.width / 2),"
+               " y: Math.round(r.top + r.height / 2)};\n")
+            + "})()")
 
 
 async def click(daemon, loc: str, tab: int | None = None) -> dict[str, Any]:
@@ -1067,17 +1089,24 @@ async def click(daemon, loc: str, tab: int | None = None) -> dict[str, Any]:
                     return {"ok": False, "error": f"index: not a number: {value}",
                             "kind": "permanent"}
                 value = int(value)
-            op = "getRectByText" if kind == "text" else "getRectByIndex"
+            # 页内 op，不取坐标：坐标点击打的是屏幕位置而不是元素，被遮挡或窗口
+            # 没在前台时返回 ok:true 而页面纹丝不动（见 click_index 的说明）。
+            op = "clickText" if kind == "text" else "clickIndex"
             req: dict[str, Any] = {"action": "evaluate", "op": op, "arg": value}
             if tab is not None:
                 req["target"] = tab
             r = await daemon.bridge.send_scripting(req, 10)
-            rect = r.get("value") if r else None
-            if not rect or rect.get("x") is None:
+            v = r.get("value") if r else None
+            if isinstance(v, str) and v.startswith(("clicked:", "clicked-covered:")):
+                out: dict[str, Any] = {"ok": True, "via": "in-page"}
+                if v.startswith("clicked-covered:"):
+                    out["covered"] = True
+                return out
+            if v in ("not-found", "no-element", "invalid-index", None):
                 return {"ok": False, "error": f"{kind} not found: {value}",
                         "kind": "transient"}
-            return await click_at_xy(daemon, rect["x"], rect["y"], tab=tab)
-        code = _loc_center_js(kind, value, nth)
+            return {"ok": False, "error": f"click 未成功: {v}", "kind": "transient"}
+        code = _loc_center_js(kind, value, nth, dispatch=True)
         r = (await daemon.evaluate(code) if tab is None else
              await daemon.bridge.send("Runtime.evaluate",
                                       {"expression": code, "returnByValue": True}, tab=tab))
@@ -1095,9 +1124,12 @@ async def click(daemon, loc: str, tab: int | None = None) -> dict[str, Any]:
         if gk == "invalid":
             return {"ok": False, "error": got.get("error", f"invalid {kind}: {value}"),
                     "kind": "permanent"}
-        if gk != "ok" or not isinstance(got.get("x"), (int, float)):
+        if gk != "ok" or not got.get("clicked"):
             return {"ok": False, "error": f"locator failed: {loc}", "kind": "transient"}
-        return await click_at_xy(daemon, got["x"], got["y"], tab=tab)
+        out2: dict[str, Any] = {"ok": True, "via": "in-page"}
+        if got.get("covered"):
+            out2["covered"] = True
+        return out2
     except Exception as e:
         # 桥抖 / 超时是典型的「等会儿再来」，别让唯一没有 kind 的分支是异常分支
         return {"ok": False, "error": str(e), "kind": "transient"}
@@ -1160,14 +1192,38 @@ async def refs(daemon, selector: str | None = None, max_items: int = 50,
         return {"ok": False, "error": str(e), "kind": "transient"}
 
 
+_REF_CLICK_JS = """function() {
+  const r = this.getBoundingClientRect();
+  if (!(r.width || r.height)) return {clicked: false, reason: 'no box'};
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  const at = document.elementFromPoint(cx, cy);
+  const covered = !(at && (at === this || this.contains(at)));
+  const tgt = covered ? this : (at || this);
+  const o = {bubbles: true, cancelable: true, view: window,
+    clientX: cx, clientY: cy, screenX: cx, screenY: cy + 80,
+    button: 0, buttons: 1, pointerId: 1, pointerType: 'mouse',
+    isPrimary: true, pressure: 0.5, detail: 1};
+  tgt.dispatchEvent(new PointerEvent('pointerdown', o));
+  tgt.dispatchEvent(new MouseEvent('mousedown', o));
+  tgt.dispatchEvent(new PointerEvent('pointerup', o));
+  tgt.dispatchEvent(new MouseEvent('mouseup', o));
+  tgt.dispatchEvent(new MouseEvent('click', o));
+  return {clicked: true, covered: covered};
+}"""
+
+
 async def click_ref(daemon, ref: int) -> dict[str, Any]:
     """click_ref(123) — 用 backendNodeId 点击（跨轮次稳定句柄）。
 
     ref 从 refs() 拿。DOM 小变化后仍命中同一元素；页面导航后失效 →
     kind:transient（重新 refs()），不静默点错位置。
 
-    取坐标前先 scrollIntoViewIfNeeded：box model 是视口坐标，元素在视口外时直接
-    照着点就是点空——还会返回 ok:True，正是这个函数承诺不做的事。
+    派发前先 scrollIntoViewIfNeeded：元素在视口外时 rect 为空，点了等于没点——
+    还会返回 ok:True，正是这个函数承诺不做的事。
+
+    **不走 CDP 坐标点击**：坐标打的是屏幕位置而不是元素，被遮挡或窗口没在前台时
+    返回 ok:true 而页面纹丝不动（见 click_index 的说明）。这里把 backendNodeId
+    解析成 JS 对象后就地派发，句柄的稳定性照旧。
     """
     try:
         try:
@@ -1177,35 +1233,48 @@ async def click_ref(daemon, ref: int) -> dict[str, Any]:
                                          {"backendNodeId": ref})
             except Exception:
                 pass
-            bm = await daemon.bridge.send("DOM.getBoxModel", {"backendNodeId": ref})
+            rn = await daemon.bridge.send("DOM.resolveNode", {"backendNodeId": ref})
         except Exception as e:
             return {"ok": False,
                     "error": f"ref {ref} no longer valid (page changed?): {e}",
                     "kind": "transient"}
-        content = ((bm or {}).get("model") or {}).get("content") or []
-        if len(content) < 8:
-            return {"ok": False, "error": f"ref {ref} has no box model (not rendered?)",
+        obj_id = ((rn or {}).get("object") or {}).get("objectId")
+        if not obj_id:
+            return {"ok": False, "error": f"ref {ref} could not be resolved (page changed?)",
                     "kind": "transient"}
-        x = sum(content[0::2]) / 4
-        y = sum(content[1::2]) / 4
-        return await click_at_xy(daemon, round(x), round(y))
+        r = await daemon.bridge.send("Runtime.callFunctionOn", {
+            "objectId": obj_id, "functionDeclaration": _REF_CLICK_JS,
+            "returnByValue": True})
+        v = ((r or {}).get("result") or {}).get("value")
+        if not isinstance(v, dict) or not v.get("clicked"):
+            why = v.get("reason") if isinstance(v, dict) else v
+            return {"ok": False,
+                    "error": f"ref {ref} not clickable ({why or 'not rendered?'})",
+                    "kind": "transient"}
+        out: dict[str, Any] = {"ok": True, "via": "in-page"}
+        if v.get("covered"):
+            out["covered"] = True
+        return out
     except Exception as e:
         return {"ok": False, "error": str(e), "kind": "transient"}
 
 
 async def click_selector(daemon, sel: str, tab: int | None = None) -> dict[str, Any]:
-    """click_selector(".btn") — CDP 真实坐标点击 (isTrusted:true)"""
+    """click_selector(".btn") — 页内点击，不走 CDP 坐标（见 click_index 的说明）。"""
     t = tab or await _find_tab(daemon)
     if not t: return {"ok": False, "error": "No tab"}
     try:
-        # JS 获取元素坐标（不派发事件）
         r = await daemon.bridge.send_scripting({
-            "action": "evaluate", "target": t, "op": "getRect", "sel": sel}, 10)
-        rect = r.get("value") if r else None
-        if not rect or rect.get("x") is None:
+            "action": "evaluate", "target": t, "op": "click", "sel": sel}, 10)
+        v = r.get("value") if r else None
+        if v in ("clicked", "clicked-covered"):
+            out: dict[str, Any] = {"ok": True, "via": "in-page"}
+            if v == "clicked-covered":
+                out["covered"] = True
+            return out
+        if v in ("not-found", None):
             return {"ok": False, "error": f"element not found: {sel}", "kind": "transient"}
-        # CDP 真实鼠标点击
-        return await click_at_xy(daemon, rect["x"], rect["y"])
+        return {"ok": False, "error": f"click_selector 未成功: {v}", "kind": "transient"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -1239,16 +1308,18 @@ async def find_text(daemon, text: str, exact: bool = False,
 
 
 async def click_text(daemon, text: str, tab: int | None = None) -> dict[str, Any]:
-    """click_text("喜欢") — CDP 真实坐标点击 (isTrusted:true)"""
+    """click_text("喜欢") — 页内点击，不走 CDP 坐标（见 click_index 的说明）。"""
     t = tab or await _find_tab(daemon)
     if not t: return {"ok": False, "error": "No tab"}
     try:
         r = await daemon.bridge.send_scripting({
-            "action": "evaluate", "target": t, "op": "getRectByText", "arg": text}, 10)
-        rect = r.get("value") if r else None
-        if not rect or rect.get("x") is None:
+            "action": "evaluate", "target": t, "op": "clickText", "arg": text}, 10)
+        v = r.get("value") if r else None
+        if isinstance(v, str) and v.startswith("clicked:"):
+            return {"ok": True, "via": "in-page"}
+        if v in ("not-found", None):
             return {"ok": False, "error": f"text not found: {text}", "kind": "transient"}
-        return await click_at_xy(daemon, rect["x"], rect["y"])
+        return {"ok": False, "error": f"click_text 未成功: {v}", "kind": "transient"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 

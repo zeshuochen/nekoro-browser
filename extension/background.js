@@ -331,8 +331,13 @@ async function runOp(op, sel, arg) {
             const r = el.getBoundingClientRect();
             const cx = r.left + r.width / 2;
             const cy = r.top + r.height / 2;
-            // Find the actual leaf element at click position (handles nested SVG/spans)
-            const target = document.elementFromPoint(cx, cy) || el;
+            // 中心点上的叶子元素（处理嵌套 SVG/span）—— 但**只在它确实属于 el 时**才用。
+            // 原来是 `elementFromPoint(cx,cy) || el`：目标被浮层/sticky 头/cookie 横幅
+            // 盖住时，事件就派发到遮挡物上，调用方拿到 ok:true 而页面纹丝不动。
+            // 盖住了就直接派发给 el 本身 —— 页内点击本就不该受遮挡影响。
+            const at = document.elementFromPoint(cx, cy);
+            const covered = !(at && (at === el || el.contains(at)));
+            const target = covered ? el : (at || el);
             const opts = {
                 bubbles: true, cancelable: true, view: window,
                 clientX: cx, clientY: cy, screenX: cx, screenY: cy + 80,
@@ -344,7 +349,7 @@ async function runOp(op, sel, arg) {
             target.dispatchEvent(new PointerEvent('pointerup', opts));
             target.dispatchEvent(new MouseEvent('mouseup', opts));
             target.dispatchEvent(new MouseEvent('click', opts));
-            return 'clicked';
+            return covered ? 'clicked-covered' : 'clicked';
         }
         case 'clickAt': {
             const pt = typeof arg === 'string' ? JSON.parse(arg) : (arg || {});
