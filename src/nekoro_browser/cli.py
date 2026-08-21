@@ -793,7 +793,7 @@ def main():
     if args.doctor:
         # 退出码必须跟着结论走：doctor 恒 0 时，任何拿它当就绪门禁的脚本/agent
         # （README 收尾那步就是这么用的）永远看到绿灯。
-        sys.exit(_doctor())
+        sys.exit(_doctor(args.port))
     if args.exec:
         r = _post("/exec", args.exec, timeout=_EXEC_TIMEOUT)
         sys.stdout.write(json.dumps(r, default=str) + "\n")
@@ -906,7 +906,7 @@ def _probe_url(r) -> str:
     return info.get("url", "") or "" if isinstance(info, dict) else ""
 
 
-def _doctor() -> int:
+def _doctor(port=None) -> int:
     """--doctor：纯诊断，不动手。返回退出码（0 = 全绿）。
 
     扩展那一步**探两次**。MV3 的 service worker 空闲会被 Chrome 回收，daemon 停过
@@ -931,9 +931,14 @@ def _doctor() -> int:
         # **反向结论**，还建议再起一个；而两个 daemon 抢同一个端口会轮换共享令牌，把
         # 原来那个打成 403，正是这个项目踩过的坑。
         # 判据用 bind 探测（`_port_in_use`），`_ensure_daemon` 早就是这个口径。
-        if _port_in_use():
+        # **port 必须传下去。** _url() 认 --port（走 _EXPLICIT_PORT），而这两处探测
+        # 不传就永远打默认端口 —— 于是标题写着 28503、判据却看的是 28417，默认端口上
+        # 恰好有人时就报「28503 is held (pid file says <另一台的 pid>)」，指着一个空端口
+        # 说被占着，还点了个不相干的 pid。--stop 和 _ensure_daemon 都规规矩矩传了，
+        # 只有 doctor 漏了（0.3.3 加这个 WARN 分支时漏的，已经发出去过一版）。
+        if _port_in_use(port):
             from . import lifecycle
-            held = lifecycle.existing_daemon_pid() if _pid_file_is_ours() else None
+            held = lifecycle.existing_daemon_pid() if _pid_file_is_ours(port) else None
             who = f"(pid file says {held}, unverified) " if held is not None else ""
             print(f"[WARN] Daemon       : {_url()} is held {who}but not answering")
             print("       → 多半是它正忙着跑一条长 exec（默认超时 120 秒）：等它跑完再来一次")
