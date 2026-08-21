@@ -1254,16 +1254,43 @@ async def click_text(daemon, text: str, tab: int | None = None) -> dict[str, Any
 
 
 async def click_index(daemon, index: int, tab: int | None = None) -> dict[str, Any]:
-    """click_index(3) — CDP 真实坐标点击 (isTrusted:true)"""
+    """click_index(3) — 页内点击第 N 个可交互元素。
+
+    **以前走的是 CDP 坐标点击（isTrusted:true），那条路会静默失效。** 坐标点击打的是
+    屏幕位置而不是元素，于是两种情况都会「返回 ok:true 而页面纹丝不动」：
+
+    1. 目标被浮层 / sticky 头 / cookie 横幅盖住 —— 事件落在遮挡物上；
+    2. 窗口没在前台 —— 坐标算得完全正确、`elementFromPoint` 也确实命中目标，
+       输入注入本身就是不生效。
+
+    第 2 种连命中检测都拦不住（实测：`hit` 为真、坐标无误，照样什么都没发生），
+    所以问题不在「验准不准」，而在这条路本身不可靠。没有报错、没有线索，
+    是最难查的一类失败。
+
+    改成页内点击：直接对元素派发指针序列 + 原生激活，不受遮挡和窗口状态影响。
+    库里其它点击（`click` / `click_text` / `click_selector` / `click_ref`）本来就都是
+    页内点击，`click_index` 是唯一的例外，也正是唯一会静默空点的那个。
+
+    需要真 isTrusted 事件时用 `click_at_xy()`，它仍然在，只是不再当默认路径。
+    返回值带 `via` 说明实际走了哪条路；`covered` 说明中心点是否被别的元素盖着
+    （纯诊断信息，不影响点击是否成功）。
+    """
     t = tab or await _find_tab(daemon)
     if not t: return {"ok": False, "error": "No tab"}
     try:
         r = await daemon.bridge.send_scripting({
-            "action": "evaluate", "target": t, "op": "getRectByIndex", "arg": index}, 10)
-        rect = r.get("value") if r else None
-        if not rect or rect.get("x") is None:
+            "action": "evaluate", "target": t, "op": "clickIndex", "arg": index}, 10)
+        v = r.get("value") if r else None
+        if isinstance(v, str) and v.startswith(("clicked:", "clicked-covered:")):
+            out: dict[str, Any] = {"ok": True, "via": "in-page"}
+            # covered 由扩展在**点击前**测好一起带回：点完页面一跳 DOM 就变了，
+            # 事后再问必然问不到。纯诊断，不影响点击是否成功。
+            if v.startswith("clicked-covered:"):
+                out["covered"] = True
+            return out
+        if v in ("no-element", "invalid-index", None):
             return {"ok": False, "error": f"index not found: {index}", "kind": "transient"}
-        return await click_at_xy(daemon, rect["x"], rect["y"])
+        return {"ok": False, "error": f"click_index 未成功: {v}", "kind": "transient"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 

@@ -304,10 +304,19 @@ def test_click_text_zero_x_is_clickable():
     assert r["ok"] is True, r
 
 
-def test_click_index_zero_x_is_clickable():
-    d = make_fake(script_value={"x": 0, "y": 200})
+def test_click_index_zero_is_clickable():
+    """index 0 也是 falsy —— 别在哪一步 `if not index` 把第一个元素判成没找到。
+
+    这条原来守的是「`x == 0` 被当成没找到」：那时 click_index 先取中心坐标再走
+    CDP 坐标点击。现在它改走页内点击（坐标点击会静默空点：被遮挡、或窗口没前台时
+    返回 ok:true 却什么都没发生），不再碰坐标，`x` 的 falsy 问题对它不复存在——
+    但 index 本身的 falsy 风险还在，所以这条守住新 wire 形状继续测。
+    `x == 0` 那条由 click_text / click_selector 的同名用例继续守着。
+    """
+    d = make_fake(script_value="clicked:0")
     r = run(helpers.click_index(d, 0))
     assert r["ok"] is True, r
+    assert r["via"] == "in-page", r
 
 
 def test_click_selector_not_found_has_kind():
