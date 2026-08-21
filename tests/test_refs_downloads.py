@@ -33,6 +33,11 @@ class FakeDaemon:
         self.active_tab_id = 1
         self.evaluate_calls = []
         self.scrolled = []
+        self.called_on = []
+        # 注解不能省：不写的话 pyright 会把它们推成 None / dict[str, bool]，
+        # 用例里改成字符串或加 reason 键就报类型错（CI 的 pyright 是门禁）。
+        self.resolve_error: str | None = None
+        self.click_result: dict[str, object] = {"clicked": True, "covered": False}
         self.texts_override: list[str] | None = None   # None = 照 nodes 的 text 回
 
     async def evaluate(self, expr, tab=None):
@@ -66,9 +71,18 @@ class FakeDaemon:
                     return {"node": {"backendNodeId": n["backendNodeId"],
                                      "nodeName": n["nodeName"]}}
             return {"node": {}}
-        # DOM.resolveNode / Runtime.callFunctionOn 故意不实现：refs() 一旦退回
-        # 「逐个元素 resolve + callFunctionOn」，就会撞到下面的 AssertionError。
-        # 那是 3×N 次串行往返 + 不释放的 RemoteObject，不能悄悄回去。
+        # DOM.resolveNode / Runtime.callFunctionOn 是 **click_ref 单个元素**的正当用法
+        # （改走页内点击后靠它把 backendNodeId 解析成 JS 对象再就地派发）。
+        # refs() 一旦退回「逐个元素 resolve + callFunctionOn」——3×N 次串行往返 +
+        # 不释放的 RemoteObject——由 test_refs_round_trips_stay_constant 里那两条
+        # 「not in kinds」断言拦住，那才是这条守卫真正的作用域。
+        if method == "DOM.resolveNode":
+            if self.resolve_error:
+                raise RuntimeError(self.resolve_error)
+            return {"object": {"objectId": f"obj-{params.get('backendNodeId')}"}}
+        if method == "Runtime.callFunctionOn":
+            self.called_on.append(params.get("objectId"))
+            return {"result": {"value": dict(self.click_result)}}
         if method == "DOM.scrollIntoViewIfNeeded":
             self.scrolled.append(params.get("backendNodeId"))
             return {}
@@ -168,20 +182,30 @@ def test_refs_drops_text_when_counts_disagree():
 
 # ── click_ref() ───────────────────────────────────────────────────────────────
 
-def test_click_ref_clicks_center():
+def test_click_ref_dispatches_in_page_not_by_coordinates():
+    """坐标点击打的是屏幕位置而不是元素：被遮挡或窗口没前台时返回 ok:true 而页面
+    纹丝不动。改成把 backendNodeId 解析成 JS 对象后就地派发，句柄稳定性照旧。"""
     d = FakeDaemon(nodes=[])
     r = run(helpers.click_ref(d, 101))
-    assert r["ok"] is True, r
-    last = d.mouse_events[-1]
-    assert last["x"] == 60 and last["y"] == 45, last   # content 8 点的几何中心
+    assert r["ok"] is True and r["via"] == "in-page", r
+    assert d.called_on == ["obj-101"], d.called_on
+    assert d.mouse_events == [], f"不该再有坐标点击: {d.mouse_events}"
+
+
+def test_click_ref_reports_covered():
+    d = FakeDaemon(nodes=[])
+    d.click_result = {"clicked": True, "covered": True}
+    r = run(helpers.click_ref(d, 101))
+    assert r["ok"] is True and r["covered"] is True, r
 
 
 def test_click_ref_stale_ref_is_transient():
-    d = FakeDaemon(box_error="Could not find node with given id")
+    d = FakeDaemon(nodes=[])
+    d.resolve_error = "Could not find node with given id"
     r = run(helpers.click_ref(d, 999))
     assert r["ok"] is False and r["kind"] == "transient", r
     assert "no longer valid" in r["error"]
-    assert d.mouse_events == [], "失效句柄绝不能点"
+    assert d.called_on == [], "失效句柄绝不能派发"
 
 
 def test_click_ref_scrolls_into_view_first():
@@ -191,8 +215,8 @@ def test_click_ref_scrolls_into_view_first():
     assert r["ok"] is True, r
     assert d.scrolled == [101], d.calls
     kinds = [m for m, _ in d.calls]
-    assert kinds.index("DOM.scrollIntoViewIfNeeded") < kinds.index("DOM.getBoxModel"), \
-        "必须先滚再取 box，反了等于没滚"
+    assert kinds.index("DOM.scrollIntoViewIfNeeded") < kinds.index("Runtime.callFunctionOn"), \
+        "必须先滚再派发，反了等于没滚"
 
 
 def test_click_ref_survives_scroll_failure():
@@ -206,14 +230,17 @@ def test_click_ref_survives_scroll_failure():
     d = NoScroll(nodes=[])
     r = run(helpers.click_ref(d, 101))
     assert r["ok"] is True, r
-    assert d.mouse_events, "滚动失败不该拦住点击"
+    assert d.called_on == ["obj-101"], "滚动失败不该拦住点击"
 
 
-def test_click_ref_no_box_model_is_transient():
-    d = FakeDaemon(box_content=[10, 20])          # 不足 8 点 → 未渲染
+def test_click_ref_unrendered_element_is_transient():
+    """元素没有 box（未渲染）时页内 JS 回 clicked:false —— 必须转成 transient 失败，
+    不能报成功。原来靠 getBoxModel 点数不足判断，现在判据挪到了 JS 的返回值上。"""
+    d = FakeDaemon(nodes=[])
+    d.click_result = {"clicked": False, "reason": "no box"}
     r = run(helpers.click_ref(d, 101))
     assert r["ok"] is False and r["kind"] == "transient", r
-    assert d.mouse_events == []
+    assert "no box" in r["error"], r
 
 
 # ── wait_for_download() ───────────────────────────────────────────────────────
