@@ -159,7 +159,7 @@ echo "await page_info()" | nekoro-browser
 | `click_ref(ref)` | `click_ref(123)` | 用 ref 点击（跨轮次稳定；导航后失效 → `kind:transient`，重新 refs()） |
 | `state(max_items=50)` | 同上 | 限制数量 |
 | `state(sel=".sidebar")` | 同上 | 限定范围 |
-| `click_index(idx)` | `click_index(3)` | 点击第 N 个元素（CDP isTrusted:true） |
+| `click_index(idx)` | `click_index(3)` | 点击第 N 个元素（页内点击，不受遮挡与窗口状态影响；返回 `via`，中心点被盖住时另带 `covered`）|
 | `hover(sel)` | `hover(".menu")` | CSS 选择器悬停 |
 | `hover_index(idx)` | `hover_index(3)` | 悬停第 N 个元素 |
 

@@ -315,7 +315,15 @@ async function runOp(op, sel, arg) {
             if (!el) return null;
             if (el.scrollIntoViewIfNeeded) el.scrollIntoViewIfNeeded(false);
             const r = el.getBoundingClientRect();
-            return {x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2)};
+            const x = Math.round(r.left + r.width / 2);
+            const y = Math.round(r.top + r.height / 2);
+            // 这个中心点上**实际**是谁？坐标点击打的是屏幕位置，不是元素：被浮层 /
+            // sticky 头 / cookie 横幅盖住时，事件落在遮挡物上，而调用方拿到的仍是
+            // ok:true —— 什么都没发生却报成功。把命中信息一起回去，让 Python 侧决定
+            // 是照常坐标点击（真 isTrusted），还是退回页内点击。
+            const at = document.elementFromPoint(x, y);
+            const hit = !!at && (at === el || el.contains(at));
+            return {x, y, hit};
         }
         case 'click': {
             const el = document.querySelector(sel);
@@ -380,12 +388,17 @@ async function runOp(op, sel, arg) {
                 clientX: _cx, clientY: _cy, screenX: _cx, screenY: _cy + 80,
                 button: 0, buttons: 1, pointerId: 1, pointerType: 'mouse',
                 isPrimary: true, pressure: 0.5, detail: 1};
+            // 中心点上实际是谁 —— **点击前**问，点完页面一跳 DOM 就变了，问了也白问。
+            // 纯诊断：页内点击照样点得到（不受遮挡影响），但调用方发现页面没反应时，
+            // 这一位能省掉一轮排查。
+            const _at = document.elementFromPoint(_cx, _cy);
+            const _covered = !(_at && (_at === _el || _el.contains(_at)));
             _el.dispatchEvent(new PointerEvent('pointerdown', _opts));
             _el.dispatchEvent(new MouseEvent('mousedown', _opts));
             _el.dispatchEvent(new PointerEvent('pointerup', _opts));
             _el.dispatchEvent(new MouseEvent('mouseup', _opts));
             _el.dispatchEvent(new MouseEvent('click', _opts));
-            return 'clicked:' + _tgt;
+            return (_covered ? 'clicked-covered:' : 'clicked:') + _tgt;
         }
         case 'inputIndex': {
             // Type text into the Nth input element (same ordering as state() op)
