@@ -164,6 +164,37 @@ def test_click_text_via_op():
     assert d.mouse_events == [], "text 定位也不该再走坐标点击"
 
 
+def test_click_text_reports_covered():
+    """**这条守的是我真踩过的坑。**
+
+    给 clickText op 补 covered 之后它开始回 `clicked-covered:`，而 Python 侧
+    click_text 当时只认 `clicked:` 前缀——于是目标被盖住时，明明点成功了却返回
+    ok:false。症状是「假失败」：页面确实动了，返回值却说没成。
+
+    独立复核指出：出事的正是这个函数，而 clicked-covered 的用例只覆盖了
+    click_index 和 click_selector，唯独它没有。补上。
+    """
+    d = make_fake(script_value="clicked-covered:喜欢")
+    r = run(helpers.click_text(d, "喜欢"))
+    assert r["ok"] is True, f"点成功了却报失败: {r}"
+    assert r["covered"] is True, r
+
+
+def test_click_loc_text_branch_reports_covered():
+    """click(loc) 的 text/index 分支同样要认双前缀——它是文档推荐的统一入口，
+    这里回退的话面更广。"""
+    d = make_fake(script_value="clicked-covered:登录")
+    r = run(helpers.click(d, "text:登录"))
+    assert r["ok"] is True, f"点成功了却报失败: {r}"
+    assert r["covered"] is True, r
+
+
+def test_click_loc_index_branch_reports_covered():
+    d = make_fake(script_value="clicked-covered:3")
+    r = run(helpers.click(d, "index:3"))
+    assert r["ok"] is True and r["covered"] is True, r
+
+
 def test_click_text_not_found_is_transient():
     d = make_fake(script_value=None)
     r = run(helpers.click(d, "text:不存在的东西"))

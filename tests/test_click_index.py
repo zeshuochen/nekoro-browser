@@ -146,12 +146,16 @@ def test_click_op_dispatches_to_the_element_not_the_thing_covering_it():
 
 def test_every_click_op_reports_coverage():
     """四个点击 op 的诊断位要一致：调用方拿到的信息不该随走哪条路而变。
-
     clickText 一度是唯一不报 covered 的，纯粹是漏了。
+
+    **断言不能只查 "covered" 这个子串**——它在注释里也出现，把整个计算掏空、只留
+    一句含该字样的注释，用例照样绿（独立复核实测：39 个文件一个都不红）。
+    所以查两样只可能出现在真代码里的东西：调用了 hitAt()，以及返回值里那个字面量。
     """
     for name in ("click", "clickIndex", "clickText"):
         block = _op_block(name)
-        assert "covered" in block, f"{name} op 没有遮挡诊断位"
+        assert "hitAt(" in block, f"{name} op 没有真的去算遮挡"
+        assert "clicked-covered" in block, f"{name} op 没有把遮挡结果带回给调用方"
 
 
 def test_coverage_is_not_claimed_when_the_viewport_is_zero():
