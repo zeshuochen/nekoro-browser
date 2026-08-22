@@ -36,7 +36,6 @@ def _fake_world(monkey, *, pid, still_alive=True):
     monkey["_request_shutdown"] = lifecycle._request_shutdown
     monkey["_process_start_time"] = lifecycle._process_start_time
     monkey["cleanup_pid"] = lifecycle.cleanup_pid
-    killed = []
 
     lifecycle.identify = lambda timeout=2.0: pid
     lifecycle._alive_ping = lambda timeout=1.0: True
@@ -44,8 +43,6 @@ def _fake_world(monkey, *, pid, still_alive=True):
     lifecycle._request_shutdown = lambda: None          # 优雅停不生效
     lifecycle._process_start_time = lambda p: 12345     # 身份指纹不变
     lifecycle.cleanup_pid = lambda: None
-    lifecycle.os_kill_calls = killed
-    return killed
 
 
 def _restore(monkey):
