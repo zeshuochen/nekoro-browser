@@ -284,6 +284,29 @@ def _request_shutdown(timeout=5.0) -> bool:
         return False
 
 
+def _note_forced_kill(pid):
+    """把「这个 daemon 是被强制结束的」写进它的日志。
+
+    优雅停会由 daemon 自己写下 `shutdown requested` + `daemon exiting` 两行；强杀
+    （Windows 上 os.kill 就是 TerminateProcess）不给它任何机会。缺这一行时，日志上
+    「有人杀了它」和「它自己无声消失」完全无法区分——而后者正是至今没定位的那个
+    偶发问题，两者混在一起就永远查不清。
+
+    **只在同一个数据目录下准确**：`daemon_log_path()` 解析的是**调用方**的数据目录。
+    杀的是别的数据目录起的 daemon 时，这行会落到调用方自己的日志里而不是对方的
+    ——那种情况下 `--stop` 已经在 stderr 打过明确警告，不重复兜。写不进去就算了，
+    为了留痕把停止本身搞失败是本末倒置。
+    """
+    try:
+        p = daemon_log_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] daemon pid {pid} "
+                    f"force-killed by stop_daemon (graceful shutdown did not take)\n")
+    except Exception:
+        pass
+
+
 def stop_daemon():
     """优雅停 daemon 并清 pid 文件。身份经 identify() 核验后才兜底 kill，
     stale pid（号被别的进程复用）绝不被 SIGTERM。够不到就只清文件、不升级到 kill。"""
@@ -312,6 +335,10 @@ def stop_daemon():
                 # POSIX：SIGTERM 优雅信号，daemon 可自清；Windows：os.kill 映射到
                 # TerminateProcess 硬杀（不跑自身清理）——但进程已 wedged，且 pid 文件
                 # 由下方 cleanup_pid() 统一清，无碍。
+                # **被硬杀的进程自己写不了日志**，所以由动手的这一方往它的日志里补一行。
+                # 不补的话，日志上「有人强制结束了它」和「它自己无声消失了」长得一模一样
+                # ——后者是至今没定位的那个偶发问题，两者混在一起就永远查不清。
+                _note_forced_kill(daemon_pid)
                 try:
                     os.kill(daemon_pid, signal.SIGTERM)
                 except (ProcessLookupError, OSError, SystemError, OverflowError):
