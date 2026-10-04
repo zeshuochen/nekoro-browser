@@ -21,7 +21,7 @@
 <p align="center">
   <a href="#快速开始">快速开始</a> ·
   <a href="#示例">示例</a> ·
-  <a href="#横向对比">横向对比</a> ·
+  <a href="#适用场景">适用场景</a> ·
   <a href="#mcp任何-mcp-客户端">MCP</a> ·
   <a href="#api">API</a> ·
   <a href="#架构">架构</a> ·
@@ -34,35 +34,10 @@
 
 **nekoro-browser 驱动你日常用的那个 Chrome——登录态、cookie、会话，原样保留。**
 
-别的自动化工具开的是*全新*浏览器：没有登录态，什么都干不了。nekoro-browser
-只是加一个小扩展：同一个 profile，不另开实例，也不会弹「正受到自动测试软件控制」横幅。
-
-> [!NOTE]
-> 安装就一句 `uv tool install`——纯 Python 标准库，不捆绑浏览器引擎，不下 200MB。
-
-每个 helper 自动反射成 MCP 工具（53 个），Claude Code、Cursor、Cline、opencode、Codex、
-VS Code/Copilot 直接就能开浏览器。模型随便换，无订阅、无厂商锁定。MIT，扩展源码在仓库里。
+通过 MV3 扩展把现有 Chrome 配置连接到本地 Python daemon，可从 CLI 或 AI 客户端的
+MCP 工具调用。Python 3.12+，仅标准库，不捆绑浏览器引擎。MIT，扩展源码随项目提供。
 
 ## 快速开始
-
-<details>
-<summary><b>懒得自己装？</b>把这段整个粘给 Claude Code / Cursor / opencode</summary>
-
-```
-帮我装 nekoro-browser：
-1. `uv tool install nekoro-browser`（没有 uv 就 `pipx install nekoro-browser`）。
-2. 跑 `nekoro-browser setup`，把它打印的扩展目录给我看。这一步归我：我去
-   chrome://extensions 打开开发者模式、点「加载已解压的扩展程序」、粘贴那个目录。
-   等我说装好了再继续——这一步你替我点不了。
-3. 然后另开一个终端启动 daemon 并保持不关：`nekoro-browser`。
-4. 最后一步看我怎么用，先问我：
-   - 在 AI 编辑器里用 → 注册 MCP server（`claude mcp add nekoro-browser --
-     nekoro-browser-mcp`，或我这个客户端对应的配置），然后我重启客户端；
-   - 只在终端用 → 不用配，`echo "page_info()" | nekoro-browser` 直接能跑。
-5. 收尾跑 `nekoro-browser --doctor`，告诉我 daemon / 扩展 / service worker 是不是全绿。
-```
-
-</details>
 
 **1 — 安装**（Python 3.12+，零第三方依赖）
 
@@ -74,13 +49,6 @@ uv tool install nekoro-browser
 
 <sub>从源码装：<code>git clone https://github.com/zeshuochen/nekoro-browser && cd nekoro-browser && uv pip install -e .</code></sub>
 
-> [!WARNING]
-> **升级后运行 `--ensure`。** `uv tool upgrade nekoro-browser` 后执行
-> `nekoro-browser --ensure`：自动后台重启旧版本 daemon、保留其域名白名单并重载扩展。
-> 再用 `nekoro-browser --doctor` 确认 CLI、正在运行的 daemon、扩展三个版本一致。
-> 若 Chrome 已停用扩展或安装路径变化，请在 `chrome://extensions` 重新启用或加载
-> `--extension-path` 指向的目录，再运行 `--ensure`。
-
 **2 — 加载扩展**
 
 ```bash
@@ -90,12 +58,17 @@ nekoro-browser setup
 复制扩展目录到剪贴板并等待连接。期间：`chrome://extensions/` → 开**开发者模式** →
 「**加载已解压的扩展程序**」→ 粘贴目录。
 
-**3 — 启动 daemon** —— 另开**第二个终端**，**别关**（daemon 就是握着 Chrome 连接的后台
-进程，关掉整条链就停）
+**3 — 后台启动并检查就绪**
+
+在 Chrome 打开一个普通网页，然后运行：
 
 ```bash
-nekoro-browser
+nekoro-browser --ensure
+nekoro-browser --doctor
 ```
+
+`--ensure` 后台启动 daemon 并验证真实页面响应，完成后可以关闭终端。
+`--doctor` 用于诊断，`--stop` 用于停止 daemon。
 
 **4 — 驱动浏览器。** 挑你实际的用法：
 
@@ -105,16 +78,27 @@ nekoro-browser
 claude mcp add nekoro-browser -- nekoro-browser-mcp
 ```
 
-重启客户端，直接让它开网页就行 —— 53 个浏览器工具会出现在工具列表里。
+重启客户端，再让它打开网页。
 
-*从终端用* —— 把代码片段管道给正在跑的 daemon：
+*从终端用* —— 执行一段代码：
 
 ```bash
-echo "page_info()" | nekoro-browser
+nekoro-browser -c "await page_info()"
 # → {"ok": true, "result": {"title": "...", "url": "..."}}
 ```
 
-哪一环挂了？`nekoro-browser --doctor` 分别检查 daemon / 扩展 / service worker 并指出。
+### 升级
+
+```bash
+uv tool upgrade nekoro-browser
+nekoro-browser --ensure
+nekoro-browser --doctor
+```
+
+pipx 用户改用 `pipx upgrade nekoro-browser`。`--ensure` 会重启旧版本 daemon，保留
+端口和域名白名单，并重载扩展。Doctor 应显示 CLI、daemon、扩展三个版本一致。
+若 Chrome 停用了扩展或安装路径变化，在 `chrome://extensions` 重新启用或加载
+`nekoro-browser --extension-path` 打印的目录，再运行 `--ensure`。
 
 ---
 
@@ -170,19 +154,13 @@ nekoro-browser -c "await click_index(7)"
 
 ---
 
-## 横向对比
+## 适用场景
 
-| | CDP WebSocket | playwright-cli | opencli | **nekoro-browser** |
-|------|:--:|:--:|:--:|:--:|
-| 原理 | `--remote-debugging-port` | Playwright 扩展 | OpenCLI 扩展 | 自建扩展 + 持久 WebSocket |
-| 安装 | 一行参数 | `npm i -g`（~200MB） | npm / 桌面应用 | `uv tool install`（纯标准库，零依赖） |
-| 登录态 | ❌ 独立实例 | ✅ | ✅ | ✅ |
-| 可修改扩展 | — | 需改 Playwright 源码 | 需改 OpenCLI 源码 | ✅ 扩展就在仓库里 |
-| 自愈 | ❌ | ❌ | ❌ | ✅ Agent 运行时编辑 helpers |
-| MCP | ❌ | ✅（另装 `@playwright/mcp`） | ❌ | ✅ 内置 53 个工具，`nekoro-browser-mcp` |
-| 站点知识 | ❌ | ❌ | ❌ | ✅ 你写的笔记和脚本**在导航时主动送到 agent 手里** |
+适合需要现有登录态、轻量 Python 运行时、CLI/MCP 接口和自定义站点脚本的个人
+浏览器流程。安装时需要手动加载未打包扩展；截图可能切换可见标签。
 
-<sub>第三行为什么是 ❌：Chrome 136 起 <code>--remote-debugging-port</code> 不再接受默认 profile，裸 CDP 只能连一个没有你登录态的干净实例；扩展的 <code>chrome.debugger</code> 不受此限。</sub>
+不提供隔离的并行浏览器上下文或多浏览器测试。
+目前完整 Chrome 流程仅在 Windows 验证，多小时连续运行的稳定性仍未验证。
 
 ---
 
@@ -191,8 +169,7 @@ nekoro-browser -c "await click_index(7)"
 MCP 是 Claude Code、Cursor 这类工具调用外部能力的协议。配好一次后，
 模型直接拿到 `navigate`、`click_index`、`get_markdown` 这些一等公民工具。
 
-**前提**：daemon 跑着（`nekoro-browser`，单独一个终端）——MCP server 只是转发层，
-真正握着 Chrome 连接的是 daemon。
+**前提**：先运行 `nekoro-browser --ensure`。daemon 持有 Chrome 连接，MCP server 负责转发调用。
 
 要注册的命令始终是 `nekoro-browser-mcp`，**不同的只是配置格式**：
 
@@ -259,7 +236,10 @@ command = "nekoro-browser-mcp"
 | 弹窗 | `dialog_off()`、`get_last_dialog()` |
 | 等待 | `wait_for_load()`、`wait_selector(sel)`、`wait_for_network_idle()`、`sleep(s)` |
 | 下载 | `wait_for_download()` |
-| 截图 | `capture_screenshot()`、`capture_screenshot("jpeg", 90)` |
+| 截图 | `capture_screenshot()`、`capture_screenshot(scale="device")`、`capture_screenshot("jpeg", 90)` |
+
+支持 `tab=` 的 helper 可指定已 attach 的标签，默认使用活动标签。
+截图默认按 CSS 视口缩放，可直接用于点击坐标；`scale="device"` 保留物理像素。
 
 截图前会将目标标签带到前台，因此 Chrome 当前显示的标签可能变化。
 若窗口仍无可渲染视口，会返回 `not_rendered`。
@@ -295,7 +275,7 @@ CLI (nekoro-browser)  ·  MCP server (nekoro-browser-mcp)
 
 </details>
 
-- `helpers.py` —— 54 个 helpers（53 个暴露成 MCP 工具），都不认识任何具体网站。
+- `helpers.py` —— 通用浏览器 helpers，自动反射成 MCP 工具。
 - `lifecycle.py` —— pid 文件 + 进程指纹防误杀、僵尸自愈（CDP 探活失败自动清理重启）、
   localhost 绕过系统代理。
 - 扩展侧针对 MV3 service worker 回收做了硬化 —— `content_scripts` 心跳（页面里的独立
@@ -355,8 +335,8 @@ Agent 遇到缺口时当场补、当场用——不重新编译，不重启 daem
 ## 已知限制
 
 - **未打包的扩展会被 Chrome 停用。** 以「加载已解压的扩展程序」装的扩展，在 Chrome 更新或重启后可能被自动关掉、或弹出「停用开发者模式扩展程序」的提示。`--doctor` 报 Extension/SW 不响应时，先去 `chrome://extensions/` 把它重新打开。本项目目前**不发 Chrome 应用商店**，这条限制短期内不会消失。
-- **Service Worker 保活不是 100%。** MV3 的回收时机由 Chrome 决定。心跳 + `onStartup` + 自动重挂能覆盖绝大多数情况，但无人值守的长时 cron 任务仍建议先 `--doctor` 健康检查再重试。
-- **一切围绕一个「活动标签」。** 16 个 helper（`click`、`click_selector`、`state`、`wait_selector`、`fill_input` 等）可以传 `tab=id` 指定另一张**已 attach** 的标签——指名了却没 attach 会直接报错，**不会悄悄退回活动标签**。其余 37 个恒跟随活动标签。仍然不做并行会话：一个 daemon 驱动一个 Chrome，请求串行。
+- **MV3 恢复依赖 Chrome。** 心跳、`onStartup` 和重挂有助于恢复连接。短流程回归覆盖重载与重启，多小时无人值守稳定性仍未验证。工作流开始前运行 `--ensure`，并处理失败。
+- **共享一个 Chrome 会话。** 支持 `tab=id` 的 helper 可指定另一张**已 attach** 的标签，未 attach 时会报错。其他 helper 跟随活动标签。并发客户端共享这份标签状态，需要协调操作；不提供独立浏览器上下文。
 - **下载落在 Chrome 自己设定的目录，路径改不了。** `wait_for_download()` 返回 `{url, filename, bytes}`——只有文件名，没有完整路径。要改目录请在 Chrome 设置里改。<sub>`Browser.setDownloadBehavior`（`-32601`）和已废弃的 `Page.setDownloadBehavior`（`-32000 "Cannot not access browser-level commands"`）都是 browser-level 命令，`chrome.debugger` 只拿得到 tab target，一律被拒。</sub>
 - **MCP server 串行处理请求。** 一次 `wait_selector(timeout=90)` 期间，同一连接上的其他请求（含 `ping`）会排队等它做完。要并发就开多个客户端连接。
 
@@ -408,13 +388,13 @@ macOS `~/Library/Application Support/nekoro-browser`、其余 POSIX
 
 | 现象 | 原因 | 解决 |
 |------|------|------|
-| `Daemon not running` | daemon 没启动 | 终端 1 运行 `nekoro-browser` |
+| `Daemon not running` | daemon 没启动 | 运行 `nekoro-browser --ensure` |
 | CDP 命令超时 | 扩展未连接 / service worker 睡死 | `nekoro-browser --doctor` 定位；必要时 `--reload-ext` 或 `chrome://extensions` 手动重载 |
 | 扩展被 Chrome 停用 | 未打包扩展 + Chrome 更新 | `chrome://extensions/` 重新启用，再 `--doctor` 复验 |
 | 页面没变化 | 扩展未 attach | 打开普通网页（非 chrome://），重启 daemon |
-| `Another debugger is already attached` | 该标签已被**别的调试类扩展**占着（Playwright / OpenCLI / Claude in Chrome 等都用 `chrome.debugger`）| 同一标签只能挂一个调试器。换一个标签，或在 `chrome://extensions` 停用另一个 |
-| 端口占用 | 旧进程残留 | 杀掉占用 28417 的进程，或直接 `nekoro-browser --stop` |
-| `chrome://extensions` 上扩展卡片出现红色**错误** | daemon 没跑，扩展在反复重连 | **不是扩展坏了。** 起 daemon（`nekoro-browser`）后不再新增，卡片上点「清除全部」清掉旧的 |
+| `Another debugger is already attached` | 该标签已被别的调试类扩展占用 | 同一标签只能挂一个调试器。换一个标签，或在 `chrome://extensions` 停用另一个 |
+| 端口占用 | 其他进程或繁忙的 daemon | 等繁忙请求完成；用 `--stop` 停止自己的 daemon，或换端口并同步扩展选项 |
+| `chrome://extensions` 上扩展卡片出现红色**错误** | daemon 没跑，扩展在反复重连 | 运行 `--ensure`，再清除卡片上的旧连接错误 |
 
 <sub>最后一条几乎人人都会碰到：装完扩展、还没来得及起 daemon，那段时间每次重连都会记一条
 <code>WebSocket connection to 'ws://127.0.0.1:28417/ws' failed: ERR_CONNECTION_REFUSED</code>。

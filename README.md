@@ -21,7 +21,7 @@ Let your AI coding tool drive <b>your own Chrome</b> — open pages, click, read
 <p align="center">
   <a href="#quick-start">Quick Start</a> ·
   <a href="#examples">Examples</a> ·
-  <a href="#how-it-compares">Compare</a> ·
+  <a href="#where-it-fits">Use Cases</a> ·
   <a href="#mcp-any-mcp-client">MCP</a> ·
   <a href="#api">API</a> ·
   <a href="#architecture">Architecture</a> ·
@@ -34,38 +34,11 @@ Let your AI coding tool drive <b>your own Chrome</b> — open pages, click, read
 
 **nekoro-browser drives the Chrome you already use — logins, cookies, sessions, all intact.**
 
-Other automation tools spawn a *fresh* browser: no logins, nothing works. nekoro-browser
-just adds a small extension: same profile, no second instance, no "controlled by automated
-software" banner.
-
-> [!NOTE]
-> Install is one `uv tool install` — Python stdlib only, no bundled engine, no 200MB download.
-
-Every helper is reflected into an MCP tool (53 of them), so Claude Code, Cursor, Cline,
-opencode, Codex and VS Code/Copilot can drive the browser directly. Bring any model — no
-subscription, no lock-in. MIT, extension source included.
+An MV3 extension connects your existing Chrome profile to a local Python daemon.
+Use CLI snippets or built-in MCP tools from your AI client. Python 3.12+, standard
+library only, no bundled browser engine. MIT; extension source included.
 
 ## Quick Start
-
-<details>
-<summary><b>Rather have your AI do it?</b> Paste this into Claude Code / Cursor / opencode</summary>
-
-```
-Install nekoro-browser for me:
-1. `uv tool install nekoro-browser` (no uv → `pipx install nekoro-browser`).
-2. Run `nekoro-browser setup` and show me the extension path it prints. This step is mine:
-   I open chrome://extensions, turn on Developer mode, click Load unpacked, paste that
-   path. Wait until I say it's loaded — you cannot click this for me.
-3. Then start the daemon in a separate terminal that stays open: `nekoro-browser`.
-4. Last step depends on how I'll use it — ask me which:
-   - from my AI editor → register the MCP server (`claude mcp add nekoro-browser --
-     nekoro-browser-mcp`, or the equivalent config for my client), then I restart it;
-   - from the terminal only → nothing to do, `echo "page_info()" | nekoro-browser` works.
-5. Finish with `nekoro-browser --doctor` and tell me if daemon / extension / service
-   worker are all green.
-```
-
-</details>
 
 **1 — Install** (Python 3.12+, zero third-party dependencies)
 
@@ -77,14 +50,6 @@ No [uv](https://docs.astral.sh/uv/)? `pipx install nekoro-browser` works too.
 
 <sub>From source: <code>git clone https://github.com/zeshuochen/nekoro-browser && cd nekoro-browser && uv pip install -e .</code></sub>
 
-> [!WARNING]
-> **Upgrading?** Run `uv tool upgrade nekoro-browser`, then `nekoro-browser --ensure`.
-> This restarts an outdated daemon in the background, preserves its domain allowlist,
-> and reloads the extension. `nekoro-browser --doctor` must report matching CLI,
-> daemon and extension versions. If Chrome has disabled the extension or its install
-> path changed, re-enable/load it in `chrome://extensions` using `--extension-path`,
-> then run `--ensure` again.
-
 **2 — Load the extension**
 
 ```bash
@@ -94,12 +59,17 @@ nekoro-browser setup
 Copies the extension directory to your clipboard and waits until it connects. Meanwhile:
 `chrome://extensions/` → **Developer mode** → **Load unpacked** → paste.
 
-**3 — Start the daemon** — open a **second terminal** and **leave it running** (it's the
-background process that holds the Chrome connection; close it and everything stops)
+**3 — Start in the background and check readiness**
+
+Open a regular webpage in Chrome, then run:
 
 ```bash
-nekoro-browser
+nekoro-browser --ensure
+nekoro-browser --doctor
 ```
+
+`--ensure` starts the daemon in the background and checks a real page response.
+You can close this terminal. `--doctor` diagnoses; `--stop` stops the daemon.
 
 **4 — Drive the browser.** Pick the way you actually work:
 
@@ -110,17 +80,28 @@ nekoro-browser
 claude mcp add nekoro-browser -- nekoro-browser-mcp
 ```
 
-Restart the client and ask it to open a page. That's it — 53 browser tools show up.
+Restart the client and ask it to open a page.
 
-*From the terminal* — pipe a snippet to the running daemon:
+*From the terminal* — run a snippet:
 
 ```bash
-echo "page_info()" | nekoro-browser
+nekoro-browser -c "await page_info()"
 # → {"ok": true, "result": {"title": "...", "url": "..."}}
 ```
 
-Something down? `nekoro-browser --doctor` checks daemon / extension / service worker
-and tells you which one.
+### Upgrading
+
+```bash
+uv tool upgrade nekoro-browser
+nekoro-browser --ensure
+nekoro-browser --doctor
+```
+
+For pipx, use `pipx upgrade nekoro-browser`. `--ensure` restarts an outdated daemon,
+preserves its port and domain allowlist, and reloads the extension. Doctor must show
+matching CLI, daemon and extension versions. If Chrome disabled the extension or its
+path changed, re-enable/load the directory printed by `nekoro-browser --extension-path`
+in `chrome://extensions`, then run `--ensure` again.
 
 ---
 
@@ -177,19 +158,14 @@ All helpers are documented in [SKILL.md](https://github.com/zeshuochen/nekoro-br
 
 ---
 
-## How It Compares
+## Where It Fits
 
-| | CDP WebSocket | playwright-cli | opencli | **nekoro-browser** |
-|------|:--:|:--:|:--:|:--:|
-| Approach | `--remote-debugging-port` | Playwright ext. | OpenCLI ext. | Custom ext. + WS |
-| Install | one flag | `npm i -g` (~200MB) | npm / desktop | `uv tool install` (stdlib only) |
-| Login state | ❌ fresh instance | ✅ | ✅ | ✅ |
-| Modify ext. | — | edit source | edit source | ✅ this repo |
-| Self-healing | ❌ | ❌ | ❌ | ✅ agent edits at runtime |
-| MCP | ❌ | ✅ separate pkg | ❌ | ✅ built-in, 53 tools |
-| Site knowledge | ❌ | ❌ | ❌ | ✅ notes auto-attached |
+Use it for personal browser workflows that need existing logins, a small Python
+runtime, CLI/MCP access, and editable site scripts. Installation requires loading
+an unpacked extension; screenshots can change the visible tab.
 
-<sub>Why row 3 is ❌: since Chrome 136, <code>--remote-debugging-port</code> refuses the default profile — a raw CDP connection means a fresh instance with none of your logins. An extension's <code>chrome.debugger</code> is exempt.</sub>
+It does not provide isolated parallel browser contexts or multi-browser testing.
+The full Chrome loop is validated on Windows; long-running stability remains unverified.
 
 ---
 
@@ -198,8 +174,8 @@ All helpers are documented in [SKILL.md](https://github.com/zeshuochen/nekoro-br
 MCP is how Claude Code, Cursor and friends call outside tools. Hook it up once and the
 model gets `navigate`, `click_index`, `get_markdown`… as first-class tools.
 
-**Prerequisite:** the daemon is running (`nekoro-browser`, its own terminal) — the MCP server
-is a thin forwarder, the daemon owns the Chrome connection.
+**Prerequisite:** run `nekoro-browser --ensure` first. The daemon owns the Chrome
+connection; the MCP server forwards calls to it.
 
 The command to register is always `nekoro-browser-mcp`. Only the config shape differs:
 
@@ -270,7 +246,7 @@ Beyond the tool list:
 | Downloads | `wait_for_download()` |
 | Screenshots | `capture_screenshot()`, `capture_screenshot(scale="device")`, `capture_screenshot("jpeg", 90)` |
 
-<sub>All page-level helpers take an optional <code>tab=</code> (default: the active tab).
+<sub>Helpers exposing <code>tab=</code> can target an already attached tab (default: the active tab).
 <code>capture_screenshot</code> defaults to <code>scale="css"</code> — pixel size equals the CSS
 viewport, so coordinates can be fed straight to <code>click_at_xy</code>; <code>scale="device"</code>
 keeps physical pixels.</sub>
@@ -309,7 +285,7 @@ CLI (nekoro-browser)  ·  MCP server (nekoro-browser-mcp)
 
 </details>
 
-- `helpers.py` — 54 helpers (53 exposed as MCP tools), none aware of any particular website.
+- `helpers.py` — general browser helpers, reflected into MCP tools.
 - `lifecycle.py` — pid file + process fingerprint (never kills a reused pid), stale-daemon
   self-heal (CDP probe fails → cleanup and restart), localhost bypasses the system proxy.
 - Extension, against MV3 service worker eviction — `content_scripts` heartbeat (wake vector
@@ -373,8 +349,8 @@ three — but the full "Chrome + extension" loop has never run on a real macOS/L
 ## Known Limitations
 
 - **Unpacked extensions get disabled by Chrome.** An extension installed via "Load unpacked" may be switched off automatically after a Chrome update or restart, or hidden behind the "Disable developer mode extensions" prompt. When `--doctor` reports Extension/SW not responding, re-enable it in `chrome://extensions/` first. This project is **not published to the Chrome Web Store**, so the limitation is not going away soon.
-- **Service worker keepalive is not 100%.** MV3 eviction timing is Chrome's call. The heartbeat + `onStartup` + reattach cover the vast majority of cases, but unattended long-running cron jobs should still health-check with `--doctor` and retry.
-- **Everything is anchored to one active tab.** 16 helpers (`click`, `click_selector`, `state`, `wait_selector`, `fill_input`, …) take an explicit `tab=id` to target another **already attached** tab — naming a tab that is not attached is an error, never a silent fallback to the active one. The other 37 always follow the active tab, and there are still no parallel sessions: one daemon drives one Chrome, requests are serialised.
+- **MV3 recovery depends on Chrome.** Heartbeats, `onStartup` and reattachment help restore connections. Short browser regressions cover reload and restart recovery; multi-hour unattended stability remains unverified. Run `--ensure` before a workflow and handle failures.
+- **One shared Chrome session.** Helpers with `tab=id` can target another **already attached** tab; an unattached target is an error. Other helpers follow the active tab. Concurrent clients share this tab state and must coordinate their actions; separate browser contexts are not provided.
 - **Downloads land wherever Chrome is configured to put them; the path cannot be changed from here.** `wait_for_download()` returns `{url, filename, bytes}` — a filename, not a full path. Set the directory in Chrome's own settings. <sub>Both `Browser.setDownloadBehavior` (`-32601`) and the deprecated `Page.setDownloadBehavior` (`-32000 "Cannot not access browser-level commands"`) are browser-level and get rejected under `chrome.debugger`, which only ever hands out a tab target.</sub>
 - **The MCP server handles requests serially.** During a `wait_selector(timeout=90)` every other request on that connection (including `ping`) queues behind it. Open separate client connections if you need concurrency.
 
@@ -429,13 +405,13 @@ bare domain; `*` allows everything. See **Security** below.
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `Daemon not running` | Daemon not started | Run `nekoro-browser` in terminal 1 |
+| `Daemon not running` | Daemon not started | Run `nekoro-browser --ensure` |
 | CDP timeout | Extension not connected / service worker asleep | `nekoro-browser --doctor` to diagnose; try `--reload-ext` or manually reload in `chrome://extensions` |
 | Extension disabled by Chrome | Unpacked extension + Chrome update | Re-enable it in `chrome://extensions/`, then re-run `--doctor` |
 | Page unchanged | Extension not attached to tab | Open a regular (non-chrome://) page, restart daemon |
-| `Another debugger is already attached` | Another debugging extension owns that tab (Playwright, OpenCLI, Claude in Chrome all use `chrome.debugger`) | Only one debugger per tab. Use a different tab, or disable the other extension in `chrome://extensions` |
-| Port in use | Stale process | Kill the process on port 28417, or just run `nekoro-browser --stop` |
-| Red **Errors** badge on the extension card in `chrome://extensions` | Daemon isn't running; the extension keeps retrying | **The extension is not broken.** Start the daemon (`nekoro-browser`) — no new entries after that; clear the old ones with "Clear all" on the card |
+| `Another debugger is already attached` | Another debugging extension owns that tab | Only one debugger per tab. Use a different tab, or disable the other extension in `chrome://extensions` |
+| Port in use | Another process or busy daemon | Let a busy daemon finish; use `--stop` for your daemon, or choose a different port and match it in extension options |
+| Red **Errors** badge on the extension card in `chrome://extensions` | Daemon isn't running; the extension keeps retrying | Run `--ensure`, then clear old connection errors on the card |
 
 <sub>Nearly everyone hits the last one: between loading the extension and starting the daemon, every
 reconnect logs <code>WebSocket connection to 'ws://127.0.0.1:28417/ws' failed: ERR_CONNECTION_REFUSED</code>.

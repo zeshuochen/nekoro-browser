@@ -516,6 +516,21 @@ def _pid_file_is_ours(port=None) -> bool:
     return recorded == config.client_port(port)
 
 
+def _ensure_daemon_version(port=None) -> bool:
+    """Check the authenticated running code, including after a busy daemon recovers."""
+    r = _post("/exec", "{'version': __import__('nekoro_browser').__version__, "
+              "'allow_domains': getattr(daemon, 'allow_domains', None)}", timeout=5)
+    details = r.get("result")
+    if not r.get("ok") or not isinstance(details, dict) or not details.get("version"):
+        _step("FAIL", "Daemon", f"cannot verify running version: {r.get('error', 'no version response')}")
+        if _is_token_error(r):
+            print("       → 令牌对不上：用 daemon 所属的数据目录 --stop，再重跑 --ensure；或换个端口")
+        return False
+    if details["version"] != __version__:
+        return _restart_outdated_daemon(port, details)
+    return True
+
+
 def _ensure_daemon(port=None) -> bool:
     from . import lifecycle
     # lifecycle.URL 是导入时算好的，而 _alive()/_port_in_use() 每次现算。端口文件
@@ -523,16 +538,8 @@ def _ensure_daemon(port=None) -> bool:
     # 端口上的 daemon —— 拿它的 pid 去说「占着我这个端口」又是一次张冠李戴。
     lifecycle.set_port(config.client_port(port))
     if _alive():
-        r = _post("/exec", "{'version': __import__('nekoro_browser').__version__, "
-                  "'allow_domains': getattr(daemon, 'allow_domains', None)}", timeout=5)
-        details = r.get("result")
-        if not r.get("ok") or not isinstance(details, dict) or not details.get("version"):
-            _step("FAIL", "Daemon", f"cannot verify running version: {r.get('error', 'no version response')}")
-            if _is_token_error(r):
-                print("       → 令牌对不上：用 daemon 所属的数据目录 --stop，再重跑 --ensure；或换个端口")
+        if not _ensure_daemon_version(port):
             return False
-        if details["version"] != __version__:
-            return _restart_outdated_daemon(port, details)
         _step("PASS", "Daemon", f"running ({_url()})")
         return True
     if _port_bind_denied(port):
@@ -560,6 +567,8 @@ def _ensure_daemon(port=None) -> bool:
         # 这时「有个健康 daemon 在」的证据最强，4 秒就判死是本末倒置。
         budget = ENSURE_DAEMON_WAIT if held is not None else ENSURE_DAEMON_GRACE
         if _wait(_alive, budget, note="waiting for the daemon to answer"):
+            if not _ensure_daemon_version(port):
+                return False
             # 「还在启动」和「刚才忙着」两种都会走到这里，措辞别把话说死
             _step("PASS", "Daemon", f"running ({_url()}, was busy or still starting)")
             return True

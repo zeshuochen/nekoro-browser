@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-from nekoro_browser import cli, config, helpers
+from nekoro_browser import cli, config, helpers, lifecycle
 from nekoro_browser.bridge import ExtensionBridge
 
 
@@ -63,6 +63,29 @@ def test_version_probe_failure_wont_shutdown_other_daemon():
         assert not cli._ensure_daemon(30500)
         assert post.call_count == 1 and post.call_args.args[0] == "/exec"
     assert "cannot verify running version" in output.getvalue()
+
+
+def test_recovered_daemon_still_requires_version_and_authentication():
+    old = {"version": "0.3.5", "allow_domains": ["example.test"]}
+    for response, expected, restart in (
+        ({"ok": True, "result": old}, True, True),
+        ({"ok": True, "result": {"version": cli.__version__}}, True, False),
+        ({"ok": False, "error": "Forbidden: bad/missing token"}, False, False),
+    ):
+        with redirect_stdout(io.StringIO()), \
+             patch.object(cli, "_alive", side_effect=[False, True]), \
+             patch.object(cli, "_port_bind_denied", return_value=False), \
+             patch.object(cli, "_port_in_use", return_value=True), \
+             patch.object(lifecycle, "identify", return_value=4242), \
+             patch.object(cli, "_post", return_value=response) as post, \
+             patch.object(cli, "_restart_outdated_daemon", return_value=True) as upgrade:
+            assert cli._ensure_daemon(30500) == expected
+            post.assert_called_once()
+            assert post.call_args.args[0] == "/exec"
+            if restart:
+                upgrade.assert_called_once_with(30500, old)
+            else:
+                upgrade.assert_not_called()
 
 
 async def test_reload_needs_ack_new_connection_and_page_response():
