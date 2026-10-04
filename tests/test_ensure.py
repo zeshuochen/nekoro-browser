@@ -141,10 +141,12 @@ class _World:
         return 4242
 
     def _post(self, path, data="", timeout=30):
-        self.acts.append(f"post:{data}")
+        if data.startswith("{'version':"):
+            return {"ok": True, "result": {"version": cli.__version__, "allow_domains": None}}
+        self.acts.append("post:await page_info()" if "page_info" in data else f"post:{data}")
         if "reload_extension" in data:
             self.healthy = self.reload_heals
-            return {"ok": True}
+            return {"ok": True, "result": {"ok": self.healthy, "error": "reload did not heal"}}
         if "page_info" in data:
             # doctor 直接用 _post 探扩展（不经 _healthy），所以这条路要单独建模。
             # 形状必须跟真 daemon 一致：不通时是 ok=True 而 result 里没 url
@@ -157,7 +159,9 @@ class _World:
                     and self.page_info_probes >= self.wakes_on_probe):
                 self.healthy = True
             return {"ok": True,
-                    "result": {"url": "https://example.test/"} if self.healthy else {}}
+                    "result": {"url": "https://example.test/",
+                               "daemon_version": cli.__version__,
+                               "extension_version": cli.__version__} if self.healthy else {}}
         return {"ok": True}
 
 
@@ -550,8 +554,13 @@ def test_daemon_dying_after_the_reload_attempt_is_still_respawned():
     10s）才因为等不到扩展而自杀，而热路径的探活预算只有 10s。所以它常常是**在
     reload 发出去之后**才死的——「daemon 没了吗」这一问必须放在 reload 之后，
     放前面就永远问不到，只会以 FAIL 收场。"""
-    # 探活 #1 快路径、#2 扩展步首探、#3 是 reload 之后那一探——daemon 死在这一刻
-    w = _World(healthy=False, reload_heals=False, dies_on_probe=3).install()
+    w = _World(healthy=False, reload_heals=False).install()
+    def _post(path, data="", timeout=30):
+        r = w._post(path, data, timeout)
+        if "reload_extension" in data:
+            w.alive = w.port_held = False  # dies while waiting for reload confirmation
+        return r
+    cli._post = _post
 
     def _spawn(port=None, allow_domains=None):
         w.acts.append(f"spawn-daemon:{port}")

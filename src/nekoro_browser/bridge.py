@@ -103,6 +103,8 @@ class ExtensionBridge:
         self._pending: dict[int, asyncio.Future] = {}
         self._event_handlers: list = []
         self._connected = False
+        self.extension_version: str | None = None
+        self.connection_generation = 0
         self._server = None
         self._exec_handler = None
         self._ext_writer: asyncio.StreamWriter | None = None
@@ -180,7 +182,7 @@ class ExtensionBridge:
         except asyncio.TimeoutError:
             self._pending.pop(cmd_id, None)
             raise TimeoutError(f"CDP '{method}' timed out")
-        except Exception:
+        except (Exception, asyncio.CancelledError):
             # _emit 失败（如扩展未连）也要清掉 future，否则 _pending 泄漏
             self._pending.pop(cmd_id, None)
             raise
@@ -199,7 +201,7 @@ class ExtensionBridge:
         except asyncio.TimeoutError:
             self._pending.pop(cmd_id, None)
             raise TimeoutError(f"control '{msg_type}' timed out")
-        except Exception:
+        except (Exception, asyncio.CancelledError):
             self._pending.pop(cmd_id, None)
             raise
 
@@ -214,7 +216,7 @@ class ExtensionBridge:
         except asyncio.TimeoutError:
             self._pending.pop(cmd_id, None)
             raise TimeoutError(f"Scripting '{params.get('action','?')}' timed out")
-        except Exception:
+        except (Exception, asyncio.CancelledError):
             self._pending.pop(cmd_id, None)
             raise
 
@@ -313,6 +315,8 @@ class ExtensionBridge:
         await writer.drain()
 
         self._ext_writer = writer
+        self.extension_version = None
+        self.connection_generation += 1
         self._connected = True
         self._ws_ready.set()
         logger.info("extension WS connected")
@@ -342,6 +346,10 @@ class ExtensionBridge:
                 self._ext_writer = None
                 self._ws_ready.clear()
                 self._connected = False
+                self.extension_version = None
+                self.attached.clear()
+                self.attached_tab_id = None
+                self._notify_attach(None)
             logger.info("extension WS disconnected")
 
     async def _heartbeat(self, writer, interval: float = 20.0):
@@ -366,7 +374,10 @@ class ExtensionBridge:
     def _dispatch(self, data: dict):
         """处理扩展上报：event / attached / result 等。"""
         tp = data.get("type")
-        if tp == "event":
+        if tp == "hello":
+            version = data.get("version")
+            self.extension_version = version if isinstance(version, str) else None
+        elif tp == "event":
             for h in self._event_handlers:
                 try:
                     h(data["method"], data.get("params", {}), data.get("sessionId"),

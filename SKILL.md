@@ -128,6 +128,9 @@ echo "await page_info()" | nekoro-browser
 | `capture_screenshot()` | `capture_screenshot()` | PNG 截图，返回 base64 |
 | `capture_screenshot("jpeg", 90)` | 同上 | JPEG 截图，质量可调 |
 
+截图会先将目标标签带到前台，让后台/折叠组内的页面渲染；可能改变 Chrome 当前显示的标签。
+仍无可渲染视口时返回 `ok:false, kind:"not_rendered"`，不要把它当成空白截图。
+
 ### JavaScript
 
 | 函数 | 用法 | 说明 |

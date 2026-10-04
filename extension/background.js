@@ -63,6 +63,7 @@ function connect() {
     ws.onopen = () => {
         connecting = false;
         reconnectDelay = 500;
+        post({type: 'hello', version: chrome.runtime.getManifest().version});
         console.log('[nekoro-browser] WS connected');
         autoAttach().catch(e => console.error('[nekoro-browser] autoAttach error:', e));
     };

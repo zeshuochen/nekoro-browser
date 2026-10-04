@@ -7,6 +7,9 @@ on:
   workflow_dispatch:
 
 jobs:
+  browser-regression:
+    uses: ./.github/workflows/browser-regression.yml
+
   test:
     # 测试是纯标准库、无浏览器的（fake 掉扩展侧），所以能在三平台裸跑。
     # POSIX 分支（XDG 目录、chmod 600、/proc 与 ps 探活）本地没有真机可验，

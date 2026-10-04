@@ -83,8 +83,8 @@ def _is_token_error(r) -> bool:
 def _healthy(timeout=8):
     """端到端探活：一次真实 CDP 往返（page_info）。仅 /ping 200 不够——
     僵尸 daemon 端口还占着、ping 照样过，但扩展/SW 已死、CDP 往返失败。"""
-    r = _post("/exec", "await page_info()", timeout=timeout)
-    return bool(r.get("ok") and (r.get("result") or {}).get("url"))
+    r = _doctor_probe(timeout)
+    return bool(_probe_url(r) and not _version_error(r))
 
 
 def _post(path, data="", timeout: float = 30):
@@ -240,16 +240,18 @@ def _setup(port=None) -> int:
 
 def _reload_ext() -> int:
     """--reload-ext：命扩展重载 service worker，拿干净状态（治 alive-stale）。
-    据实返回退出码：无 daemon → 1（且不发 exec）；请求成功 → 0；失败 → 1。
+    据实返回退出码：无 daemon → 1；重连且页面响应 → 0；失败 → 1。
     注意只治"SW 还在处理消息但状态腐坏"；truly-wedged（不处理消息）救不了，靠心跳唤醒。"""
     if not _alive():
         print("No daemon running.", file=sys.stderr)
         return 1
     r = _post("/exec", "await reload_extension()", timeout=_EXEC_TIMEOUT)
-    if r.get("ok"):
-        print("Extension reload requested.", file=sys.stderr)
+    result = r.get("result")
+    if r.get("ok") and isinstance(result, dict) and result.get("ok"):
+        print("Extension reloaded and responding.", file=sys.stderr)
         return 0
-    print(f"reload failed: {r.get('error', '?')}", file=sys.stderr)
+    error = (result.get("error") if isinstance(result, dict) else None) or r.get("error", "no reload confirmation")
+    print(f"reload failed: {error}", file=sys.stderr)
     return 1
 
 
@@ -521,6 +523,16 @@ def _ensure_daemon(port=None) -> bool:
     # 端口上的 daemon —— 拿它的 pid 去说「占着我这个端口」又是一次张冠李戴。
     lifecycle.set_port(config.client_port(port))
     if _alive():
+        r = _post("/exec", "{'version': __import__('nekoro_browser').__version__, "
+                  "'allow_domains': getattr(daemon, 'allow_domains', None)}", timeout=5)
+        details = r.get("result")
+        if not r.get("ok") or not isinstance(details, dict) or not details.get("version"):
+            _step("FAIL", "Daemon", f"cannot verify running version: {r.get('error', 'no version response')}")
+            if _is_token_error(r):
+                print("       → 令牌对不上：用 daemon 所属的数据目录 --stop，再重跑 --ensure；或换个端口")
+            return False
+        if details["version"] != __version__:
+            return _restart_outdated_daemon(port, details)
         _step("PASS", "Daemon", f"running ({_url()})")
         return True
     if _port_bind_denied(port):
@@ -609,6 +621,28 @@ def _ext_hint():
           f"端口两侧要一致（扩展选项页）")
 
 
+def _restart_outdated_daemon(port, details) -> bool:
+    """Only restart the daemon authenticated by this data directory; keep its policy."""
+    global _EXPLICIT_PORT, _ALLOW_DOMAINS
+    saved_port, saved_domains = _EXPLICIT_PORT, _ALLOW_DOMAINS
+    _EXPLICIT_PORT = config.client_port(port)  # shutdown removes the discovery file
+    if _ALLOW_DOMAINS is None:
+        _ALLOW_DOMAINS = details.get("allow_domains")
+    try:
+        r = _post("/shutdown", "", timeout=5)
+        if not r.get("ok"):
+            _step("FAIL", "Daemon", f"old version could not be stopped: {r.get('error', '?')}")
+            return False
+        if not _wait(lambda: not _port_in_use(_EXPLICIT_PORT), ENSURE_DAEMON_WAIT,
+                     note="waiting for the old daemon to release its port"):
+            _step("FAIL", "Daemon", "old version still holds the port; refusing a second daemon")
+            return False
+        _step("FIX", "Daemon", f"stopped outdated v{details['version']}; starting v{__version__}")
+        return _ensure_daemon(_EXPLICIT_PORT)
+    finally:
+        _EXPLICIT_PORT, _ALLOW_DOMAINS = saved_port, saved_domains
+
+
 def _ensure_extension(port=None, cold=False) -> bool:
     budget = ENSURE_EXT_WAIT_COLD if cold else ENSURE_EXT_WAIT
     if _wait(lambda: _healthy(timeout=5), budget, note="waiting for the extension"):
@@ -616,8 +650,11 @@ def _ensure_extension(port=None, cold=False) -> bool:
         return True
     why = ""
     if _alive():
-        r = _post("/exec", "await reload_extension()", timeout=ENSURE_RELOAD_WAIT)
+        r = _post("/exec", "await reload_extension()", timeout=ENSURE_RELOAD_WAIT + 5)
         err = r.get("error", "") if not r.get("ok") else ""
+        result = r.get("result")
+        if r.get("ok") and (not isinstance(result, dict) or not result.get("ok")):
+            err = (result.get("error") if isinstance(result, dict) else None) or "no reload confirmation"
         # 判据收在 _is_token_error 里：doctor 和 ensure 必须是同一个口径，
         # 两边各写一份就会像以前那样飘开（doctor 曾经是宽泛的 "token" 子串匹配）。
         if not r.get("ok") and _is_token_error(r):
@@ -888,10 +925,27 @@ async def _run(port=None):
 DOCTOR_PROBE_TIMEOUT = 8.0
 
 
-def _doctor_probe():
+def _doctor_probe(timeout=DOCTOR_PROBE_TIMEOUT):
     """一次端对端探活：真实 CDP 往返，证明扩展 + Service Worker 都活着，
     而不只是 Python 进程在。SW 被 Chrome 回收时这步会失败。"""
-    return _post("/exec", "await page_info()", timeout=DOCTOR_PROBE_TIMEOUT)
+    # Works with pre-upgrade daemons too: the imported version is the code actually
+    # running in that process, rather than the files now present on disk.
+    return _post("/exec", "{**(await page_info()), "
+                 "'daemon_version': __import__('nekoro_browser').__version__, "
+                 "'extension_version': getattr(daemon.bridge, 'extension_version', None)}",
+                 timeout=timeout)
+
+
+def _version_error(r) -> str:
+    info = r.get("result") or {}
+    if not isinstance(info, dict):
+        return "no component versions"
+    daemon_version, extension_version = info.get("daemon_version"), info.get("extension_version")
+    if daemon_version != __version__:
+        return f"CLI v{__version__}, daemon v{daemon_version or 'unknown'} — run --ensure to restart the daemon"
+    if extension_version != __version__:
+        return f"CLI/daemon v{__version__}, extension v{extension_version or 'unknown'} — reload in chrome://extensions"
+    return ""
 
 
 def _probe_url(r) -> str:
@@ -966,6 +1020,12 @@ def _doctor(port=None) -> int:
     url = _probe_url(r)
     if url:
         print(f"[PASS] Extension/SW : responding ({url})")
+        error = _version_error(r)
+        if error:
+            print(f"[FAIL] Versions     : {error}")
+            print("=" * 40)
+            return 1
+        print(f"[PASS] Versions     : CLI / daemon / extension v{__version__}")
         print("=" * 40)
         return 0
     if _is_token_error(r):

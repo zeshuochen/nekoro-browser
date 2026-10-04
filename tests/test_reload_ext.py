@@ -35,7 +35,7 @@ def test_no_daemon_exits_1_no_exec():
 
 def test_ok_exits_0_sends_reload():
     posted = []
-    _patch(alive=True, post_result={"ok": True, "result": "reloading"}, recorder=posted)
+    _patch(alive=True, post_result={"ok": True, "result": {"ok": True, "result": "reloaded"}}, recorder=posted)
     try:
         assert cli._reload_ext() == 0
         assert posted == [("/exec", "await reload_extension()")], "应发 reload_extension exec"
@@ -45,6 +45,22 @@ def test_ok_exits_0_sends_reload():
 
 def test_fail_exits_1_honest():
     _patch(alive=True, post_result={"ok": False, "error": "boom"})
+    try:
+        assert cli._reload_ext() == 1
+    finally:
+        _restore()
+
+
+def test_helper_failure_is_not_exec_success():
+    _patch(alive=True, post_result={"ok": True, "result": {"ok": False, "error": "extension not connected"}})
+    try:
+        assert cli._reload_ext() == 1
+    finally:
+        _restore()
+
+
+def test_missing_confirmation_is_not_success():
+    _patch(alive=True, post_result={"ok": True})
     try:
         assert cli._reload_ext() == 1
     finally:
@@ -73,5 +89,7 @@ if __name__ == "__main__":
     test_no_daemon_exits_1_no_exec()
     test_ok_exits_0_sends_reload()
     test_fail_exits_1_honest()
+    test_helper_failure_is_not_exec_success()
+    test_missing_confirmation_is_not_success()
     test_main_routes_to_reload_ext()
     print("ALL OK")

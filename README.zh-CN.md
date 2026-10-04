@@ -75,8 +75,11 @@ uv tool install nekoro-browser
 <sub>从源码装：<code>git clone https://github.com/zeshuochen/nekoro-browser && cd nekoro-browser && uv pip install -e .</code></sub>
 
 > [!WARNING]
-> **升级之后记得重载扩展。** `uv tool upgrade nekoro-browser` 只更新 Python 侧——
-> 之后手动重载扩展：`nekoro-browser --reload-ext`（或 `chrome://extensions` 卡片上点**重新加载**）。
+> **升级后运行 `--ensure`。** `uv tool upgrade nekoro-browser` 后执行
+> `nekoro-browser --ensure`：自动后台重启旧版本 daemon、保留其域名白名单并重载扩展。
+> 再用 `nekoro-browser --doctor` 确认 CLI、正在运行的 daemon、扩展三个版本一致。
+> 若 Chrome 已停用扩展或安装路径变化，请在 `chrome://extensions` 重新启用或加载
+> `--extension-path` 指向的目录，再运行 `--ensure`。
 
 **2 — 加载扩展**
 
@@ -258,6 +261,9 @@ command = "nekoro-browser-mcp"
 | 下载 | `wait_for_download()` |
 | 截图 | `capture_screenshot()`、`capture_screenshot("jpeg", 90)` |
 
+截图前会将目标标签带到前台，因此 Chrome 当前显示的标签可能变化。
+若窗口仍无可渲染视口，会返回 `not_rendered`。
+
 ---
 
 ## 架构
@@ -367,11 +373,11 @@ Agent 遇到缺口时当场补、当场用——不重新编译，不重启 daem
 |------|------|
 | `nekoro-browser` | 前台启动 daemon |
 | `nekoro-browser setup` | 引导式安装：复制扩展路径，然后一直等到扩展真的连上 |
-| `nekoro-browser --ensure` | 自愈式就绪检查：Chrome 没开就拉起、daemon 没跑就后台起、扩展没响应就重载 SW。全绿才退 0——跑任务前用这条，别再手动重演那几步。端口已被占着但不应答时它**不会**再起一个，只报出 pid 交给你处置 |
-| `nekoro-browser --doctor` | 端到端诊断（daemon + 扩展 + SW 是否都活着）——只报不修 |
+| `nekoro-browser --ensure` | 自愈式就绪检查：拉起 Chrome / daemon、重启旧版本 daemon、重载不响应或旧版本扩展。真实页面响应且三个版本一致才退 0；端口占用者未退出时不会再起第二个 daemon |
+| `nekoro-browser --doctor` | 端到端诊断，并检查 CLI / 正在运行的 daemon / 扩展版本一致——只报不修 |
 | `nekoro-browser --stop` | 停止 daemon |
 | `nekoro-browser --restart` | 停止后重启（前台） |
-| `nekoro-browser --reload-ext` | 命扩展重载 service worker，**升级后必须跑一次**；跑批量任务前刷干净状态也用它 |
+| `nekoro-browser --reload-ext` | 重载扩展后等待新连接和真实页面响应；未连接、未重连或页面无响应均返回非零。升级后用 `--ensure` |
 | `nekoro-browser --extension-path` | 打印扩展目录（加载已解压扩展时用） |
 | `nekoro-browser --version` | 打印已安装版本（和你加载的扩展对一下） |
 | `nekoro-browser --port N` | daemon 监听 N 端口（默认 28417） |
@@ -434,6 +440,18 @@ daemon 监听 `127.0.0.1`，`/exec` 会执行任意 Python，故传输层加了�
 提 bug 时带上 `nekoro-browser --doctor` 的输出、Chrome 版本和操作系统，能省一轮来回。
 
 PR 欢迎。改动前先跑一遍测试：`for f in tests/test_*.py; do uv run python "$f"; done`（三平台 CI 也会跑）。
+
+真实浏览器回归使用 Chrome for Testing 和 Node.js，Node 仅用于测试中的标准库 CDP 管道桥：
+
+```bash
+uv run --with build python tests/browser_regression.py --chrome /path/to/chrome
+```
+
+加 `--headful` 可测试普通窗口。脚本在独立配置和临时 venv 中安装 wheel，检查冷启动、
+30 轮导航/填表/点击、后台标签截图、连续三次重载、MCP 成功及失败反馈、浏览器和 daemon
+重启，以及 PyPI 0.3.5 升级到当前 wheel 后的组件版本和白名单保留。28417 必须空闲；
+占用时直接退出。Windows CI 和发布流程均要求此回归通过，运行时仍无第三方依赖。
+这属于短流程回归，不代表已经完成长时间稳定性测试。
 
 ---
 

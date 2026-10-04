@@ -78,9 +78,12 @@ No [uv](https://docs.astral.sh/uv/)? `pipx install nekoro-browser` works too.
 <sub>From source: <code>git clone https://github.com/zeshuochen/nekoro-browser && cd nekoro-browser && uv pip install -e .</code></sub>
 
 > [!WARNING]
-> **Upgrading?** `uv tool upgrade nekoro-browser` only updates the Python side — reload
-> the extension afterwards: `nekoro-browser --reload-ext` (or **Reload** on the card in
-> `chrome://extensions`).
+> **Upgrading?** Run `uv tool upgrade nekoro-browser`, then `nekoro-browser --ensure`.
+> This restarts an outdated daemon in the background, preserves its domain allowlist,
+> and reloads the extension. `nekoro-browser --doctor` must report matching CLI,
+> daemon and extension versions. If Chrome has disabled the extension or its install
+> path changed, re-enable/load it in `chrome://extensions` using `--extension-path`,
+> then run `--ensure` again.
 
 **2 — Load the extension**
 
@@ -272,6 +275,9 @@ Beyond the tool list:
 viewport, so coordinates can be fed straight to <code>click_at_xy</code>; <code>scale="device"</code>
 keeps physical pixels.</sub>
 
+Screenshots bring the requested tab to the foreground before capture, so the visible
+Chrome tab may change. A window that still has a zero-size viewport reports `not_rendered`.
+
 ---
 
 ## Architecture
@@ -385,11 +391,11 @@ three — but the full "Chrome + extension" loop has never run on a real macOS/L
 |---------|---------------|
 | `nekoro-browser` | Start the daemon (foreground) |
 | `nekoro-browser setup` | Guided install: copies the extension path, then waits until the extension actually connects |
-| `nekoro-browser --ensure` | Self-healing readiness check: launches Chrome if it isn't running, starts the daemon in the background if it isn't up, reloads the service worker if it isn't answering. Exit 0 only when all green — run this before a task instead of doing the steps by hand. It never starts a second daemon on a port that is already held; it reports the pid and stops |
-| `nekoro-browser --doctor` | End-to-end diagnostic (daemon + extension + SW all alive?) — reports only, repairs nothing |
+| `nekoro-browser --ensure` | Launch Chrome / daemon, restart an outdated daemon, and reload an unresponsive or outdated extension. Exit 0 requires a real page response and matching component versions. It never starts a second daemon while the port is still held |
+| `nekoro-browser --doctor` | End-to-end diagnostic, including matching CLI / running daemon / extension versions — reports only, repairs nothing |
 | `nekoro-browser --stop` | Stop the daemon |
 | `nekoro-browser --restart` | Stop and restart (foreground) |
-| `nekoro-browser --reload-ext` | Reload the extension's service worker — **required after upgrading**, also useful before a batch job for a clean state |
+| `nekoro-browser --reload-ext` | Reload the extension and wait for a new connection plus a real page response; disconnected or failed reloads exit nonzero. Use `--ensure` after upgrading |
 | `nekoro-browser --extension-path` | Print the extension directory (for "Load unpacked") |
 | `nekoro-browser --version` | Print the installed version (check it against the extension you loaded) |
 | `nekoro-browser --port N` | Run the daemon on port N (default 28417) |
@@ -459,6 +465,22 @@ Hit a problem, or missing a helper you need? Open an
 For bugs, include the output of `nekoro-browser --doctor`, your Chrome version and OS — saves a round trip.
 
 PRs welcome. Run the tests first: `for f in tests/test_*.py; do uv run python "$f"; done` (CI runs them on all three platforms too).
+
+For the real browser regression, use Chrome for Testing and Node.js (the test bridge
+uses Node's standard library; runtime dependencies are unchanged):
+
+```bash
+uv run --with build python tests/browser_regression.py --chrome /path/to/chrome
+```
+
+Add `--headful` to exercise an ordinary browser window. The test builds and installs
+the wheel into temporary venvs, enables Developer mode in an isolated profile, and
+checks cold startup, 30 navigation/input/click cycles, background-tab screenshots,
+three extension reloads, MCP success/error results, browser/daemon restarts, and an
+in-place upgrade from PyPI 0.3.5 that retains the domain allowlist. Port 28417 must be
+free; the test fails before launching if it is occupied. Temporary browser profiles
+and runtime data are removed on exit. Windows CI runs this gate before publication;
+this is a short regression, not a long-running stability test.
 
 ---
 

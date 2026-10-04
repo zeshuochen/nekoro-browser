@@ -426,6 +426,9 @@ async def capture_screenshot(daemon, format: str = "png", quality: int = 80,
     if scale not in ("css", "device"):
         return {"ok": False, "error": f"scale must be 'css' or 'device', got {scale!r}"}
     try:
+        # A background tab can have a non-zero viewport and still never complete
+        # captureScreenshot. Make this exact target render before measuring it.
+        await daemon.bring_to_front(tab=tab)
         m = await js(daemon, "({d: devicePixelRatio, w: innerWidth, h: innerHeight})", tab=tab)
         vp = m.get("result") or {} if m.get("ok") else {}
         dpr = float(vp.get("d") or 1) or 1.0
@@ -917,13 +920,29 @@ async def wait_for_download(daemon, timeout: float = 30.0) -> dict[str, Any]:
 # Extension self-reload
 # ═══════════════════════════════════════════════════════════════════════════════
 
+_RELOAD_TIMEOUT = 20.0
+
+
 async def reload_extension(daemon) -> dict[str, Any]:
-    """reload_extension() — 强制重载扩展（自愈用）"""
+    """reload_extension() — 重载后确认新连接和真实页面响应，失败返回 ok:false。"""
     try:
-        await daemon.bridge.send_scripting({"action": "reload_extension"}, 5)
-        return {"ok": True, "result": "reloading"}
-    except Exception:
-        return {"ok": True, "result": "reloading (connection lost as expected)"}
+        async with asyncio.timeout(_RELOAD_TIMEOUT):
+            generation = daemon.bridge.connection_generation
+            ack = await daemon.bridge.send_scripting({"action": "reload_extension"}, 5)
+            if not ack.get("reloading"):
+                return {"ok": False, "error": "extension did not acknowledge reload"}
+            while daemon.bridge.connection_generation <= generation:
+                await asyncio.sleep(0.1)
+            await daemon.bridge.attached.wait()
+            r = await daemon.bridge.send("Runtime.evaluate", {
+                "expression": "location.href", "returnByValue": True}, timeout=3)
+            if not (r.get("result") or {}).get("value"):
+                return {"ok": False, "error": "reloaded extension returned no page URL"}
+            return {"ok": True, "result": "reloaded"}
+    except TimeoutError:
+        return {"ok": False, "error": "extension did not reconnect and respond after reload"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
