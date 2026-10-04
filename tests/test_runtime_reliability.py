@@ -1,5 +1,7 @@
 """Runtime upgrade/reload failures must never be reported as healthy."""
 import asyncio
+from contextlib import redirect_stdout
+import io
 import os
 import sys
 from types import SimpleNamespace
@@ -55,10 +57,12 @@ def test_upgrade_wont_spawn_when_old_daemon_keeps_port():
 
 
 def test_version_probe_failure_wont_shutdown_other_daemon():
-    with patch.object(cli, "_alive", return_value=True), \
+    output = io.StringIO()
+    with redirect_stdout(output), patch.object(cli, "_alive", return_value=True), \
          patch.object(cli, "_post", return_value={"ok": False, "error": "Forbidden: bad/missing token"}) as post:
         assert not cli._ensure_daemon(30500)
         assert post.call_count == 1 and post.call_args.args[0] == "/exec"
+    assert "cannot verify running version" in output.getvalue()
 
 
 async def test_reload_needs_ack_new_connection_and_page_response():
