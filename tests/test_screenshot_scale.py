@@ -32,6 +32,10 @@ class FakeDaemon:
         self.dpr, self.css = dpr, css
         self.clips = []          # 记录每次下发的 clip，断言用
         self.tabs = []           # 记录 tab 透传
+        self.fronts = []
+
+    async def bring_to_front(self, tab=None):
+        self.fronts.append(tab)
 
     async def evaluate(self, expr, tab=None):
         self.tabs.append(tab)
@@ -62,6 +66,7 @@ async def run():
     assert r["png_size"] == [1600, 800], r          # ← 关键：产物尺寸 == CSS 尺寸
     assert d.clips[-1]["scale"] == 1 / 1.25, d.clips  # scale 叠加在 dpr 上，必须是 1/dpr
     assert r["css_size"] == [1600, 800] and r["dpr"] == 1.25, r
+    assert d.fronts == [None], "截图前必须让目标标签渲染"
 
     # 2. scale="device" → 不下发 clip，出图是物理像素（旧行为保留）
     d = FakeDaemon(dpr=1.25, css=(1600, 800))
@@ -80,6 +85,7 @@ async def run():
     d = FakeDaemon(dpr=2.0, css=(800, 600))
     r = await helpers.capture_screenshot(d, tab=77)
     assert r["ok"] and set(d.tabs) == {77}, d.tabs
+    assert d.fronts == [77], "不能把截图之外的标签带到前台"
 
     # 4b. 视口 0×0（后台标签/窗口最小化）→ 当场说清原因，不去调那个注定超时的 CDP。
     #     真机上这条路径给的是 "CDP 'Page.captureScreenshot' timed out"，看不出所以然。

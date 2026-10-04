@@ -38,9 +38,13 @@ An agent operating nekoro-browser edits two places:
   Empty by default and never imported; workflows go in `agent_helpers.py`.
 
 # Testing
-`tests/*.py` are stdlib-style, not pytest: `assert` + a final `print("ALL OK")`, run via
+`tests/test_*.py` are stdlib-style, not pytest: `assert` + a final `print("ALL OK")`, run via
 `uv run python tests/test_X.py`. Extension JS has no unit-test surface — verify syntax
 with `node --check`, behavior needs a live Chrome.
+
+`tests/browser_regression.py` runs the packaged wheel and a PyPI-to-wheel upgrade in
+real Chrome for Testing with isolated profiles. Its test-only CDP pipe bridge uses
+Node's standard library. See README for invocation; CI gates publishing on this test.
 
 # Contributing
 Consider what is really needed. Prefer the smallest diff that fixes the bug. Don't add

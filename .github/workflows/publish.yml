@@ -20,7 +20,11 @@ on:
         options: [testpypi, pypi]
 
 jobs:
+  browser-regression:
+    uses: ./.github/workflows/browser-regression.yml
+
   publish:
+    needs: browser-regression
     runs-on: ubuntu-latest
     environment: ${{ inputs.target }}
     permissions:

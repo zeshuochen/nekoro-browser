@@ -1,0 +1,38 @@
+name: real browser regression
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  browser:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: python -m pip install build
+      - name: Chrome for Testing 154
+        shell: pwsh
+        run: |
+          $nekoroZip = Join-Path $env:RUNNER_TEMP 'nekoro-chrome.zip'
+          $nekoroChrome = Join-Path $env:RUNNER_TEMP 'nekoro-chrome'
+          Invoke-WebRequest 'https://storage.googleapis.com/chrome-for-testing-public/154.0.8037.92/win64/chrome-win64.zip' -OutFile $nekoroZip
+          Expand-Archive -LiteralPath $nekoroZip -DestinationPath $nekoroChrome
+      - name: Packaged browser and upgrade regression
+        shell: pwsh
+        run: |
+          $nekoroChrome = Join-Path $env:RUNNER_TEMP 'nekoro-chrome/chrome-win64/chrome.exe'
+          $nekoroReport = Join-Path $env:RUNNER_TEMP 'nekoro-browser-results.json'
+          python tests/browser_regression.py --chrome $nekoroChrome --report $nekoroReport
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: real-browser-results
+          path: ${{ runner.temp }}/nekoro-browser-results.json
+          if-no-files-found: ignore

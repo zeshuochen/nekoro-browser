@@ -229,6 +229,8 @@ class Daemon:
         return await self.bridge.send_request("switch_tab", tabId=tab_id)
     async def navigate(self, url, tab=None): return await self.bridge.send("Page.navigate", {"url": url}, tab=tab)
     async def evaluate(self, expr, tab=None): return await self.bridge.send("Runtime.evaluate", {"expression":expr,"returnByValue":True}, tab=tab)
+    async def bring_to_front(self, tab=None):
+        return await self.bridge.send("Page.bringToFront", tab=tab)
     async def screenshot(self, format="png", quality=80, clip=None, tab=None):
         # clip 带 scale 字段可直接让 Chrome 按 CSS 尺寸出图（见 helpers.capture_screenshot），
         # 不必走 Emulation.setDeviceMetricsOverride —— 那会真改视口、影响响应式布局。
